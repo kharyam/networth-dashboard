@@ -84,10 +84,6 @@ function Layout({ children }: LayoutProps) {
                   Last updated: {new Date().toLocaleString()}
                 </p>
               </div>
-              
-              <button className="btn-primary text-sm px-3 py-1.5">
-                Refresh Data
-              </button>
             </div>
             
             {/* User profile */}
