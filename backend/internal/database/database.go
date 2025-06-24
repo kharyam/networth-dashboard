@@ -53,7 +53,7 @@ func (db *DB) runMigrations() error {
 		createStockPricesTable,
 		createEquityGrantsTable,
 		createVestingScheduleTable,
-		createRealEstateTable,
+		createRealEstatePropertiesTable,
 		createMiscellaneousAssetsTable,
 		createNetWorthSnapshotsTable,
 		createIndices,

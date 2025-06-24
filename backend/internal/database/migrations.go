@@ -77,7 +77,7 @@ const (
 	createStockHoldingsTable = `
 		CREATE TABLE IF NOT EXISTS stock_holdings (
 			id SERIAL PRIMARY KEY,
-			account_id INTEGER REFERENCES accounts(id),
+			account_id VARCHAR(100) NOT NULL,
 			symbol VARCHAR(10) NOT NULL,
 			company_name VARCHAR(200),
 			shares_owned DECIMAL(15,6) NOT NULL,
@@ -85,9 +85,9 @@ const (
 			current_price DECIMAL(10,4),
 			market_value DECIMAL(15,2) GENERATED ALWAYS AS (shares_owned * COALESCE(current_price, 0)) STORED,
 			data_source VARCHAR(20) DEFAULT 'manual',
-			last_price_update TIMESTAMP,
-			last_manual_update TIMESTAMP,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(symbol, data_source)
 		);`
 
 	createStockPricesTable = `
@@ -103,18 +103,19 @@ const (
 	createEquityGrantsTable = `
 		CREATE TABLE IF NOT EXISTS equity_grants (
 			id SERIAL PRIMARY KEY,
-			account_id INTEGER REFERENCES accounts(id),
-			grant_id VARCHAR(100) UNIQUE,
+			account_id VARCHAR(100) NOT NULL,
 			grant_type VARCHAR(50) NOT NULL,
-			company_symbol VARCHAR(10),
-			total_shares INTEGER NOT NULL,
-			vested_shares INTEGER DEFAULT 0,
-			unvested_shares INTEGER NOT NULL,
+			company_symbol VARCHAR(10) NOT NULL,
+			total_shares DECIMAL(15,6) NOT NULL,
+			vested_shares DECIMAL(15,6) DEFAULT 0,
+			unvested_shares DECIMAL(15,6) NOT NULL,
 			strike_price DECIMAL(10,4),
-			grant_date DATE,
-			vest_start_date DATE,
-			data_source VARCHAR(20) DEFAULT 'manual',
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			current_price DECIMAL(10,4) DEFAULT 0,
+			grant_date DATE NOT NULL,
+			vest_start_date DATE NOT NULL,
+			last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(account_id, grant_type, company_symbol, grant_date)
 		);`
 
 	createVestingScheduleTable = `
@@ -129,20 +130,25 @@ const (
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);`
 
-	createRealEstateTable = `
-		CREATE TABLE IF NOT EXISTS real_estate (
+	createRealEstatePropertiesTable = `
+		CREATE TABLE IF NOT EXISTS real_estate_properties (
 			id SERIAL PRIMARY KEY,
-			account_id INTEGER REFERENCES accounts(id),
-			property_address TEXT,
-			property_type VARCHAR(50),
-			estimated_value DECIMAL(15,2) NOT NULL,
-			purchase_price DECIMAL(15,2),
-			purchase_date DATE,
-			mortgage_balance DECIMAL(15,2),
-			equity_value DECIMAL(15,2) GENERATED ALWAYS AS (estimated_value - COALESCE(mortgage_balance, 0)) STORED,
-			value_source VARCHAR(50),
-			last_value_update TIMESTAMP,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			account_id VARCHAR(100) NOT NULL,
+			property_type VARCHAR(50) NOT NULL,
+			property_name VARCHAR(200) NOT NULL,
+			purchase_price DECIMAL(15,2) NOT NULL,
+			current_value DECIMAL(15,2) NOT NULL,
+			outstanding_mortgage DECIMAL(15,2) DEFAULT 0,
+			equity DECIMAL(15,2) NOT NULL,
+			purchase_date DATE NOT NULL,
+			property_size_sqft DECIMAL(10,2),
+			lot_size_acres DECIMAL(8,4),
+			rental_income_monthly DECIMAL(10,2),
+			property_tax_annual DECIMAL(10,2),
+			notes TEXT,
+			last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(account_id, property_name)
 		);`
 
 	createMiscellaneousAssetsTable = `
@@ -177,8 +183,11 @@ const (
 		CREATE INDEX IF NOT EXISTS idx_stock_holdings_account ON stock_holdings(account_id);
 		CREATE INDEX IF NOT EXISTS idx_stock_prices_symbol ON stock_prices(symbol);
 		CREATE INDEX IF NOT EXISTS idx_equity_grants_account ON equity_grants(account_id);
+		CREATE INDEX IF NOT EXISTS idx_equity_grants_symbol ON equity_grants(company_symbol);
 		CREATE INDEX IF NOT EXISTS idx_vesting_schedule_grant ON vesting_schedule(grant_id);
 		CREATE INDEX IF NOT EXISTS idx_vesting_schedule_date ON vesting_schedule(vest_date);
+		CREATE INDEX IF NOT EXISTS idx_real_estate_account ON real_estate_properties(account_id);
+		CREATE INDEX IF NOT EXISTS idx_real_estate_type ON real_estate_properties(property_type);
 		CREATE INDEX IF NOT EXISTS idx_net_worth_snapshots_timestamp ON net_worth_snapshots(timestamp);
 	`
 )

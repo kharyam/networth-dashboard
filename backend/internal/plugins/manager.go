@@ -2,282 +2,116 @@ package plugins
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
-
-	"networth-dashboard/internal/models"
 )
 
-// Plugin manager handles all registered plugins
+// Manager handles plugin operations and data aggregation
 type Manager struct {
-	plugins     map[string]FinancialDataPlugin
-	dataCache   map[string]CachedData
-	db          *sql.DB
-	mu          sync.RWMutex
-	cacheMu     sync.RWMutex
-}
-
-type CachedData struct {
-	Data      interface{} `json:"data"`
-	Timestamp time.Time   `json:"timestamp"`
-	TTL       time.Duration `json:"ttl"`
-}
-
-type AggregatedData struct {
-	Accounts    []models.Account        `json:"accounts"`
-	Balances    []models.AccountBalance `json:"balances"`
-	NetWorth    models.NetWorthSummary  `json:"net_worth"`
-	LastUpdated time.Time               `json:"last_updated"`
+	db       *sql.DB
+	registry *Registry
 }
 
 // NewManager creates a new plugin manager
 func NewManager(db *sql.DB) *Manager {
-	return &Manager{
-		plugins:   make(map[string]FinancialDataPlugin),
-		dataCache: make(map[string]CachedData),
-		db:        db,
+	manager := &Manager{
+		db:       db,
+		registry: NewRegistry(),
 	}
+
+	// Register built-in plugins
+	manager.registerBuiltinPlugins()
+
+	return manager
 }
 
-// RegisterPlugin registers a new plugin
-func (m *Manager) RegisterPlugin(plugin FinancialDataPlugin) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	name := plugin.GetName()
-	if _, exists := m.plugins[name]; exists {
-		return fmt.Errorf("plugin %s already registered", name)
+// registerBuiltinPlugins registers the built-in plugins
+func (m *Manager) registerBuiltinPlugins() {
+	// Register Computershare plugin
+	computersharePlugin := NewComputersharePlugin(m.db)
+	if err := m.registry.Register(computersharePlugin); err != nil {
+		fmt.Printf("Failed to register Computershare plugin: %v\n", err)
 	}
 
-	m.plugins[name] = plugin
-	return nil
+	// Register Morgan Stanley plugin
+	morganStanleyPlugin := NewMorganStanleyPlugin(m.db)
+	if err := m.registry.Register(morganStanleyPlugin); err != nil {
+		fmt.Printf("Failed to register Morgan Stanley plugin: %v\n", err)
+	}
+
+	// Register Real Estate plugin
+	realEstatePlugin := NewRealEstatePlugin(m.db)
+	if err := m.registry.Register(realEstatePlugin); err != nil {
+		fmt.Printf("Failed to register Real Estate plugin: %v\n", err)
+	}
+
+	// Initialize with default configurations
+	m.initializeDefaultConfigs()
 }
 
-// UnregisterPlugin removes a plugin
-func (m *Manager) UnregisterPlugin(pluginName string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	plugin, exists := m.plugins[pluginName]
-	if !exists {
-		return fmt.Errorf("plugin %s not found", pluginName)
+// initializeDefaultConfigs sets up default configurations for plugins
+func (m *Manager) initializeDefaultConfigs() {
+	defaultConfig := PluginConfig{
+		Enabled:  true,
+		Settings: make(map[string]interface{}),
 	}
 
-	// Disconnect the plugin
-	if err := plugin.Disconnect(); err != nil {
-		return fmt.Errorf("failed to disconnect plugin %s: %w", pluginName, err)
+	plugins := []string{"computershare", "morgan_stanley", "real_estate"}
+	for _, pluginName := range plugins {
+		if err := m.registry.Configure(pluginName, defaultConfig); err != nil {
+			fmt.Printf("Failed to configure plugin %s: %v\n", pluginName, err)
+		}
 	}
-
-	delete(m.plugins, pluginName)
-	
-	// Clear cache for this plugin
-	m.invalidateCache(pluginName)
-	
-	return nil
-}
-
-// GetPlugin returns a specific plugin
-func (m *Manager) GetPlugin(pluginName string) (FinancialDataPlugin, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	plugin, exists := m.plugins[pluginName]
-	if !exists {
-		return nil, fmt.Errorf("plugin %s not found", pluginName)
-	}
-
-	return plugin, nil
 }
 
 // ListPlugins returns all registered plugins
-func (m *Manager) ListPlugins() []string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	names := make([]string, 0, len(m.plugins))
-	for name := range m.plugins {
-		names = append(names, name)
-	}
-	return names
+func (m *Manager) ListPlugins() []PluginInfo {
+	return m.registry.List()
 }
 
-// FetchAllData aggregates data from all plugins
-func (m *Manager) FetchAllData() (*AggregatedData, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	var allAccounts []models.Account
-	var allBalances []models.AccountBalance
-
-	for name, plugin := range m.plugins {
-		// Check cache first
-		if cachedData := m.getCachedData(name); cachedData != nil {
-			if data, ok := cachedData.Data.(*AggregatedData); ok {
-				allAccounts = append(allAccounts, data.Accounts...)
-				allBalances = append(allBalances, data.Balances...)
-				continue
-			}
-		}
-
-		// Fetch fresh data
-		accounts, err := plugin.GetAccounts()
-		if err != nil {
-			// Log error but continue with other plugins
-			continue
-		}
-
-		balances, err := plugin.GetBalances()
-		if err != nil {
-			// Log error but continue with other plugins
-			continue
-		}
-
-		allAccounts = append(allAccounts, accounts...)
-		allBalances = append(allBalances, balances...)
-
-		// Cache the data
-		pluginData := &AggregatedData{
-			Accounts:    accounts,
-			Balances:    balances,
-			LastUpdated: time.Now(),
-		}
-		m.setCachedData(name, pluginData, 15*time.Minute) // 15 minute TTL
-	}
-
-	// Calculate net worth
-	netWorth := m.calculateNetWorth(allBalances)
-
-	return &AggregatedData{
-		Accounts:    allAccounts,
-		Balances:    allBalances,
-		NetWorth:    netWorth,
-		LastUpdated: time.Now(),
-	}, nil
+// GetPlugin retrieves a specific plugin
+func (m *Manager) GetPlugin(name string) (FinancialDataPlugin, error) {
+	return m.registry.Get(name)
 }
 
-// RefreshData refreshes data for specific plugins or all plugins
-func (m *Manager) RefreshData(pluginNames ...string) error {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	if len(pluginNames) == 0 {
-		// Refresh all plugins
-		for name := range m.plugins {
-			pluginNames = append(pluginNames, name)
-		}
-	}
-
-	for _, name := range pluginNames {
-		plugin, exists := m.plugins[name]
-		if !exists {
-			continue
-		}
-
-		// Invalidate cache to force fresh fetch
-		m.invalidateCache(name)
-
-		// Fetch fresh data
-		accounts, err := plugin.GetAccounts()
-		if err != nil {
-			return fmt.Errorf("failed to refresh data for plugin %s: %w", name, err)
-		}
-
-		balances, err := plugin.GetBalances()
-		if err != nil {
-			return fmt.Errorf("failed to refresh balances for plugin %s: %w", name, err)
-		}
-
-		// Cache the fresh data
-		pluginData := &AggregatedData{
-			Accounts:    accounts,
-			Balances:    balances,
-			LastUpdated: time.Now(),
-		}
-		m.setCachedData(name, pluginData, 15*time.Minute)
-	}
-
-	return nil
+// EnablePlugin activates a plugin
+func (m *Manager) EnablePlugin(name string) error {
+	return m.registry.Enable(name)
 }
 
-// Cache management methods
-func (m *Manager) getCachedData(pluginName string) *CachedData {
-	m.cacheMu.RLock()
-	defer m.cacheMu.RUnlock()
-
-	cached, exists := m.dataCache[pluginName]
-	if !exists {
-		return nil
-	}
-
-	// Check if cache is still valid
-	if time.Since(cached.Timestamp) > cached.TTL {
-		return nil
-	}
-
-	return &cached
+// DisablePlugin deactivates a plugin
+func (m *Manager) DisablePlugin(name string) error {
+	return m.registry.Disable(name)
 }
 
-func (m *Manager) setCachedData(pluginName string, data interface{}, ttl time.Duration) {
-	m.cacheMu.Lock()
-	defer m.cacheMu.Unlock()
-
-	m.dataCache[pluginName] = CachedData{
-		Data:      data,
-		Timestamp: time.Now(),
-		TTL:       ttl,
-	}
+// ConfigurePlugin sets configuration for a plugin
+func (m *Manager) ConfigurePlugin(name string, config PluginConfig) error {
+	return m.registry.Configure(name, config)
 }
 
-func (m *Manager) invalidateCache(pluginName string) {
-	m.cacheMu.Lock()
-	defer m.cacheMu.Unlock()
-
-	if pluginName == "" {
-		// Clear all cache
-		m.dataCache = make(map[string]CachedData)
-	} else {
-		delete(m.dataCache, pluginName)
-	}
+// GetPluginConfig retrieves configuration for a plugin
+func (m *Manager) GetPluginConfig(name string) (PluginConfig, error) {
+	return m.registry.GetConfig(name)
 }
 
-// calculateNetWorth calculates net worth from all balances
-func (m *Manager) calculateNetWorth(balances []models.AccountBalance) models.NetWorthSummary {
-	var totalAssets, totalLiabilities float64
-
-	for _, balance := range balances {
-		if balance.Balance >= 0 {
-			totalAssets += balance.Balance
-		} else {
-			totalLiabilities += -balance.Balance
-		}
+// GetManualEntrySchema retrieves the manual entry schema for a plugin
+func (m *Manager) GetManualEntrySchema(name string) (ManualEntrySchema, error) {
+	plugin, err := m.registry.Get(name)
+	if err != nil {
+		return ManualEntrySchema{}, err
 	}
 
-	return models.NetWorthSummary{
-		NetWorth:         totalAssets - totalLiabilities,
-		TotalAssets:      totalAssets,
-		TotalLiabilities: totalLiabilities,
-		LastUpdated:      time.Now(),
+	if !plugin.SupportsManualEntry() {
+		return ManualEntrySchema{}, fmt.Errorf("plugin %s does not support manual entry", name)
 	}
+
+	return plugin.GetManualEntrySchema(), nil
 }
 
-// GetManualEntryPlugins returns all plugins that support manual entry
-func (m *Manager) GetManualEntryPlugins() map[string]ManualEntrySchema {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	schemas := make(map[string]ManualEntrySchema)
-	for name, plugin := range m.plugins {
-		if plugin.SupportsManualEntry() {
-			schemas[name] = plugin.GetManualEntrySchema()
-		}
-	}
-	return schemas
-}
-
-// ProcessManualEntry processes manual entry data through the appropriate plugin
-func (m *Manager) ProcessManualEntry(pluginName string, data interface{}) error {
-	plugin, err := m.GetPlugin(pluginName)
+// ProcessManualEntry processes manual data entry through a plugin
+func (m *Manager) ProcessManualEntry(pluginName string, data map[string]interface{}) error {
+	plugin, err := m.registry.Get(pluginName)
 	if err != nil {
 		return err
 	}
@@ -286,7 +120,7 @@ func (m *Manager) ProcessManualEntry(pluginName string, data interface{}) error 
 		return fmt.Errorf("plugin %s does not support manual entry", pluginName)
 	}
 
-	// Validate the data
+	// Validate the data first
 	validation := plugin.ValidateManualEntry(data)
 	if !validation.Valid {
 		return fmt.Errorf("validation failed: %v", validation.Errors)
@@ -296,14 +130,113 @@ func (m *Manager) ProcessManualEntry(pluginName string, data interface{}) error 
 	return plugin.ProcessManualEntry(data)
 }
 
-// HealthCheck performs health checks on all plugins
-func (m *Manager) HealthCheck() map[string]error {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	results := make(map[string]error)
-	for name, plugin := range m.plugins {
-		results[name] = plugin.HealthCheck()
+// ValidateManualEntry validates manual entry data
+func (m *Manager) ValidateManualEntry(pluginName string, data map[string]interface{}) (ValidationResult, error) {
+	plugin, err := m.registry.Get(pluginName)
+	if err != nil {
+		return ValidationResult{}, err
 	}
-	return results
+
+	if !plugin.SupportsManualEntry() {
+		return ValidationResult{}, fmt.Errorf("plugin %s does not support manual entry", pluginName)
+	}
+
+	return plugin.ValidateManualEntry(data), nil
+}
+
+// GetAllAccounts aggregates accounts from all active plugins
+func (m *Manager) GetAllAccounts() ([]Account, error) {
+	var allAccounts []Account
+	
+	activePlugins := m.registry.GetActivePlugins()
+	for _, plugin := range activePlugins {
+		accounts, err := plugin.GetAccounts()
+		if err != nil {
+			// Log error but continue with other plugins
+			fmt.Printf("Error getting accounts from plugin %s: %v\n", plugin.GetName(), err)
+			continue
+		}
+		allAccounts = append(allAccounts, accounts...)
+	}
+
+	return allAccounts, nil
+}
+
+// GetAllBalances aggregates balances from all active plugins
+func (m *Manager) GetAllBalances() ([]Balance, error) {
+	var allBalances []Balance
+	
+	activePlugins := m.registry.GetActivePlugins()
+	for _, plugin := range activePlugins {
+		balances, err := plugin.GetBalances()
+		if err != nil {
+			// Log error but continue with other plugins
+			fmt.Printf("Error getting balances from plugin %s: %v\n", plugin.GetName(), err)
+			continue
+		}
+		allBalances = append(allBalances, balances...)
+	}
+
+	return allBalances, nil
+}
+
+// GetAllTransactions aggregates transactions from all active plugins
+func (m *Manager) GetAllTransactions(dateRange DateRange) ([]Transaction, error) {
+	var allTransactions []Transaction
+	
+	activePlugins := m.registry.GetActivePlugins()
+	for _, plugin := range activePlugins {
+		transactions, err := plugin.GetTransactions(dateRange)
+		if err != nil {
+			// Log error but continue with other plugins
+			fmt.Printf("Error getting transactions from plugin %s: %v\n", plugin.GetName(), err)
+			continue
+		}
+		allTransactions = append(allTransactions, transactions...)
+	}
+
+	return allTransactions, nil
+}
+
+// RefreshAllData triggers data refresh on all active plugins
+func (m *Manager) RefreshAllData() map[string]error {
+	return m.registry.RefreshAll()
+}
+
+// GetPluginHealth returns health status for all plugins
+func (m *Manager) GetPluginHealth() map[string]PluginHealth {
+	return m.registry.HealthCheck()
+}
+
+// GetManualEntrySchemas returns schemas for all manual entry plugins
+func (m *Manager) GetManualEntrySchemas() map[string]ManualEntrySchema {
+	schemas := make(map[string]ManualEntrySchema)
+	
+	manualPlugins := m.registry.GetManualEntryPlugins()
+	for _, plugin := range manualPlugins {
+		schemas[plugin.GetName()] = plugin.GetManualEntrySchema()
+	}
+
+	return schemas
+}
+
+// SavePluginData saves plugin data to the database
+func (m *Manager) SavePluginData(pluginName string, dataType string, data interface{}) error {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("failed to marshal data: %w", err)
+	}
+
+	query := `
+		INSERT INTO manual_entries (account_id, entry_type, data_json, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5)
+	`
+
+	now := time.Now()
+	_, err = m.db.Exec(query, pluginName, dataType, string(jsonData), now, now)
+	if err != nil {
+		return fmt.Errorf("failed to save plugin data: %w", err)
+	}
+
+	return nil
 }

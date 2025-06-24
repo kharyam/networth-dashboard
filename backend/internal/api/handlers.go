@@ -248,7 +248,7 @@ func (s *Server) getPluginSchema(c *gin.Context) {
 func (s *Server) processManualEntry(c *gin.Context) {
 	pluginName := c.Param("name")
 	
-	var data interface{}
+	var data map[string]interface{}
 	if err := c.ShouldBindJSON(&data); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid JSON data",
@@ -269,9 +269,12 @@ func (s *Server) processManualEntry(c *gin.Context) {
 }
 
 func (s *Server) refreshPluginData(c *gin.Context) {
-	if err := s.pluginManager.RefreshData(); err != nil {
+	errors := s.pluginManager.RefreshAllData()
+	
+	if len(errors) > 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to refresh plugin data",
+			"error": "Some plugins failed to refresh",
+			"details": errors,
 		})
 		return
 	}
@@ -282,11 +285,11 @@ func (s *Server) refreshPluginData(c *gin.Context) {
 }
 
 func (s *Server) getPluginHealth(c *gin.Context) {
-	health := s.pluginManager.HealthCheck()
+	health := s.pluginManager.GetPluginHealth()
 	
 	allHealthy := true
-	for _, err := range health {
-		if err != nil {
+	for _, pluginHealth := range health {
+		if pluginHealth.Status != "active" {
 			allHealthy = false
 			break
 		}
@@ -338,7 +341,7 @@ func (s *Server) deleteManualEntry(c *gin.Context) {
 }
 
 func (s *Server) getManualEntrySchemas(c *gin.Context) {
-	schemas := s.pluginManager.GetManualEntryPlugins()
+	schemas := s.pluginManager.GetManualEntrySchemas()
 	c.JSON(http.StatusOK, gin.H{
 		"schemas": schemas,
 	})
