@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"networth-dashboard/internal/services"
 )
 
 // MorganStanleyPlugin handles manual entry for Morgan Stanley equity compensation
@@ -358,21 +360,27 @@ func (p *MorganStanleyPlugin) ProcessManualEntry(data map[string]interface{}) er
 	grantDate, _ := time.Parse("2006-01-02", data["grant_date"].(string))
 	vestStartDate, _ := time.Parse("2006-01-02", data["vest_start_date"].(string))
 
-	// Get current market price (placeholder - would be fetched from market data API)
-	// currentPrice := 300.0
+	// Get current market price from price service
+	priceService := services.NewPriceService()
+	currentPrice, err := priceService.GetCurrentPrice(symbol)
+	if err != nil {
+		// Log error but continue with 0 price - can be updated later
+		fmt.Printf("Warning: Could not fetch price for %s: %v\n", symbol, err)
+		currentPrice = 0
+	}
 
-	// Insert equity grant
+	// Insert equity grant with current price
 	query := `
 		INSERT INTO equity_grants (
 			account_id, grant_type, company_symbol, total_shares, vested_shares, 
-			unvested_shares, strike_price, grant_date, vest_start_date
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			unvested_shares, strike_price, current_price, grant_date, vest_start_date
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
 	unvestedShares := totalShares - vestedShares
-	_, err := p.db.Exec(query,
+	_, err = p.db.Exec(query,
 		p.accountID, grantType, symbol, totalShares, vestedShares,
-		unvestedShares, strikePrice, grantDate, vestStartDate,
+		unvestedShares, strikePrice, currentPrice, grantDate, vestStartDate,
 	)
 
 	if err != nil {

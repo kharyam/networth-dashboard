@@ -158,4 +158,16 @@ export const manualEntriesApi = {
     api.delete(`/manual-entries/${id}?type=${entryType}`).then(() => undefined),
 }
 
+// Price Management API
+export const pricesApi = {
+  refreshAll: (): Promise<any> =>
+    api.post('/prices/refresh').then(res => res.data),
+  
+  refreshSymbol: (symbol: string): Promise<any> =>
+    api.post(`/prices/refresh/${symbol}`).then(res => res.data),
+  
+  getStatus: (): Promise<any> =>
+    api.get('/prices/status').then(res => res.data),
+}
+
 export default api

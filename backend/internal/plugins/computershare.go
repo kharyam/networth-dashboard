@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"networth-dashboard/internal/services"
 )
 
 // ComputersharePlugin handles manual entry for Computershare stock holdings
@@ -335,8 +337,14 @@ func (p *ComputersharePlugin) ProcessManualEntry(data map[string]interface{}) er
 		companyName = cn.(string)
 	}
 
-	// Get current market price (placeholder - would integrate with market data API)
-	currentPrice := 150.0 // This would be fetched from a market data API
+	// Get current market price from price service
+	priceService := services.NewPriceService()
+	currentPrice, err := priceService.GetCurrentPrice(symbol)
+	if err != nil {
+		// Log error but continue with 0 price - can be updated later
+		fmt.Printf("Warning: Could not fetch price for %s: %v\n", symbol, err)
+		currentPrice = 0
+	}
 
 	// Insert stock holding
 	query := `
@@ -346,13 +354,13 @@ func (p *ComputersharePlugin) ProcessManualEntry(data map[string]interface{}) er
 		) VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
 
-	_, err := p.db.Exec(query,
+	_, execErr := p.db.Exec(query,
 		p.accountID, symbol, companyName, shares, costBasis,
 		currentPrice, "computershare",
 	)
 
-	if err != nil {
-		return fmt.Errorf("failed to save stock holding: %w", err)
+	if execErr != nil {
+		return fmt.Errorf("failed to save stock holding: %w", execErr)
 	}
 
 	p.lastUpdated = time.Now()

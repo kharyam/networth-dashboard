@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, TrendingDown, DollarSign, Briefcase, Building, PieChart } from 'lucide-react'
+import { TrendingUp, TrendingDown, DollarSign, Briefcase, Building, PieChart, RefreshCw, Clock, AlertTriangle } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell } from 'recharts'
-import { netWorthApi } from '@/services/api'
+import { netWorthApi, pricesApi } from '@/services/api'
 import { useTheme } from '@/contexts/ThemeContext'
 import type { NetWorthSummary } from '@/types'
 
@@ -71,32 +71,60 @@ function MetricCard({
 function Dashboard() {
   const [netWorth, setNetWorth] = useState<NetWorthSummary | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshingPrices, setRefreshingPrices] = useState(false)
+  const [priceStatus, setPriceStatus] = useState<any>(null)
   const { isDarkMode } = useTheme() // Still needed for chart dynamic styling
 
-  useEffect(() => {
-    const fetchNetWorth = async () => {
-      try {
-        const data = await netWorthApi.getSummary()
-        setNetWorth(data)
-      } catch (error) {
-        console.error('Failed to fetch net worth:', error)
-        // Use mock data for now
-        setNetWorth({
-          net_worth: 250000,
-          total_assets: 300000,
-          total_liabilities: 50000,
-          vested_equity_value: 75000,
-          unvested_equity_value: 25000,
-          stock_holdings_value: 100000,
-          real_estate_equity: 150000,
-          last_updated: new Date().toISOString(),
-        })
-      } finally {
-        setLoading(false)
-      }
+  const fetchNetWorth = async () => {
+    try {
+      const data = await netWorthApi.getSummary()
+      setNetWorth(data)
+    } catch (error) {
+      console.error('Failed to fetch net worth:', error)
+      // Use mock data for now
+      setNetWorth({
+        net_worth: 250000,
+        total_assets: 300000,
+        total_liabilities: 50000,
+        vested_equity_value: 75000,
+        unvested_equity_value: 25000,
+        stock_holdings_value: 100000,
+        real_estate_equity: 150000,
+        last_updated: new Date().toISOString(),
+      })
     }
+  }
 
-    fetchNetWorth()
+  const fetchPriceStatus = async () => {
+    try {
+      const status = await pricesApi.getStatus()
+      setPriceStatus(status)
+    } catch (error) {
+      console.error('Failed to fetch price status:', error)
+    }
+  }
+
+  const handleRefreshPrices = async () => {
+    setRefreshingPrices(true)
+    try {
+      await pricesApi.refreshAll()
+      await fetchNetWorth() // Refresh net worth after price update
+      await fetchPriceStatus() // Update price status
+    } catch (error) {
+      console.error('Failed to refresh prices:', error)
+    } finally {
+      setRefreshingPrices(false)
+    }
+  }
+
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true)
+      await Promise.all([fetchNetWorth(), fetchPriceStatus()])
+      setLoading(false)
+    }
+    
+    loadData()
   }, [])
 
   if (loading) {
@@ -110,15 +138,51 @@ function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
-        <p className="mt-2 text-gray-600 dark:text-gray-400">
-          Your complete financial overview
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">
+            Your complete financial overview
+          </p>
+        </div>
+        
+        {/* Price Status and Refresh */}
+        <div className="flex items-center space-x-4">
+          {priceStatus && (
+            <div className="flex items-center space-x-2 text-sm">
+              <div className="flex items-center space-x-1">
+                {priceStatus.stale_count > 0 ? (
+                  <AlertTriangle className="w-4 h-4 text-yellow-500" />
+                ) : (
+                  <Clock className="w-4 h-4 text-green-500" />
+                )}
+                <span className="text-gray-600 dark:text-gray-400">
+                  {priceStatus.stale_count > 0 
+                    ? `${priceStatus.stale_count} stale prices`
+                    : 'Prices up to date'
+                  }
+                </span>
+              </div>
+              <span className="text-gray-500 dark:text-gray-500">•</span>
+              <span className="text-gray-500 dark:text-gray-500 text-xs">
+                {priceStatus.provider_name}
+              </span>
+            </div>
+          )}
+          
+          <button
+            onClick={handleRefreshPrices}
+            disabled={refreshingPrices}
+            className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${refreshingPrices ? 'animate-spin' : ''}`} />
+            {refreshingPrices ? 'Refreshing...' : 'Refresh Prices'}
+          </button>
+        </div>
       </div>
 
       {/* Net Worth Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         <MetricCard
           title="Net Worth"
           value={netWorth?.net_worth || 0}
@@ -139,6 +203,12 @@ function Dashboard() {
           change={5.2}
           changeType="positive"
           icon={Briefcase}
+        />
+        <MetricCard
+          title="Future Value"
+          value={netWorth?.unvested_equity_value || 0}
+          icon={PieChart}
+          prefix="$"
         />
         <MetricCard
           title="Real Estate Equity"

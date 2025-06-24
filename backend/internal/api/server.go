@@ -113,6 +113,11 @@ func (s *Server) setupRouter() {
 		api.DELETE("/manual-entries/:id", s.deleteManualEntry)
 		api.GET("/manual-entries/schemas", s.getManualEntrySchemas)
 
+		// Price management endpoints
+		api.POST("/prices/refresh", s.refreshPrices)
+		api.POST("/prices/refresh/:symbol", s.refreshSymbolPrice)
+		api.GET("/prices/status", s.getPricesStatus)
+
 		// Credential management endpoints
 		credentialHandler := handlers.NewCredentialHandler(s.credentialManager)
 		handlers.RegisterCredentialRoutes(api, credentialHandler)

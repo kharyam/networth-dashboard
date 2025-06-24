@@ -1,8 +1,13 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
+
+	"networth-dashboard/internal/services"
 
 	"github.com/gin-gonic/gin"
 )
@@ -12,78 +17,155 @@ import (
 // Net worth handlers
 func (s *Server) getNetWorth(c *gin.Context) {
 	// Calculate stock holdings value
-	stockValue := 0.0
-	stockQuery := `
+	stockValue := s.calculateStockHoldingsValue()
+	
+	// Calculate vested equity value (only vested shares count toward net worth)
+	vestedEquityValue := s.calculateVestedEquityValue()
+	
+	// Calculate unvested equity value (future value, shown separately)
+	unvestedEquityValue := s.calculateUnvestedEquityValue()
+	
+	// Calculate real estate equity
+	realEstateEquity := s.calculateRealEstateEquity()
+	
+	// Calculate liabilities
+	totalLiabilities := s.calculateTotalLiabilities()
+	
+	// Net worth = only vested/liquid assets - liabilities
+	totalAssets := stockValue + vestedEquityValue + realEstateEquity
+	netWorth := totalAssets - totalLiabilities
+	
+	// Get price status information
+	priceStatus := s.getPriceStatus()
+
+	data := gin.H{
+		"net_worth":              netWorth,
+		"total_assets":           totalAssets,
+		"total_liabilities":      totalLiabilities,
+		"vested_equity_value":    vestedEquityValue,
+		"unvested_equity_value":  unvestedEquityValue, // Shown separately as future value
+		"stock_holdings_value":   stockValue,
+		"real_estate_equity":     realEstateEquity,
+		"price_last_updated":     priceStatus.LastUpdated,
+		"stale_price_count":      priceStatus.StaleCount,
+		"provider_name":          priceStatus.ProviderName,
+		"last_updated":           time.Now().Format(time.RFC3339),
+	}
+	c.JSON(http.StatusOK, data)
+}
+
+// Helper functions for net worth calculation
+func (s *Server) calculateStockHoldingsValue() float64 {
+	var value float64
+	query := `
 		SELECT COALESCE(SUM(shares_owned * COALESCE(current_price, 0)), 0) 
 		FROM stock_holdings
+		WHERE current_price > 0
 	`
-	err := s.db.QueryRow(stockQuery).Scan(&stockValue)
+	err := s.db.QueryRow(query).Scan(&value)
 	if err != nil {
-		stockValue = 0.0
+		return 0.0
 	}
+	return value
+}
 
-	// Calculate vested equity value
-	vestedEquityValue := 0.0
-	vestedQuery := `
+func (s *Server) calculateVestedEquityValue() float64 {
+	var value float64
+	query := `
 		SELECT COALESCE(SUM(vested_shares * COALESCE(current_price, 0)), 0) 
 		FROM equity_grants 
-		WHERE current_price IS NOT NULL
+		WHERE current_price > 0 AND vested_shares > 0
 	`
-	err = s.db.QueryRow(vestedQuery).Scan(&vestedEquityValue)
+	err := s.db.QueryRow(query).Scan(&value)
 	if err != nil {
-		vestedEquityValue = 0.0
+		return 0.0
 	}
+	return value
+}
 
-	// Calculate unvested equity value (using current price estimates)
-	unvestedEquityValue := 0.0
-	unvestedQuery := `
+func (s *Server) calculateUnvestedEquityValue() float64 {
+	var value float64
+	query := `
 		SELECT COALESCE(SUM(unvested_shares * COALESCE(current_price, 0)), 0) 
 		FROM equity_grants 
-		WHERE current_price IS NOT NULL
+		WHERE current_price > 0 AND unvested_shares > 0
 	`
-	err = s.db.QueryRow(unvestedQuery).Scan(&unvestedEquityValue)
+	err := s.db.QueryRow(query).Scan(&value)
 	if err != nil {
-		unvestedEquityValue = 0.0
+		return 0.0
 	}
+	return value
+}
 
-	// Calculate real estate equity
-	realEstateEquity := 0.0
-	realEstateQuery := `
+func (s *Server) calculateRealEstateEquity() float64 {
+	var value float64
+	query := `
 		SELECT COALESCE(SUM(equity), 0) 
 		FROM real_estate_properties
 	`
-	err = s.db.QueryRow(realEstateQuery).Scan(&realEstateEquity)
+	err := s.db.QueryRow(query).Scan(&value)
 	if err != nil {
-		realEstateEquity = 0.0
+		return 0.0
 	}
+	return value
+}
 
-	// Calculate total assets and liabilities
-	totalAssets := stockValue + vestedEquityValue + realEstateEquity
-	totalLiabilities := 0.0 // We could add mortgage/debt tracking later
-	
-	// Calculate mortgage liabilities from real estate
-	mortgageQuery := `
+func (s *Server) calculateTotalLiabilities() float64 {
+	var value float64
+	query := `
 		SELECT COALESCE(SUM(outstanding_mortgage), 0) 
 		FROM real_estate_properties
 	`
-	err = s.db.QueryRow(mortgageQuery).Scan(&totalLiabilities)
+	err := s.db.QueryRow(query).Scan(&value)
 	if err != nil {
-		totalLiabilities = 0.0
+		return 0.0
 	}
+	return value
+}
 
-	netWorth := totalAssets - totalLiabilities
+// PriceStatus represents the current status of price data
+type PriceStatus struct {
+	LastUpdated  string `json:"last_updated"`
+	StaleCount   int    `json:"stale_count"`
+	TotalCount   int    `json:"total_count"`
+	ProviderName string `json:"provider_name"`
+}
 
-	data := gin.H{
-		"net_worth":            netWorth,
-		"total_assets":         totalAssets,
-		"total_liabilities":    totalLiabilities,
-		"vested_equity_value":  vestedEquityValue,
-		"unvested_equity_value": unvestedEquityValue,
-		"stock_holdings_value": stockValue,
-		"real_estate_equity":   realEstateEquity,
-		"last_updated":         "2024-06-24T11:45:00Z",
+func (s *Server) getPriceStatus() PriceStatus {
+	priceService := services.NewPriceService()
+	
+	// Count total symbols and stale prices
+	var totalCount, staleCount int
+	
+	// Count symbols with stale or missing prices (older than 1 hour or null)
+	staleQuery := `
+		SELECT COUNT(DISTINCT symbol) as stale_count,
+		       (SELECT COUNT(DISTINCT symbol) FROM (
+		           SELECT symbol FROM stock_holdings 
+		           UNION 
+		           SELECT company_symbol as symbol FROM equity_grants
+		       ) as all_symbols) as total_count
+		FROM (
+		    SELECT symbol FROM stock_holdings 
+		    WHERE current_price = 0 OR current_price IS NULL
+		    UNION
+		    SELECT company_symbol as symbol FROM equity_grants 
+		    WHERE current_price = 0 OR current_price IS NULL
+		) as stale_symbols
+	`
+	
+	err := s.db.QueryRow(staleQuery).Scan(&staleCount, &totalCount)
+	if err != nil {
+		staleCount = 0
+		totalCount = 0
 	}
-	c.JSON(http.StatusOK, data)
+	
+	return PriceStatus{
+		LastUpdated:  time.Now().Format(time.RFC3339),
+		StaleCount:   staleCount,
+		TotalCount:   totalCount,
+		ProviderName: priceService.GetProviderName(),
+	}
 }
 
 func (s *Server) getNetWorthHistory(c *gin.Context) {
@@ -869,4 +951,196 @@ func (s *Server) getManualEntrySchemas(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"schemas": schemas,
 	})
+}
+
+// Price refresh handlers
+func (s *Server) refreshPrices(c *gin.Context) {
+	startTime := time.Now()
+	
+	// Get all unique symbols that need price updates
+	symbols := s.getAllActiveSymbols()
+	if len(symbols) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "No symbols found to update",
+			"summary": services.PriceRefreshSummary{
+				TotalSymbols: 0,
+				UpdatedSymbols: 0,
+				FailedSymbols: 0,
+				Timestamp: time.Now(),
+				DurationMs: time.Since(startTime).Milliseconds(),
+			},
+		})
+		return
+	}
+
+	// Initialize price service
+	priceService := services.NewPriceService()
+	
+	// Track results
+	var results []services.PriceUpdateResult
+	updatedCount := 0
+	failedCount := 0
+
+	for _, symbol := range symbols {
+		result := s.updateSymbolPrice(symbol, priceService)
+		results = append(results, result)
+		
+		if result.Updated {
+			updatedCount++
+		} else {
+			failedCount++
+		}
+	}
+
+	summary := services.PriceRefreshSummary{
+		TotalSymbols:   len(symbols),
+		UpdatedSymbols: updatedCount,
+		FailedSymbols:  failedCount,
+		Results:        results,
+		ProviderName:   priceService.GetProviderName(),
+		Timestamp:      time.Now(),
+		DurationMs:     time.Since(startTime).Milliseconds(),
+	}
+
+	status := http.StatusOK
+	if failedCount == len(symbols) {
+		status = http.StatusInternalServerError
+	} else if failedCount > 0 {
+		status = http.StatusPartialContent
+	}
+
+	c.JSON(status, gin.H{
+		"message": fmt.Sprintf("Price refresh completed: %d/%d symbols updated", updatedCount, len(symbols)),
+		"summary": summary,
+	})
+}
+
+func (s *Server) refreshSymbolPrice(c *gin.Context) {
+	symbol := strings.ToUpper(strings.TrimSpace(c.Param("symbol")))
+	if symbol == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Symbol is required",
+		})
+		return
+	}
+
+	priceService := services.NewPriceService()
+	result := s.updateSymbolPrice(symbol, priceService)
+
+	status := http.StatusOK
+	if !result.Updated {
+		status = http.StatusInternalServerError
+	}
+
+	c.JSON(status, gin.H{
+		"message": fmt.Sprintf("Price refresh for %s completed", symbol),
+		"result":  result,
+	})
+}
+
+func (s *Server) getPricesStatus(c *gin.Context) {
+	status := s.getPriceStatus()
+	c.JSON(http.StatusOK, status)
+}
+
+// Helper functions for price refresh
+func (s *Server) getAllActiveSymbols() []string {
+	var symbols []string
+	
+	// Get symbols from stock_holdings
+	stockQuery := `SELECT DISTINCT symbol FROM stock_holdings WHERE symbol IS NOT NULL AND symbol != ''`
+	rows, err := s.db.Query(stockQuery)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var symbol string
+			if rows.Scan(&symbol) == nil && symbol != "" {
+				symbols = append(symbols, strings.ToUpper(strings.TrimSpace(symbol)))
+			}
+		}
+	}
+	
+	// Get symbols from equity_grants
+	equityQuery := `SELECT DISTINCT company_symbol FROM equity_grants WHERE company_symbol IS NOT NULL AND company_symbol != ''`
+	rows, err = s.db.Query(equityQuery)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var symbol string
+			if rows.Scan(&symbol) == nil && symbol != "" {
+				symbol = strings.ToUpper(strings.TrimSpace(symbol))
+				// Avoid duplicates
+				found := false
+				for _, existing := range symbols {
+					if existing == symbol {
+						found = true
+						break
+					}
+				}
+				if !found {
+					symbols = append(symbols, symbol)
+				}
+			}
+		}
+	}
+	
+	return symbols
+}
+
+func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceService) services.PriceUpdateResult {
+	result := services.PriceUpdateResult{
+		Symbol:    symbol,
+		Updated:   false,
+		Timestamp: time.Now(),
+	}
+
+	// Get current price from service
+	newPrice, err := priceService.GetCurrentPrice(symbol)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+
+	// Get old price for comparison
+	var oldPrice float64
+	priceQuery := `
+		SELECT COALESCE(current_price, 0) 
+		FROM stock_holdings 
+		WHERE symbol = $1 
+		LIMIT 1
+	`
+	s.db.QueryRow(priceQuery, symbol).Scan(&oldPrice)
+	
+	result.OldPrice = oldPrice
+	result.NewPrice = newPrice
+
+	// Update stock_holdings
+	stockUpdate := `
+		UPDATE stock_holdings 
+		SET current_price = $1, last_updated = $2 
+		WHERE symbol = $3
+	`
+	stockResult, err := s.db.Exec(stockUpdate, newPrice, time.Now(), symbol)
+	
+	// Update equity_grants
+	equityUpdate := `
+		UPDATE equity_grants 
+		SET current_price = $1, last_updated = $2 
+		WHERE company_symbol = $3
+	`
+	equityResult, err2 := s.db.Exec(equityUpdate, newPrice, time.Now(), symbol)
+
+	// Check if any rows were updated
+	stockRows, _ := stockResult.RowsAffected()
+	equityRows, _ := equityResult.RowsAffected()
+	
+	if err != nil && err2 != nil {
+		result.Error = fmt.Sprintf("Update failed: %v, %v", err, err2)
+	} else if stockRows > 0 || equityRows > 0 {
+		result.Updated = true
+	} else {
+		result.Error = "No records found to update"
+	}
+
+	return result
 }
