@@ -347,25 +347,48 @@ func (p *MorganStanleyPlugin) ValidateManualEntry(data map[string]interface{}) V
 
 // ProcessManualEntry processes the manual entry data
 func (p *MorganStanleyPlugin) ProcessManualEntry(data map[string]interface{}) error {
-	grantType := data["grant_type"].(string)
-	symbol := data["company_symbol"].(string)
-	totalShares := data["total_shares"].(float64)
-	vestedShares := data["vested_shares"].(float64)
+	// Validate and extract all fields using helper methods
+	grantType, exists := data["grant_type"].(string)
+	if !exists || grantType == "" {
+		return fmt.Errorf("grant_type is required and must be a string")
+	}
 	
-	var strikePrice float64
-	if sp, exists := data["strike_price"]; exists && sp != nil {
-		strikePrice = sp.(float64)
+	symbol, exists := data["company_symbol"].(string)
+	if !exists || symbol == "" {
+		return fmt.Errorf("company_symbol is required and must be a string")
+	}
+	
+	totalShares, err := p.validateNumberField(data, "total_shares", true)
+	if err != nil {
+		return fmt.Errorf("total_shares validation failed: %s", err.Message)
+	}
+	
+	vestedShares, err := p.validateNumberField(data, "vested_shares", true)
+	if err != nil {
+		return fmt.Errorf("vested_shares validation failed: %s", err.Message)
+	}
+	
+	strikePrice, err := p.validateNumberField(data, "strike_price", false)
+	if err != nil {
+		return fmt.Errorf("strike_price validation failed: %s", err.Message)
 	}
 
-	grantDate, _ := time.Parse("2006-01-02", data["grant_date"].(string))
-	vestStartDate, _ := time.Parse("2006-01-02", data["vest_start_date"].(string))
+	grantDate, err := p.validateDateField(data, "grant_date", true)
+	if err != nil {
+		return fmt.Errorf("grant_date validation failed: %s", err.Message)
+	}
+	
+	vestStartDate, err := p.validateDateField(data, "vest_start_date", true)
+	if err != nil {
+		return fmt.Errorf("vest_start_date validation failed: %s", err.Message)
+	}
 
 	// Get current market price from price service
 	priceService := services.NewPriceService()
-	currentPrice, err := priceService.GetCurrentPrice(symbol)
-	if err != nil {
+	currentPrice, priceErr := priceService.GetCurrentPrice(symbol)
+	if priceErr != nil {
 		// Log error but continue with 0 price - can be updated later
-		fmt.Printf("Warning: Could not fetch price for %s: %v\n", symbol, err)
+		fmt.Printf("Warning: Could not fetch price for %s: %v\n", symbol, priceErr)
 		currentPrice = 0
 	}
 
@@ -378,13 +401,13 @@ func (p *MorganStanleyPlugin) ProcessManualEntry(data map[string]interface{}) er
 	`
 
 	unvestedShares := totalShares - vestedShares
-	_, err = p.db.Exec(query,
+	_, execErr := p.db.Exec(query,
 		p.accountID, grantType, symbol, totalShares, vestedShares,
 		unvestedShares, strikePrice, currentPrice, grantDate, vestStartDate,
 	)
 
-	if err != nil {
-		return fmt.Errorf("failed to save equity grant: %w", err)
+	if execErr != nil {
+		return fmt.Errorf("failed to save equity grant: %w", execErr)
 	}
 
 	p.lastUpdated = time.Now()
@@ -421,13 +444,28 @@ func (p *MorganStanleyPlugin) validateNumberField(data map[string]interface{}, f
 	case float64:
 		num = v
 	case string:
-		var err error
-		num, err = strconv.ParseFloat(v, 64)
-		if err != nil {
-			return 0, &ValidationError{
-				Field:   field,
-				Message: fmt.Sprintf("%s must be a valid number", field),
-				Code:    "invalid_number",
+		// Handle empty strings for optional fields
+		if v == "" {
+			if required {
+				return 0, &ValidationError{
+					Field:   field,
+					Message: fmt.Sprintf("%s is required", field),
+					Code:    "required",
+				}
+			} else {
+				// Optional field with empty string - treat as 0
+				num = 0
+			}
+		} else {
+			// Parse non-empty strings
+			var err error
+			num, err = strconv.ParseFloat(v, 64)
+			if err != nil {
+				return 0, &ValidationError{
+					Field:   field,
+					Message: fmt.Sprintf("%s must be a valid number", field),
+					Code:    "invalid_number",
+				}
 			}
 		}
 	default:

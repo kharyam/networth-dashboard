@@ -447,7 +447,7 @@ func (s *Server) getEquityGrants(c *gin.Context) {
 	query := `
 		SELECT id, account_id, grant_type, company_symbol, total_shares, 
 		       vested_shares, unvested_shares, strike_price, grant_date, 
-		       vest_start_date, created_at
+		       vest_start_date, current_price, created_at
 		FROM equity_grants
 		ORDER BY grant_date DESC
 	`
@@ -474,13 +474,14 @@ func (s *Server) getEquityGrants(c *gin.Context) {
 			StrikePrice   *float64 `json:"strike_price"`
 			GrantDate     string   `json:"grant_date"`
 			VestStartDate string   `json:"vest_start_date"`
+			CurrentPrice  *float64 `json:"current_price"`
 			CreatedAt     string   `json:"created_at"`
 		}
 
 		err := rows.Scan(
 			&grant.ID, &grant.AccountID, &grant.GrantType, &grant.CompanySymbol,
 			&grant.TotalShares, &grant.VestedShares, &grant.UnvestedShares,
-			&grant.StrikePrice, &grant.GrantDate, &grant.VestStartDate, &grant.CreatedAt,
+			&grant.StrikePrice, &grant.GrantDate, &grant.VestStartDate, &grant.CurrentPrice, &grant.CreatedAt,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -500,6 +501,7 @@ func (s *Server) getEquityGrants(c *gin.Context) {
 			"strike_price":    grant.StrikePrice,
 			"grant_date":      grant.GrantDate,
 			"vest_start_date": grant.VestStartDate,
+			"current_price":   grant.CurrentPrice,
 			"created_at":      grant.CreatedAt,
 		}
 		grants = append(grants, grantMap)

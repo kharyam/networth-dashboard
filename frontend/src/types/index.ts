@@ -46,6 +46,7 @@ export interface EquityGrant {
   strike_price?: number
   grant_date?: string
   vest_start_date?: string
+  current_price?: number
   data_source: string
   created_at: string
 }
