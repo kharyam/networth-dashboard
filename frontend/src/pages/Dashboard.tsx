@@ -28,12 +28,78 @@ const generateTrendData = (currentNetWorth: number) => {
   }))
 }
 
-const mockAllocationData = [
-  { name: 'Stocks', value: 45, color: '#3b82f6' },
-  { name: 'Real Estate', value: 30, color: '#10b981' },
-  { name: 'Cash', value: 15, color: '#f59e0b' },
-  { name: 'Other', value: 10, color: '#8b5cf6' },
-]
+// Generate real asset allocation data based on current net worth
+const generateAllocationData = (netWorth: NetWorthSummary | null) => {
+  if (!netWorth || netWorth.total_assets === 0) {
+    return [
+      { name: 'No Data', value: 100, color: '#9ca3af' }
+    ]
+  }
+
+  const totalAssets = netWorth.total_assets
+  const stockValue = netWorth.stock_holdings_value || 0
+  const equityValue = netWorth.vested_equity_value || 0
+  const realEstateValue = netWorth.real_estate_equity || 0
+  
+  // Calculate cash/other as remaining assets
+  const cashOtherValue = Math.max(0, totalAssets - stockValue - equityValue - realEstateValue)
+  
+  const allocation = [
+    {
+      name: 'Direct Stocks',
+      value: stockValue,
+      color: '#3b82f6',
+      percentage: totalAssets > 0 ? Math.round((stockValue / totalAssets) * 100) : 0
+    },
+    {
+      name: 'Equity Comp',
+      value: equityValue,
+      color: '#8b5cf6',
+      percentage: totalAssets > 0 ? Math.round((equityValue / totalAssets) * 100) : 0
+    },
+    {
+      name: 'Real Estate',
+      value: realEstateValue,
+      color: '#10b981',
+      percentage: totalAssets > 0 ? Math.round((realEstateValue / totalAssets) * 100) : 0
+    },
+    {
+      name: 'Cash & Other',
+      value: cashOtherValue,
+      color: '#f59e0b',
+      percentage: totalAssets > 0 ? Math.round((cashOtherValue / totalAssets) * 100) : 0
+    }
+  ]
+
+  // Filter out zero-value categories and ensure we have data to show
+  const validCategories = allocation.filter(item => item.value > 0)
+  
+  if (validCategories.length === 0) {
+    return [{ name: 'No Data', value: 100, color: '#9ca3af' }]
+  }
+
+  // Recalculate percentages to ensure they add up to 100%
+  const totalValidValue = validCategories.reduce((sum, item) => sum + item.value, 0)
+  let runningTotal = 0
+  const result = validCategories.map((item, index) => {
+    let percentage
+    if (index === validCategories.length - 1) {
+      // Last item gets remaining percentage to ensure total is 100%
+      percentage = 100 - runningTotal
+    } else {
+      percentage = Math.round((item.value / totalValidValue) * 100)
+      runningTotal += percentage
+    }
+    
+    return {
+      name: item.name,
+      value: percentage,
+      color: item.color
+    }
+  })
+
+  return result
+}
 
 function MetricCard({ 
   title, 
@@ -150,6 +216,9 @@ function Dashboard() {
 
   // Generate trend data based on current net worth
   const trendData = generateTrendData(netWorth?.net_worth || 0)
+  
+  // Generate allocation data based on actual asset values
+  const allocationData = generateAllocationData(netWorth)
 
   return (
     <div className="space-y-6">
@@ -282,7 +351,7 @@ function Dashboard() {
             <ResponsiveContainer width="100%" height="100%">
               <RechartsPieChart>
                 <Pie
-                  data={mockAllocationData}
+                  data={allocationData}
                   cx="50%"
                   cy="50%"
                   innerRadius={60}
@@ -290,7 +359,7 @@ function Dashboard() {
                   paddingAngle={5}
                   dataKey="value"
                 >
-                  {mockAllocationData.map((entry, index) => (
+                  {allocationData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
@@ -307,7 +376,7 @@ function Dashboard() {
             </ResponsiveContainer>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2">
-            {mockAllocationData.map((item) => (
+            {allocationData.map((item) => (
               <div key={item.name} className="flex items-center">
                 <div 
                   className="w-3 h-3 rounded-full mr-2"
