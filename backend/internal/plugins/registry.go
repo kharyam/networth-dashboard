@@ -75,6 +75,16 @@ func (r *Registry) List() []PluginInfo {
 	var plugins []PluginInfo
 	for name, plugin := range r.plugins {
 		config := r.configs[name]
+		health := plugin.IsHealthy()
+		
+		// Compute status from enabled state and health
+		var status string
+		if !config.Enabled {
+			status = "disabled"
+		} else {
+			status = string(health.Status)
+		}
+		
 		plugins = append(plugins, PluginInfo{
 			Name:        name,
 			Type:        plugin.GetType(),
@@ -82,7 +92,8 @@ func (r *Registry) List() []PluginInfo {
 			Version:     plugin.GetVersion(),
 			Description: plugin.GetDescription(),
 			Enabled:     config.Enabled,
-			Health:      plugin.IsHealthy(),
+			Status:      status,
+			Health:      health,
 		})
 	}
 
@@ -237,5 +248,6 @@ type PluginInfo struct {
 	Version     string       `json:"version"`
 	Description string       `json:"description"`
 	Enabled     bool         `json:"enabled"`
+	Status      string       `json:"status"`
 	Health      PluginHealth `json:"health"`
 }

@@ -9,7 +9,18 @@ interface DynamicFormProps {
 }
 
 export function DynamicForm({ schema, onSubmit, loading = false, initialData = {} }: DynamicFormProps) {
-  const [formData, setFormData] = useState<Record<string, any>>(initialData)
+  // Initialize form data with default values from schema
+  const getInitialFormData = () => {
+    const defaultData: Record<string, any> = {}
+    schema.fields.forEach(field => {
+      if (field.default_value !== undefined) {
+        defaultData[field.name] = field.default_value
+      }
+    })
+    return { ...defaultData, ...initialData }
+  }
+  
+  const [formData, setFormData] = useState<Record<string, any>>(() => getInitialFormData())
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const handleInputChange = (fieldName: string, value: any) => {
@@ -38,7 +49,7 @@ export function DynamicForm({ schema, onSubmit, loading = false, initialData = {
       if (field.validation.pattern && value) {
         const regex = new RegExp(field.validation.pattern)
         if (!regex.test(value)) {
-          return field.validation.message || `${field.label} format is invalid`
+          return `${field.label} format is invalid`
         }
       }
 
@@ -50,6 +61,16 @@ export function DynamicForm({ schema, onSubmit, loading = false, initialData = {
         }
         if (field.validation.max !== undefined && numValue > field.validation.max) {
           return `${field.label} must be at most ${field.validation.max}`
+        }
+      }
+
+      // Handle string length validation
+      if (typeof value === 'string') {
+        if (field.validation.min_length !== undefined && value.length < field.validation.min_length) {
+          return `${field.label} must be at least ${field.validation.min_length} characters`
+        }
+        if (field.validation.max_length !== undefined && value.length > field.validation.max_length) {
+          return `${field.label} must be at most ${field.validation.max_length} characters`
         }
       }
     }
@@ -143,7 +164,7 @@ export function DynamicForm({ schema, onSubmit, loading = false, initialData = {
           >
             <option value="">Select {field.label}</option>
             {field.options?.map(option => (
-              <option key={option} value={option}>{option}</option>
+              <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
         )
@@ -203,6 +224,12 @@ export function DynamicForm({ schema, onSubmit, loading = false, initialData = {
               {field.label}
               {field.required && <span className="text-red-500 ml-1">*</span>}
             </label>
+          )}
+          
+          {field.description && (
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {field.description}
+            </p>
           )}
           
           {renderField(field)}

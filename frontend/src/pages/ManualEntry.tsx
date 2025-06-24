@@ -19,7 +19,7 @@ function ManualEntry() {
     try {
       setLoading(true)
       const pluginList = await pluginsApi.getAll()
-      const manualEntryPlugins = pluginList.filter(p => p.supports_manual_entry)
+      const manualEntryPlugins = pluginList.filter(p => p.type === 'manual')
       setPlugins(manualEntryPlugins)
     } catch (error) {
       console.error('Failed to load plugins:', error)

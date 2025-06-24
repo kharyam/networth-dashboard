@@ -101,29 +101,58 @@ export interface ManualEntryField {
   name: string
   type: string
   label: string
+  description?: string
   required: boolean
   placeholder?: string
-  options?: string[]
-  validation?: Record<string, any>
+  default_value?: any
+  options?: FieldOption[]
+  validation?: FieldValidation
+}
+
+export interface FieldOption {
+  value: string
+  label: string
+}
+
+export interface FieldValidation {
+  pattern?: string
+  min?: number
+  max?: number
+  min_length?: number
+  max_length?: number
+  required?: boolean
 }
 
 export interface ManualEntrySchema {
+  name: string
+  description: string
+  version: string
   fields: ManualEntryField[]
-  validation_rules: ValidationRule[]
-  update_frequency: string
-}
-
-export interface ValidationRule {
-  field: string
-  rule: string
-  message: string
 }
 
 export interface Plugin {
   name: string
   type: string
+  data_source: string
+  version: string
+  description: string
+  enabled: boolean
   status: string
-  supports_manual_entry: boolean
+  health: PluginHealth
+}
+
+export interface PluginHealth {
+  status: string
+  last_checked: string
+  message?: string
+  metrics: PluginMetrics
+}
+
+export interface PluginMetrics {
+  request_count: number
+  error_count: number
+  success_rate: number
+  last_update: string
 }
 
 export interface ApiResponse<T> {
