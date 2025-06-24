@@ -314,6 +314,19 @@ func (p *MorganStanleyPlugin) ValidateManualEntry(data map[string]interface{}) V
 		})
 	}
 
+	// Calculate and validate unvested shares
+	unvestedShares := totalShares - vestedShares
+	if unvestedShares < 0 {
+		result.Valid = false
+		result.Errors = append(result.Errors, ValidationError{
+			Field:   "vested_shares",
+			Message: "Vested shares cannot exceed total shares",
+			Code:    "invalid_calculation",
+		})
+	}
+	// Store calculated unvested shares for consistency
+	data["unvested_shares"] = unvestedShares
+
 	// Validate strike price for options
 	if grantType == "stock_option" {
 		strikePrice, err := p.validateNumberField(data, "strike_price", true)
@@ -331,14 +344,45 @@ func (p *MorganStanleyPlugin) ValidateManualEntry(data map[string]interface{}) V
 	}
 
 	// Validate dates
-	if _, err := p.validateDateField(data, "grant_date", true); err != nil {
+	grantDate, err := p.validateDateField(data, "grant_date", true)
+	if err != nil {
 		result.Valid = false
 		result.Errors = append(result.Errors, *err)
 	}
 
-	if _, err := p.validateDateField(data, "vest_start_date", true); err != nil {
+	vestStartDate, err := p.validateDateField(data, "vest_start_date", true)
+	if err != nil {
 		result.Valid = false
 		result.Errors = append(result.Errors, *err)
+	}
+
+	// Validate date logic: grant_date should be <= vest_start_date
+	if !grantDate.IsZero() && !vestStartDate.IsZero() && grantDate.After(vestStartDate) {
+		result.Valid = false
+		result.Errors = append(result.Errors, ValidationError{
+			Field:   "vest_start_date",
+			Message: "Vesting start date cannot be before grant date",
+			Code:    "invalid_date_order",
+		})
+	}
+
+	// Validate dates are not in far future (more than 10 years)
+	maxFutureDate := time.Now().AddDate(10, 0, 0)
+	if !grantDate.IsZero() && grantDate.After(maxFutureDate) {
+		result.Valid = false
+		result.Errors = append(result.Errors, ValidationError{
+			Field:   "grant_date",
+			Message: "Grant date cannot be more than 10 years in the future",
+			Code:    "invalid_date_range",
+		})
+	}
+	if !vestStartDate.IsZero() && vestStartDate.After(maxFutureDate) {
+		result.Valid = false
+		result.Errors = append(result.Errors, ValidationError{
+			Field:   "vest_start_date",
+			Message: "Vesting start date cannot be more than 10 years in the future",
+			Code:    "invalid_date_range",
+		})
 	}
 
 	result.Data = data

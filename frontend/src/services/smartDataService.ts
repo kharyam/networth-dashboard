@@ -190,6 +190,57 @@ class SmartDataService {
       }
     }
 
+    // Validation for equity grants (Morgan Stanley)
+    if (entryType === 'morgan_stanley') {
+      const { grant_type, total_shares, vested_shares, strike_price, grant_date, vest_start_date } = formData
+      
+      // Share math validation
+      if (total_shares && vested_shares) {
+        if (vested_shares > total_shares) {
+          warnings.push('Vested shares cannot exceed total shares')
+        } else {
+          const unvested = total_shares - vested_shares
+          suggestions.push(`Unvested shares: ${unvested.toLocaleString()}`)
+        }
+      }
+
+      // Grant type specific validation
+      if (grant_type === 'stock_option' && !strike_price) {
+        warnings.push('Strike price is required for stock options')
+      }
+      if (grant_type === 'rsu' && strike_price) {
+        suggestions.push('Strike price is not applicable for RSUs (you can leave it empty)')
+      }
+
+      // Date validation
+      if (grant_date && vest_start_date) {
+        const grantDateTime = new Date(grant_date).getTime()
+        const vestStartDateTime = new Date(vest_start_date).getTime()
+        
+        if (grantDateTime > vestStartDateTime) {
+          warnings.push('Vesting start date should be on or after grant date')
+        }
+      }
+
+      // Check for potential duplicates
+      const symbol = formData.company_symbol?.toUpperCase()
+      if (symbol) {
+        const existingGrant = this.existingEntries.find(entry => {
+          if (entry.entry_type !== 'morgan_stanley') return false
+          try {
+            const data = JSON.parse(entry.data_json)
+            return data.company_symbol?.toUpperCase() === symbol && data.grant_type === grant_type
+          } catch {
+            return false
+          }
+        })
+
+        if (existingGrant) {
+          warnings.push(`You already have a ${grant_type} grant for ${symbol}. Consider updating the existing entry.`)
+        }
+      }
+    }
+
     // Validation for real estate
     if (entryType === 'real_estate') {
       const { purchase_price, current_value, outstanding_mortgage } = formData

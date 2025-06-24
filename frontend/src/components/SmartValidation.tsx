@@ -65,11 +65,14 @@ export function SmartValidation({ formData, entryType, className = '' }: SmartVa
             <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5 mr-2" />
             <div className="flex-1">
               <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-1">
-                Potential Issues
+                {validation.warnings.length === 1 ? 'Please Check' : 'Please Check These Items'}
               </h4>
               <ul className="text-sm text-yellow-700 dark:text-yellow-400 space-y-1">
                 {validation.warnings.map((warning, index) => (
-                  <li key={index}>• {warning}</li>
+                  <li key={index} className="flex items-start">
+                    <span className="mr-2">⚠️</span>
+                    <span>{warning}</span>
+                  </li>
                 ))}
               </ul>
             </div>
@@ -90,11 +93,18 @@ export function SmartValidation({ formData, entryType, className = '' }: SmartVa
             )}
             <div className="flex-1">
               <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-1">
-                Smart Insights
+                {validation.suggestions.some(s => s.includes('$')) ? 'Calculations' : 'Helpful Tips'}
               </h4>
               <ul className="text-sm text-blue-700 dark:text-blue-400 space-y-1">
                 {validation.suggestions.map((suggestion, index) => (
-                  <li key={index}>• {suggestion}</li>
+                  <li key={index} className="flex items-start">
+                    <span className="mr-2">
+                      {suggestion.includes('$') ? '💰' : 
+                       suggestion.includes('shares') ? '📊' : 
+                       suggestion.includes('price') ? '💵' : '💡'}
+                    </span>
+                    <span>{suggestion}</span>
+                  </li>
                 ))}
               </ul>
             </div>
