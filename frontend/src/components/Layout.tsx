@@ -7,6 +7,7 @@ import {
   Building, 
   Briefcase,
   Edit3,
+  List,
   Settings,
   Menu,
   X,
@@ -27,6 +28,7 @@ const navigation = [
   { name: 'Equity Comp', href: '/equity', icon: DollarSign },
   { name: 'Real Estate', href: '/real-estate', icon: Building },
   { name: 'Manual Entry', href: '/manual-entry', icon: Edit3 },
+  { name: 'My Entries', href: '/my-entries', icon: List },
   { name: 'Credentials', href: '/credentials', icon: Key },
   { name: 'Settings', href: '/settings', icon: Settings },
 ]

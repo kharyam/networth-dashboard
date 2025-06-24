@@ -11,16 +11,77 @@ import (
 
 // Net worth handlers
 func (s *Server) getNetWorth(c *gin.Context) {
-	// TODO: Implement net worth calculation
+	// Calculate stock holdings value
+	stockValue := 0.0
+	stockQuery := `
+		SELECT COALESCE(SUM(shares_owned * COALESCE(current_price, 0)), 0) 
+		FROM stock_holdings
+	`
+	err := s.db.QueryRow(stockQuery).Scan(&stockValue)
+	if err != nil {
+		stockValue = 0.0
+	}
+
+	// Calculate vested equity value
+	vestedEquityValue := 0.0
+	vestedQuery := `
+		SELECT COALESCE(SUM(vested_shares * COALESCE(current_price, 0)), 0) 
+		FROM equity_grants 
+		WHERE current_price IS NOT NULL
+	`
+	err = s.db.QueryRow(vestedQuery).Scan(&vestedEquityValue)
+	if err != nil {
+		vestedEquityValue = 0.0
+	}
+
+	// Calculate unvested equity value (using current price estimates)
+	unvestedEquityValue := 0.0
+	unvestedQuery := `
+		SELECT COALESCE(SUM(unvested_shares * COALESCE(current_price, 0)), 0) 
+		FROM equity_grants 
+		WHERE current_price IS NOT NULL
+	`
+	err = s.db.QueryRow(unvestedQuery).Scan(&unvestedEquityValue)
+	if err != nil {
+		unvestedEquityValue = 0.0
+	}
+
+	// Calculate real estate equity
+	realEstateEquity := 0.0
+	realEstateQuery := `
+		SELECT COALESCE(SUM(equity), 0) 
+		FROM real_estate_properties
+	`
+	err = s.db.QueryRow(realEstateQuery).Scan(&realEstateEquity)
+	if err != nil {
+		realEstateEquity = 0.0
+	}
+
+	// Calculate total assets and liabilities
+	totalAssets := stockValue + vestedEquityValue + realEstateEquity
+	totalLiabilities := 0.0 // We could add mortgage/debt tracking later
+	
+	// Calculate mortgage liabilities from real estate
+	mortgageQuery := `
+		SELECT COALESCE(SUM(outstanding_mortgage), 0) 
+		FROM real_estate_properties
+	`
+	err = s.db.QueryRow(mortgageQuery).Scan(&totalLiabilities)
+	if err != nil {
+		totalLiabilities = 0.0
+	}
+
+	netWorth := totalAssets - totalLiabilities
+
 	data := gin.H{
-		"net_worth":            250000.00,
-		"total_assets":         300000.00,
-		"total_liabilities":    50000.00,
-		"vested_equity_value":  75000.00,
-		"unvested_equity_value": 25000.00,
-		"stock_holdings_value": 100000.00,
-		"real_estate_equity":   150000.00,
-		"last_updated":         "2024-01-01T00:00:00Z",
+		"net_worth":            netWorth,
+		"total_assets":         totalAssets,
+		"total_liabilities":    totalLiabilities,
+		"vested_equity_value":  vestedEquityValue,
+		"unvested_equity_value": unvestedEquityValue,
+		"stock_holdings_value": stockValue,
+		"real_estate_equity":   realEstateEquity,
+		"last_updated":         "2024-06-24T11:45:00Z",
 	}
 	c.JSON(http.StatusOK, data)
 }
@@ -96,18 +157,181 @@ func (s *Server) getAccountBalances(c *gin.Context) {
 
 // Stock holdings handlers
 func (s *Server) getStockHoldings(c *gin.Context) {
-	// TODO: Implement stock holdings retrieval
+	query := `
+		SELECT h.id, h.account_id, h.symbol, h.company_name, h.shares_owned, 
+		       h.cost_basis, h.current_price, h.data_source, h.created_at,
+		       COALESCE(h.shares_owned * h.current_price, 0) as market_value
+		FROM stock_holdings h
+		ORDER BY h.symbol
+	`
+	
+	rows, err := s.db.Query(query)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch stock holdings",
+		})
+		return
+	}
+	defer rows.Close()
+
+	holdings := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var holding struct {
+			ID           int     `json:"id"`
+			AccountID    int     `json:"account_id"`
+			Symbol       string  `json:"symbol"`
+			CompanyName  *string `json:"company_name"`
+			SharesOwned  float64 `json:"shares_owned"`
+			CostBasis    *float64 `json:"cost_basis"`
+			CurrentPrice *float64 `json:"current_price"`
+			MarketValue  float64 `json:"market_value"`
+			DataSource   string  `json:"data_source"`
+			CreatedAt    string  `json:"created_at"`
+		}
+
+		err := rows.Scan(
+			&holding.ID, &holding.AccountID, &holding.Symbol, &holding.CompanyName,
+			&holding.SharesOwned, &holding.CostBasis, &holding.CurrentPrice,
+			&holding.DataSource, &holding.CreatedAt, &holding.MarketValue,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to scan stock holding",
+			})
+			return
+		}
+
+		holdingMap := map[string]interface{}{
+			"id":            holding.ID,
+			"account_id":    holding.AccountID,
+			"symbol":        holding.Symbol,
+			"company_name":  holding.CompanyName,
+			"shares_owned":  holding.SharesOwned,
+			"cost_basis":    holding.CostBasis,
+			"current_price": holding.CurrentPrice,
+			"market_value":  holding.MarketValue,
+			"data_source":   holding.DataSource,
+			"created_at":    holding.CreatedAt,
+		}
+		holdings = append(holdings, holdingMap)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"stocks":  []gin.H{},
-		"message": "Stock holdings endpoint - to be implemented",
+		"stocks": holdings,
 	})
 }
 
 func (s *Server) getConsolidatedStocks(c *gin.Context) {
-	// TODO: Implement consolidated stock view
+	query := `
+		SELECT symbol, 
+		       COALESCE(MAX(company_name), symbol) as company_name,
+		       SUM(shares_owned) as total_shares,
+		       COALESCE(AVG(NULLIF(current_price, 0)), 0) as current_price,
+		       SUM(shares_owned * COALESCE(current_price, 0)) as total_value,
+		       COALESCE(
+		           SUM(shares_owned * COALESCE(current_price, 0)) - 
+		           SUM(shares_owned * COALESCE(cost_basis, 0)), 
+		           0
+		       ) as unrealized_gains
+		FROM stock_holdings 
+		WHERE shares_owned > 0
+		GROUP BY symbol
+		ORDER BY total_value DESC
+	`
+	
+	rows, err := s.db.Query(query)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch consolidated stocks",
+		})
+		return
+	}
+	defer rows.Close()
+
+	consolidatedStocks := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var stock struct {
+			Symbol           string  `json:"symbol"`
+			CompanyName      string  `json:"company_name"`
+			TotalShares      float64 `json:"total_shares"`
+			CurrentPrice     float64 `json:"current_price"`
+			TotalValue       float64 `json:"total_value"`
+			UnrealizedGains  float64 `json:"unrealized_gains"`
+		}
+
+		err := rows.Scan(
+			&stock.Symbol, &stock.CompanyName, &stock.TotalShares,
+			&stock.CurrentPrice, &stock.TotalValue, &stock.UnrealizedGains,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to scan consolidated stock",
+			})
+			return
+		}
+
+		// Get sources for this symbol
+		sourcesQuery := `
+			SELECT id, account_id, shares_owned, cost_basis, data_source, created_at
+			FROM stock_holdings 
+			WHERE symbol = $1 AND shares_owned > 0
+			ORDER BY data_source
+		`
+		
+		sourceRows, err := s.db.Query(sourcesQuery, stock.Symbol)
+		if err != nil {
+			continue // Skip if can't get sources, but continue with consolidated data
+		}
+		
+		sources := make([]map[string]interface{}, 0)
+		for sourceRows.Next() {
+			var source struct {
+				ID          int     `json:"id"`
+				AccountID   int     `json:"account_id"`
+				SharesOwned float64 `json:"shares_owned"`
+				CostBasis   *float64 `json:"cost_basis"`
+				DataSource  string  `json:"data_source"`
+				CreatedAt   string  `json:"created_at"`
+			}
+			
+			err := sourceRows.Scan(
+				&source.ID, &source.AccountID, &source.SharesOwned,
+				&source.CostBasis, &source.DataSource, &source.CreatedAt,
+			)
+			if err != nil {
+				continue
+			}
+			
+			sourceMap := map[string]interface{}{
+				"id":            source.ID,
+				"account_id":    source.AccountID,
+				"symbol":        stock.Symbol,
+				"company_name":  stock.CompanyName,
+				"shares_owned":  source.SharesOwned,
+				"cost_basis":    source.CostBasis,
+				"current_price": stock.CurrentPrice,
+				"market_value":  source.SharesOwned * stock.CurrentPrice,
+				"data_source":   source.DataSource,
+				"created_at":    source.CreatedAt,
+			}
+			sources = append(sources, sourceMap)
+		}
+		sourceRows.Close()
+
+		stockMap := map[string]interface{}{
+			"symbol":           stock.Symbol,
+			"company_name":     stock.CompanyName,
+			"total_shares":     stock.TotalShares,
+			"total_value":      stock.TotalValue,
+			"current_price":    stock.CurrentPrice,
+			"unrealized_gains": stock.UnrealizedGains,
+			"sources":          sources,
+		}
+		consolidatedStocks = append(consolidatedStocks, stockMap)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"consolidated_stocks": []gin.H{},
-		"message":             "Consolidated stocks endpoint - to be implemented",
+		"consolidated_stocks": consolidatedStocks,
 	})
 }
 
@@ -138,10 +362,69 @@ func (s *Server) deleteStockHolding(c *gin.Context) {
 
 // Equity compensation handlers
 func (s *Server) getEquityGrants(c *gin.Context) {
-	// TODO: Implement equity grants retrieval
+	query := `
+		SELECT id, account_id, grant_type, company_symbol, total_shares, 
+		       vested_shares, unvested_shares, strike_price, grant_date, 
+		       vest_start_date, created_at
+		FROM equity_grants
+		ORDER BY grant_date DESC
+	`
+	
+	rows, err := s.db.Query(query)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch equity grants",
+		})
+		return
+	}
+	defer rows.Close()
+
+	grants := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var grant struct {
+			ID            int      `json:"id"`
+			AccountID     int      `json:"account_id"`
+			GrantType     string   `json:"grant_type"`
+			CompanySymbol string   `json:"company_symbol"`
+			TotalShares   float64  `json:"total_shares"`
+			VestedShares  float64  `json:"vested_shares"`
+			UnvestedShares float64 `json:"unvested_shares"`
+			StrikePrice   *float64 `json:"strike_price"`
+			GrantDate     string   `json:"grant_date"`
+			VestStartDate string   `json:"vest_start_date"`
+			CreatedAt     string   `json:"created_at"`
+		}
+
+		err := rows.Scan(
+			&grant.ID, &grant.AccountID, &grant.GrantType, &grant.CompanySymbol,
+			&grant.TotalShares, &grant.VestedShares, &grant.UnvestedShares,
+			&grant.StrikePrice, &grant.GrantDate, &grant.VestStartDate, &grant.CreatedAt,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to scan equity grant",
+			})
+			return
+		}
+
+		grantMap := map[string]interface{}{
+			"id":              grant.ID,
+			"account_id":      grant.AccountID,
+			"grant_type":      grant.GrantType,
+			"company_symbol":  grant.CompanySymbol,
+			"total_shares":    grant.TotalShares,
+			"vested_shares":   grant.VestedShares,
+			"unvested_shares": grant.UnvestedShares,
+			"strike_price":    grant.StrikePrice,
+			"grant_date":      grant.GrantDate,
+			"vest_start_date": grant.VestStartDate,
+			"created_at":      grant.CreatedAt,
+		}
+		grants = append(grants, grantMap)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"equity_grants": []gin.H{},
-		"message":       "Equity grants endpoint - to be implemented",
+		"equity_grants": grants,
 	})
 }
 
@@ -182,10 +465,80 @@ func (s *Server) deleteEquityGrant(c *gin.Context) {
 
 // Real estate handlers
 func (s *Server) getRealEstate(c *gin.Context) {
-	// TODO: Implement real estate retrieval
+	query := `
+		SELECT id, account_id, property_type, property_name, purchase_price, 
+		       current_value, outstanding_mortgage, equity, purchase_date, 
+		       property_size_sqft, lot_size_acres, rental_income_monthly, 
+		       property_tax_annual, notes, created_at
+		FROM real_estate_properties
+		ORDER BY property_name
+	`
+	
+	rows, err := s.db.Query(query)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch real estate properties",
+		})
+		return
+	}
+	defer rows.Close()
+
+	properties := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var property struct {
+			ID                    int      `json:"id"`
+			AccountID             int      `json:"account_id"`
+			PropertyType          string   `json:"property_type"`
+			PropertyName          string   `json:"property_name"`
+			PurchasePrice         float64  `json:"purchase_price"`
+			CurrentValue          float64  `json:"current_value"`
+			OutstandingMortgage   float64  `json:"outstanding_mortgage"`
+			Equity                float64  `json:"equity"`
+			PurchaseDate          string   `json:"purchase_date"`
+			PropertySizeSqft      *float64 `json:"property_size_sqft"`
+			LotSizeAcres          *float64 `json:"lot_size_acres"`
+			RentalIncomeMonthly   *float64 `json:"rental_income_monthly"`
+			PropertyTaxAnnual     *float64 `json:"property_tax_annual"`
+			Notes                 *string  `json:"notes"`
+			CreatedAt             string   `json:"created_at"`
+		}
+
+		err := rows.Scan(
+			&property.ID, &property.AccountID, &property.PropertyType, &property.PropertyName,
+			&property.PurchasePrice, &property.CurrentValue, &property.OutstandingMortgage,
+			&property.Equity, &property.PurchaseDate, &property.PropertySizeSqft,
+			&property.LotSizeAcres, &property.RentalIncomeMonthly, &property.PropertyTaxAnnual,
+			&property.Notes, &property.CreatedAt,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to scan real estate property",
+			})
+			return
+		}
+
+		propertyMap := map[string]interface{}{
+			"id":                      property.ID,
+			"account_id":              property.AccountID,
+			"property_type":           property.PropertyType,
+			"property_name":           property.PropertyName,
+			"purchase_price":          property.PurchasePrice,
+			"current_value":           property.CurrentValue,
+			"outstanding_mortgage":    property.OutstandingMortgage,
+			"equity":                  property.Equity,
+			"purchase_date":           property.PurchaseDate,
+			"property_size_sqft":      property.PropertySizeSqft,
+			"lot_size_acres":          property.LotSizeAcres,
+			"rental_income_monthly":   property.RentalIncomeMonthly,
+			"property_tax_annual":     property.PropertyTaxAnnual,
+			"notes":                   property.Notes,
+			"created_at":              property.CreatedAt,
+		}
+		properties = append(properties, propertyMap)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"real_estate": []gin.H{},
-		"message":     "Real estate endpoint - to be implemented",
+		"real_estate": properties,
 	})
 }
 
@@ -308,10 +661,130 @@ func (s *Server) getPluginHealth(c *gin.Context) {
 
 // Manual entry handlers
 func (s *Server) getManualEntries(c *gin.Context) {
-	// TODO: Implement manual entries retrieval
+	entryType := c.Query("type") // Optional filter by entry type
+	
+	// Build unified query to get manual entries from all relevant tables
+	query := `
+		SELECT 'computershare' as entry_type, 
+		       sh.id, sh.account_id, sh.created_at, sh.created_at as updated_at,
+		       json_build_object(
+		           'symbol', sh.symbol,
+		           'company_name', sh.company_name,
+		           'shares_owned', sh.shares_owned,
+		           'cost_basis', sh.cost_basis,
+		           'current_price', sh.current_price
+		       ) as data_json,
+		       a.account_name, a.institution
+		FROM stock_holdings sh
+		LEFT JOIN accounts a ON sh.account_id = a.id
+		WHERE sh.data_source = 'computershare'
+		
+		UNION ALL
+		
+		SELECT 'morgan_stanley' as entry_type,
+		       eg.id, eg.account_id, eg.created_at, eg.created_at as updated_at,
+		       json_build_object(
+		           'grant_type', eg.grant_type,
+		           'company_symbol', eg.company_symbol,
+		           'total_shares', eg.total_shares,
+		           'vested_shares', eg.vested_shares,
+		           'unvested_shares', eg.unvested_shares,
+		           'strike_price', eg.strike_price,
+		           'grant_date', eg.grant_date,
+		           'vest_start_date', eg.vest_start_date,
+		           'current_price', eg.current_price
+		       ) as data_json,
+		       a.account_name, a.institution
+		FROM equity_grants eg
+		LEFT JOIN accounts a ON eg.account_id = a.id
+		WHERE eg.created_at IS NOT NULL
+		
+		UNION ALL
+		
+		SELECT 'real_estate' as entry_type,
+		       re.id, re.account_id, re.created_at, re.created_at as updated_at,
+		       json_build_object(
+		           'property_type', re.property_type,
+		           'property_name', re.property_name,
+		           'purchase_price', re.purchase_price,
+		           'current_value', re.current_value,
+		           'outstanding_mortgage', re.outstanding_mortgage,
+		           'equity', re.equity,
+		           'purchase_date', re.purchase_date,
+		           'property_size_sqft', re.property_size_sqft,
+		           'lot_size_acres', re.lot_size_acres,
+		           'rental_income_monthly', re.rental_income_monthly,
+		           'property_tax_annual', re.property_tax_annual,
+		           'notes', re.notes
+		       ) as data_json,
+		       a.account_name, a.institution
+		FROM real_estate_properties re
+		LEFT JOIN accounts a ON re.account_id = a.id
+		WHERE re.created_at IS NOT NULL
+	`
+	
+	args := []interface{}{}
+	
+	// Add filter if entry type is specified
+	if entryType != "" {
+		query = `
+			SELECT * FROM (` + query + `) as all_entries 
+			WHERE entry_type = $1
+			ORDER BY created_at DESC
+		`
+		args = append(args, entryType)
+	} else {
+		query += " ORDER BY created_at DESC"
+	}
+	
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch manual entries",
+		})
+		return
+	}
+	defer rows.Close()
+
+	entries := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var entry struct {
+			EntryType   string  `json:"entry_type"`
+			ID          int     `json:"id"`
+			AccountID   int     `json:"account_id"`
+			CreatedAt   string  `json:"created_at"`
+			UpdatedAt   string  `json:"updated_at"`
+			DataJSON    string  `json:"data_json"`
+			AccountName *string `json:"account_name"`
+			Institution *string `json:"institution"`
+		}
+
+		err := rows.Scan(
+			&entry.EntryType, &entry.ID, &entry.AccountID, &entry.CreatedAt, &entry.UpdatedAt,
+			&entry.DataJSON, &entry.AccountName, &entry.Institution,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to scan manual entry",
+			})
+			return
+		}
+
+		entryMap := map[string]interface{}{
+			"id":           entry.ID,
+			"account_id":   entry.AccountID,
+			"entry_type":   entry.EntryType,
+			"data_json":    entry.DataJSON,
+			"created_at":   entry.CreatedAt,
+			"updated_at":   entry.UpdatedAt,
+			"account_name": entry.AccountName,
+			"institution":  entry.Institution,
+		}
+		entries = append(entries, entryMap)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"manual_entries": []gin.H{},
-		"message":        "Manual entries endpoint - to be implemented",
+		"manual_entries": entries,
 	})
 }
 
