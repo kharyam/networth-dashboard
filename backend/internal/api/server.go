@@ -7,6 +7,8 @@ import (
 	"net/http"
 
 	"networth-dashboard/internal/config"
+	"networth-dashboard/internal/credentials"
+	"networth-dashboard/internal/handlers"
 	"networth-dashboard/internal/plugins"
 
 	"github.com/gin-contrib/cors"
@@ -14,18 +16,26 @@ import (
 )
 
 type Server struct {
-	config        *config.Config
-	router        *gin.Engine
-	db            *sql.DB
-	pluginManager *plugins.Manager
-	httpServer    *http.Server
+	config            *config.Config
+	router            *gin.Engine
+	db                *sql.DB
+	pluginManager     *plugins.Manager
+	credentialManager *credentials.Manager
+	httpServer        *http.Server
 }
 
 func NewServer(cfg *config.Config, db *sql.DB, pluginManager *plugins.Manager) *Server {
+	// Initialize credential manager
+	credentialManager, err := credentials.NewManager(db, cfg.Security.CredentialKey)
+	if err != nil {
+		log.Fatal("Failed to initialize credential manager:", err)
+	}
+
 	server := &Server{
-		config:        cfg,
-		db:            db,
-		pluginManager: pluginManager,
+		config:            cfg,
+		db:                db,
+		pluginManager:     pluginManager,
+		credentialManager: credentialManager,
 	}
 
 	server.setupRouter()
@@ -102,6 +112,10 @@ func (s *Server) setupRouter() {
 		api.PUT("/manual-entries/:id", s.updateManualEntry)
 		api.DELETE("/manual-entries/:id", s.deleteManualEntry)
 		api.GET("/manual-entries/schemas", s.getManualEntrySchemas)
+
+		// Credential management endpoints
+		credentialHandler := handlers.NewCredentialHandler(s.credentialManager)
+		handlers.RegisterCredentialRoutes(api, credentialHandler)
 	}
 }
 

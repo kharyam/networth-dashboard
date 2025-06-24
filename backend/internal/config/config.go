@@ -31,10 +31,11 @@ type ServerConfig struct {
 }
 
 type SecurityConfig struct {
-	JWTSecret       string
-	EncryptionKey   string
-	RateLimitEnable bool
-	RateLimitRPS    int
+	JWTSecret         string
+	EncryptionKey     string
+	CredentialKey     string
+	RateLimitEnable   bool
+	RateLimitRPS      int
 }
 
 func Load() (*Config, error) {
@@ -61,6 +62,7 @@ func Load() (*Config, error) {
 		Security: SecurityConfig{
 			JWTSecret:       getEnvOrDefault("JWT_SECRET", "your-secret-key"),
 			EncryptionKey:   getEnvOrDefault("ENCRYPTION_KEY", "your-encryption-key-32-chars-long"),
+			CredentialKey:   getEnvOrDefault("CREDENTIAL_KEY", "your-credential-encryption-key-32-chars"),
 			RateLimitEnable: true,
 			RateLimitRPS:    rateLimitRPS,
 		},

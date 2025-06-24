@@ -37,6 +37,7 @@ services:
       - PORT=8080
       - JWT_SECRET=your-secret-key-change-in-production
       - ENCRYPTION_KEY=your-encryption-key-32-chars-long-change-in-prod
+      - CREDENTIAL_KEY=your-credential-encryption-key-32-chars-change-prod
     ports:
       - "8080:8080"
     depends_on:

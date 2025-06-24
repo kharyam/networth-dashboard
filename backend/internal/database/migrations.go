@@ -1,6 +1,23 @@
 package database
 
 const (
+	createCredentialsTable = `
+		CREATE TABLE IF NOT EXISTS credentials (
+			id SERIAL PRIMARY KEY,
+			service_type VARCHAR(50) NOT NULL,
+			credential_type VARCHAR(20) NOT NULL,
+			name VARCHAR(100) NOT NULL,
+			encrypted_data TEXT NOT NULL,
+			is_active BOOLEAN DEFAULT true,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			last_used TIMESTAMP,
+			UNIQUE(service_type, is_active) DEFERRABLE INITIALLY DEFERRED
+		);
+		
+		CREATE INDEX IF NOT EXISTS idx_credentials_service_type ON credentials(service_type);
+		CREATE INDEX IF NOT EXISTS idx_credentials_active ON credentials(is_active);`
+
 	createDataSourcesTable = `
 		CREATE TABLE IF NOT EXISTS data_sources (
 			id SERIAL PRIMARY KEY,

@@ -11,7 +11,8 @@ import {
   Menu,
   X,
   Sun,
-  Moon
+  Moon,
+  Key
 } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
 
@@ -26,6 +27,7 @@ const navigation = [
   { name: 'Equity Comp', href: '/equity', icon: DollarSign },
   { name: 'Real Estate', href: '/real-estate', icon: Building },
   { name: 'Manual Entry', href: '/manual-entry', icon: Edit3 },
+  { name: 'Credentials', href: '/credentials', icon: Key },
   { name: 'Settings', href: '/settings', icon: Settings },
 ]
 

@@ -7,6 +7,7 @@ import Stocks from '@/pages/Stocks'
 import Equity from '@/pages/Equity'
 import RealEstate from '@/pages/RealEstate'
 import ManualEntry from '@/pages/ManualEntry'
+import Credentials from '@/pages/Credentials'
 import Settings from '@/pages/Settings'
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
           <Route path="/equity" element={<Equity />} />
           <Route path="/real-estate" element={<RealEstate />} />
           <Route path="/manual-entry" element={<ManualEntry />} />
+          <Route path="/credentials" element={<Credentials />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </Layout>

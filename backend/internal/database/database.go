@@ -43,6 +43,7 @@ func Initialize(cfg config.DatabaseConfig) (*DB, error) {
 func (db *DB) runMigrations() error {
 	// Create tables if they don't exist
 	migrations := []string{
+		createCredentialsTable,
 		createDataSourcesTable,
 		createAccountsTable,
 		createAccountBalancesTable,
