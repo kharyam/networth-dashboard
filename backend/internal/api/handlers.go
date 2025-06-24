@@ -805,11 +805,62 @@ func (s *Server) updateManualEntry(c *gin.Context) {
 }
 
 func (s *Server) deleteManualEntry(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
-	// TODO: Implement manual entry deletion
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid entry ID",
+		})
+		return
+	}
+	
+	entryType := c.Query("type")
+	if entryType == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Entry type is required",
+		})
+		return
+	}
+	
+	var query string
+	switch entryType {
+	case "computershare":
+		query = "DELETE FROM stock_holdings WHERE id = $1 AND data_source = 'computershare'"
+	case "morgan_stanley":
+		query = "DELETE FROM equity_grants WHERE id = $1"
+	case "real_estate":
+		query = "DELETE FROM real_estate_properties WHERE id = $1"
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid entry type",
+		})
+		return
+	}
+	
+	result, err := s.db.Exec(query, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to delete entry",
+		})
+		return
+	}
+	
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check deletion result",
+		})
+		return
+	}
+	
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Entry not found",
+		})
+		return
+	}
+	
 	c.JSON(http.StatusOK, gin.H{
-		"entry_id": id,
-		"message":  "Delete manual entry endpoint - to be implemented",
+		"message": "Entry deleted successfully",
 	})
 }
 

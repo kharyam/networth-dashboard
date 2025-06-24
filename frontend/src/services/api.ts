@@ -154,8 +154,8 @@ export const manualEntriesApi = {
   update: (id: number, entry: any): Promise<any> =>
     api.put(`/manual-entries/${id}`, entry).then(res => res.data),
   
-  delete: (id: number): Promise<void> =>
-    api.delete(`/manual-entries/${id}`).then(() => undefined),
+  delete: (id: number, entryType: string): Promise<void> =>
+    api.delete(`/manual-entries/${id}?type=${entryType}`).then(() => undefined),
 }
 
 export default api

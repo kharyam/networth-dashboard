@@ -109,7 +109,7 @@ function Layout({ children }: LayoutProps) {
       {/* Main layout container with flexbox */}
       <div className="flex pt-16">
         {/* Sidebar */}
-        <aside className={`w-64 bg-white dark:bg-gray-800 shadow-lg transform transition-transform duration-300 ease-in-out lg:transform-none lg:shadow-none lg:border-r lg:border-gray-200 dark:lg:border-gray-700 ${
+        <aside className={`w-64 bg-white dark:bg-gray-800 shadow-lg transform transition-transform duration-300 ease-in-out lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:pt-16 lg:shadow-none lg:border-r lg:border-gray-200 dark:lg:border-gray-700 flex flex-col ${
           sidebarOpen ? 'translate-x-0 fixed inset-y-0 left-0 z-50 pt-16' : '-translate-x-full lg:translate-x-0'
         }`}>
           {/* Logo in sidebar for desktop */}
@@ -129,7 +129,7 @@ function Layout({ children }: LayoutProps) {
             </button>
           </div>
 
-          <nav className="px-3 mt-6">
+          <nav className="px-3 mt-6 overflow-y-auto flex-1">
             <div className="space-y-1">
               {navigation.map((item) => {
                 const isActive = location.pathname === item.href
@@ -160,7 +160,7 @@ function Layout({ children }: LayoutProps) {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 lg:min-h-screen text-gray-900 dark:text-white">
+        <main className="flex-1 lg:min-h-screen lg:ml-64 text-gray-900 dark:text-white">
           <div className="px-4 sm:px-6 lg:px-8 mt-6 pb-6">
             {children}
           </div>
