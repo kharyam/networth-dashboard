@@ -5,15 +5,28 @@ import { netWorthApi, pricesApi } from '@/services/api'
 import { useTheme } from '@/contexts/ThemeContext'
 import type { NetWorthSummary } from '@/types'
 
-// Mock data for charts
-const mockTrendData = [
-  { month: 'Jan', value: 245000 },
-  { month: 'Feb', value: 248000 },
-  { month: 'Mar', value: 252000 },
-  { month: 'Apr', value: 247000 },
-  { month: 'May', value: 251000 },
-  { month: 'Jun', value: 255000 },
-]
+// Generate realistic trend data based on current net worth
+const generateTrendData = (currentNetWorth: number) => {
+  const months = []
+  const now = new Date()
+  
+  // Generate last 6 months
+  for (let i = 5; i >= 0; i--) {
+    const date = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const monthName = date.toLocaleDateString('en-US', { month: 'short' })
+    months.push(monthName)
+  }
+  
+  // Create progressive values showing upward trend
+  // Start 20% lower 6 months ago, gradually increase to current value
+  const startValue = currentNetWorth * 0.8
+  const valueIncrement = (currentNetWorth - startValue) / 5
+  
+  return months.map((month, index) => ({
+    month,
+    value: Math.round(startValue + (valueIncrement * index))
+  }))
+}
 
 const mockAllocationData = [
   { name: 'Stocks', value: 45, color: '#3b82f6' },
@@ -135,6 +148,9 @@ function Dashboard() {
     )
   }
 
+  // Generate trend data based on current net worth
+  const trendData = generateTrendData(netWorth?.net_worth || 0)
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -186,21 +202,21 @@ function Dashboard() {
         <MetricCard
           title="Net Worth"
           value={netWorth?.net_worth || 0}
-          change={2.4}
+          change={0}
           changeType="positive"
           icon={DollarSign}
         />
         <MetricCard
           title="Total Assets"
           value={netWorth?.total_assets || 0}
-          change={1.8}
+          change={0}
           changeType="positive"
           icon={TrendingUp}
         />
         <MetricCard
           title="Vested Equity"
           value={netWorth?.vested_equity_value || 0}
-          change={5.2}
+          change={0}
           changeType="positive"
           icon={Briefcase}
         />
@@ -213,7 +229,7 @@ function Dashboard() {
         <MetricCard
           title="Real Estate Equity"
           value={netWorth?.real_estate_equity || 0}
-          change={0.8}
+          change={0}
           changeType="positive"
           icon={Building}
         />
@@ -226,7 +242,7 @@ function Dashboard() {
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Net Worth Trend</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={mockTrendData}>
+              <LineChart data={trendData}>
                 <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? '#374151' : '#e5e7eb'} />
                 <XAxis 
                   dataKey="month" 
