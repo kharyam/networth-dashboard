@@ -77,7 +77,7 @@ const (
 	createStockHoldingsTable = `
 		CREATE TABLE IF NOT EXISTS stock_holdings (
 			id SERIAL PRIMARY KEY,
-			account_id VARCHAR(100) NOT NULL,
+			account_id INTEGER REFERENCES accounts(id),
 			symbol VARCHAR(10) NOT NULL,
 			company_name VARCHAR(200),
 			shares_owned DECIMAL(15,6) NOT NULL,
@@ -87,7 +87,7 @@ const (
 			data_source VARCHAR(20) DEFAULT 'manual',
 			last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			UNIQUE(symbol, data_source)
+			UNIQUE(account_id, symbol)
 		);`
 
 	createStockPricesTable = `
@@ -103,7 +103,7 @@ const (
 	createEquityGrantsTable = `
 		CREATE TABLE IF NOT EXISTS equity_grants (
 			id SERIAL PRIMARY KEY,
-			account_id VARCHAR(100) NOT NULL,
+			account_id INTEGER REFERENCES accounts(id),
 			grant_type VARCHAR(50) NOT NULL,
 			company_symbol VARCHAR(10) NOT NULL,
 			total_shares DECIMAL(15,6) NOT NULL,
@@ -133,7 +133,7 @@ const (
 	createRealEstatePropertiesTable = `
 		CREATE TABLE IF NOT EXISTS real_estate_properties (
 			id SERIAL PRIMARY KEY,
-			account_id VARCHAR(100) NOT NULL,
+			account_id INTEGER REFERENCES accounts(id),
 			property_type VARCHAR(50) NOT NULL,
 			property_name VARCHAR(200) NOT NULL,
 			purchase_price DECIMAL(15,2) NOT NULL,

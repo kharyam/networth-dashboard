@@ -12,6 +12,7 @@ import (
 type MorganStanleyPlugin struct {
 	db          *sql.DB
 	name        string
+	accountID   int
 	lastUpdated time.Time
 }
 
@@ -50,6 +51,19 @@ func (p *MorganStanleyPlugin) GetDescription() string {
 
 // Initialize initializes the plugin with configuration
 func (p *MorganStanleyPlugin) Initialize(config PluginConfig) error {
+	// Get or create the plugin account
+	accountID, err := GetOrCreatePluginAccount(
+		p.db,
+		"Morgan Stanley Equity Compensation",
+		"equity",
+		"Morgan Stanley",
+		"manual",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to initialize Morgan Stanley account: %w", err)
+	}
+	
+	p.accountID = accountID
 	return nil
 }
 
@@ -78,7 +92,7 @@ func (p *MorganStanleyPlugin) IsHealthy() PluginHealth {
 func (p *MorganStanleyPlugin) GetAccounts() ([]Account, error) {
 	return []Account{
 		{
-			ID:          "morgan-stanley-equity",
+			ID:          fmt.Sprintf("%d", p.accountID),
 			Name:        "Morgan Stanley Equity Compensation",
 			Type:        "equity",
 			Institution: "Morgan Stanley",
@@ -94,18 +108,18 @@ func (p *MorganStanleyPlugin) GetBalances() ([]Balance, error) {
 	query := `
 		SELECT COALESCE(SUM(vested_shares * current_price), 0) as vested_value
 		FROM equity_grants 
-		WHERE account_id = 'morgan-stanley-equity'
+		WHERE account_id = $1
 	`
 	
 	var vestedValue float64
-	err := p.db.QueryRow(query).Scan(&vestedValue)
+	err := p.db.QueryRow(query, p.accountID).Scan(&vestedValue)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate vested equity value: %w", err)
 	}
 
 	return []Balance{
 		{
-			AccountID:  "morgan-stanley-equity",
+			AccountID:  fmt.Sprintf("%d", p.accountID),
 			Amount:     vestedValue,
 			Currency:   "USD",
 			AsOfDate:   time.Now(),
@@ -347,22 +361,17 @@ func (p *MorganStanleyPlugin) ProcessManualEntry(data map[string]interface{}) er
 	// Get current market price (placeholder - would be fetched from market data API)
 	// currentPrice := 300.0
 
-	// Insert or update equity grant
+	// Insert equity grant
 	query := `
 		INSERT INTO equity_grants (
 			account_id, grant_type, company_symbol, total_shares, vested_shares, 
 			unvested_shares, strike_price, grant_date, vest_start_date
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		ON CONFLICT (account_id, grant_type, company_symbol, grant_date) DO UPDATE SET
-			total_shares = EXCLUDED.total_shares,
-			vested_shares = EXCLUDED.vested_shares,
-			unvested_shares = EXCLUDED.unvested_shares,
-			strike_price = EXCLUDED.strike_price
 	`
 
 	unvestedShares := totalShares - vestedShares
 	_, err := p.db.Exec(query,
-		"morgan-stanley-equity", grantType, symbol, totalShares, vestedShares,
+		p.accountID, grantType, symbol, totalShares, vestedShares,
 		unvestedShares, strikePrice, grantDate, vestStartDate,
 	)
 

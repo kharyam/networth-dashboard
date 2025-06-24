@@ -12,6 +12,7 @@ import (
 type ComputersharePlugin struct {
 	db          *sql.DB
 	name        string
+	accountID   int
 	lastUpdated time.Time
 }
 
@@ -50,7 +51,19 @@ func (p *ComputersharePlugin) GetDescription() string {
 
 // Initialize initializes the plugin with configuration
 func (p *ComputersharePlugin) Initialize(config PluginConfig) error {
-	// No special initialization needed for manual entry
+	// Get or create the plugin account
+	accountID, err := GetOrCreatePluginAccount(
+		p.db,
+		"Computershare Holdings",
+		"investment",
+		"Computershare",
+		"manual",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to initialize Computershare account: %w", err)
+	}
+	
+	p.accountID = accountID
 	return nil
 }
 
@@ -79,7 +92,7 @@ func (p *ComputersharePlugin) IsHealthy() PluginHealth {
 func (p *ComputersharePlugin) GetAccounts() ([]Account, error) {
 	return []Account{
 		{
-			ID:          "computershare-main",
+			ID:          fmt.Sprintf("%d", p.accountID),
 			Name:        "Computershare Holdings",
 			Type:        "investment",
 			Institution: "Computershare",
@@ -95,18 +108,18 @@ func (p *ComputersharePlugin) GetBalances() ([]Balance, error) {
 	query := `
 		SELECT COALESCE(SUM(shares_owned * current_price), 0) as total_value
 		FROM stock_holdings 
-		WHERE data_source = 'computershare'
+		WHERE account_id = $1
 	`
 	
 	var totalValue float64
-	err := p.db.QueryRow(query).Scan(&totalValue)
+	err := p.db.QueryRow(query, p.accountID).Scan(&totalValue)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate balance: %w", err)
 	}
 
 	return []Balance{
 		{
-			AccountID:  "computershare-main",
+			AccountID:  fmt.Sprintf("%d", p.accountID),
 			Amount:     totalValue,
 			Currency:   "USD",
 			AsOfDate:   time.Now(),
@@ -325,33 +338,24 @@ func (p *ComputersharePlugin) ProcessManualEntry(data map[string]interface{}) er
 	// Get current market price (placeholder - would integrate with market data API)
 	currentPrice := 150.0 // This would be fetched from a market data API
 
-	// Insert or update stock holding
+	// Insert stock holding
 	query := `
 		INSERT INTO stock_holdings (
 			account_id, symbol, company_name, shares_owned, cost_basis, 
-			current_price, market_value, data_source, last_updated
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		ON CONFLICT (symbol, data_source) DO UPDATE SET
-			shares_owned = EXCLUDED.shares_owned,
-			cost_basis = EXCLUDED.cost_basis,
-			current_price = EXCLUDED.current_price,
-			market_value = EXCLUDED.market_value,
-			last_updated = EXCLUDED.last_updated
+			current_price, data_source
+		) VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
 
-	marketValue := shares * currentPrice
-	now := time.Now()
-
 	_, err := p.db.Exec(query,
-		"computershare-main", symbol, companyName, shares, costBasis,
-		currentPrice, marketValue, "computershare", now,
+		p.accountID, symbol, companyName, shares, costBasis,
+		currentPrice, "computershare",
 	)
 
 	if err != nil {
 		return fmt.Errorf("failed to save stock holding: %w", err)
 	}
 
-	p.lastUpdated = now
+	p.lastUpdated = time.Now()
 	return nil
 }
 

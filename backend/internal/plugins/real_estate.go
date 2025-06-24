@@ -12,6 +12,7 @@ import (
 type RealEstatePlugin struct {
 	db          *sql.DB
 	name        string
+	accountID   int
 	lastUpdated time.Time
 }
 
@@ -50,6 +51,19 @@ func (p *RealEstatePlugin) GetDescription() string {
 
 // Initialize initializes the plugin with configuration
 func (p *RealEstatePlugin) Initialize(config PluginConfig) error {
+	// Get or create the plugin account
+	accountID, err := GetOrCreatePluginAccount(
+		p.db,
+		"Real Estate Portfolio",
+		"real_estate",
+		"Manual Entry",
+		"manual",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to initialize Real Estate account: %w", err)
+	}
+	
+	p.accountID = accountID
 	return nil
 }
 
@@ -78,7 +92,7 @@ func (p *RealEstatePlugin) IsHealthy() PluginHealth {
 func (p *RealEstatePlugin) GetAccounts() ([]Account, error) {
 	return []Account{
 		{
-			ID:          "real-estate-portfolio",
+			ID:          fmt.Sprintf("%d", p.accountID),
 			Name:        "Real Estate Portfolio",
 			Type:        "real_estate",
 			Institution: "Manual Entry",
@@ -94,18 +108,18 @@ func (p *RealEstatePlugin) GetBalances() ([]Balance, error) {
 	query := `
 		SELECT COALESCE(SUM(current_value), 0) as total_value
 		FROM real_estate_properties 
-		WHERE account_id = 'real-estate-portfolio'
+		WHERE account_id = $1
 	`
 	
 	var totalValue float64
-	err := p.db.QueryRow(query).Scan(&totalValue)
+	err := p.db.QueryRow(query, p.accountID).Scan(&totalValue)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate real estate value: %w", err)
 	}
 
 	return []Balance{
 		{
-			AccountID:  "real-estate-portfolio",
+			AccountID:  fmt.Sprintf("%d", p.accountID),
 			Amount:     totalValue,
 			Currency:   "USD",
 			AsOfDate:   time.Now(),
@@ -395,39 +409,26 @@ func (p *RealEstatePlugin) ProcessManualEntry(data map[string]interface{}) error
 	// Calculate equity
 	equity := currentValue - outstandingMortgage
 
-	// Insert or update real estate property
+	// Insert real estate property
 	query := `
 		INSERT INTO real_estate_properties (
 			account_id, property_type, property_name, purchase_price, current_value, 
 			outstanding_mortgage, equity, purchase_date, property_size_sqft, 
-			lot_size_acres, rental_income_monthly, property_tax_annual, notes, last_updated
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		ON CONFLICT (account_id, property_name) DO UPDATE SET
-			property_type = EXCLUDED.property_type,
-			purchase_price = EXCLUDED.purchase_price,
-			current_value = EXCLUDED.current_value,
-			outstanding_mortgage = EXCLUDED.outstanding_mortgage,
-			equity = EXCLUDED.equity,
-			property_size_sqft = EXCLUDED.property_size_sqft,
-			lot_size_acres = EXCLUDED.lot_size_acres,
-			rental_income_monthly = EXCLUDED.rental_income_monthly,
-			property_tax_annual = EXCLUDED.property_tax_annual,
-			notes = EXCLUDED.notes,
-			last_updated = EXCLUDED.last_updated
+			lot_size_acres, rental_income_monthly, property_tax_annual, notes
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 	`
 
-	now := time.Now()
 	_, err := p.db.Exec(query,
-		"real-estate-portfolio", propertyType, propertyName, purchasePrice, currentValue,
+		p.accountID, propertyType, propertyName, purchasePrice, currentValue,
 		outstandingMortgage, equity, purchaseDate, propertySizeSqft,
-		lotSizeAcres, rentalIncomeMonthly, propertyTaxAnnual, notes, now,
+		lotSizeAcres, rentalIncomeMonthly, propertyTaxAnnual, notes,
 	)
 
 	if err != nil {
 		return fmt.Errorf("failed to save real estate property: %w", err)
 	}
 
-	p.lastUpdated = now
+	p.lastUpdated = time.Now()
 	return nil
 }
 
