@@ -32,7 +32,7 @@ const generateTrendData = (currentNetWorth: number) => {
 const generateAllocationData = (netWorth: NetWorthSummary | null) => {
   if (!netWorth || netWorth.total_assets === 0) {
     return [
-      { name: 'No Data', value: 100, color: '#9ca3af' }
+      { name: 'No Data', value: 100, amount: 0, color: '#9ca3af' }
     ]
   }
 
@@ -75,7 +75,7 @@ const generateAllocationData = (netWorth: NetWorthSummary | null) => {
   const validCategories = allocation.filter(item => item.value > 0)
   
   if (validCategories.length === 0) {
-    return [{ name: 'No Data', value: 100, color: '#9ca3af' }]
+    return [{ name: 'No Data', value: 100, amount: 0, color: '#9ca3af' }]
   }
 
   // Recalculate percentages to ensure they add up to 100%
@@ -94,11 +94,22 @@ const generateAllocationData = (netWorth: NetWorthSummary | null) => {
     return {
       name: item.name,
       value: percentage,
+      amount: item.value, // Preserve original dollar amount for tooltips
       color: item.color
     }
   })
 
   return result
+}
+
+// Format currency for tooltips
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)
 }
 
 function MetricCard({ 
@@ -364,12 +375,15 @@ function Dashboard() {
                   ))}
                 </Pie>
                 <Tooltip 
-                  formatter={(value: number) => [`${value}%`, 'Allocation']}
+                  formatter={(value: number, name: string, props: any) => [
+                    `${value}% (${formatCurrency(props.payload.amount)})`, 
+                    name
+                  ]}
                   contentStyle={{
                     backgroundColor: isDarkMode ? '#1f2937' : '#ffffff',
                     border: `1px solid ${isDarkMode ? '#374151' : '#e5e7eb'}`,
                     borderRadius: '8px',
-                    color: isDarkMode ? '#ffffff' : '#000000'
+                    color: `${isDarkMode ? '#ffffff' : '#000000'} !important`
                   }}
                 />
               </RechartsPieChart>
