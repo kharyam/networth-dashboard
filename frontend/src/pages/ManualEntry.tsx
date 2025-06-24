@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { pluginsApi } from '../services/api'
 import { Plugin, ManualEntrySchema } from '../types'
-import DynamicForm from '../components/DynamicForm'
+import SmartDynamicForm from '../components/SmartDynamicForm'
 
 function ManualEntry() {
   const [plugins, setPlugins] = useState<Plugin[]>([])
@@ -162,7 +162,7 @@ function ManualEntry() {
             {getPluginDisplayName(selectedPlugin)} Entry Form
           </h3>
           
-          <DynamicForm
+          <SmartDynamicForm
             schema={schema}
             onSubmit={handleFormSubmit}
             loading={submitting}
