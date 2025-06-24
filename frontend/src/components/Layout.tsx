@@ -40,24 +40,77 @@ function Layout({ children }: LayoutProps) {
         />
       )}
 
+      {/* Top header spanning full width */}
+      <div className="fixed top-0 left-0 right-0 z-30 h-16 bg-white border-b border-gray-200 shadow-sm">
+        <div className="flex items-center justify-between h-full px-4 sm:px-6">
+          {/* Left side - Logo and mobile menu */}
+          <div className="flex items-center">
+            <button
+              className="lg:hidden mr-4"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu className="w-6 h-6 text-gray-400" />
+            </button>
+            
+            {/* Logo visible on mobile */}
+            <div className="flex items-center lg:hidden">
+              <DollarSign className="w-8 h-8 text-primary-600" />
+              <span className="ml-2 text-xl font-bold text-gray-900">NetWorth</span>
+            </div>
+          </div>
+          
+          {/* Right side - User info and actions */}
+          <div className="flex items-center space-x-4">
+            <div className="hidden sm:flex items-center space-x-4">
+              <div className="text-right">
+                <p className="text-xs text-gray-500">
+                  Last updated: {new Date().toLocaleString()}
+                </p>
+              </div>
+              
+              <button className="btn-primary text-sm px-3 py-1.5">
+                Refresh Data
+              </button>
+            </div>
+            
+            {/* User profile */}
+            <div className="flex items-center space-x-3 border-l border-gray-200 pl-4">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
+                  <span className="text-primary-600 text-sm font-medium">U</span>
+                </div>
+                <div className="hidden sm:block">
+                  <p className="text-sm font-medium text-gray-900">User</p>
+                  <p className="text-xs text-gray-500">Personal Dashboard</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 pt-16 ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
-        <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
+        {/* Logo in sidebar for desktop */}
+        <div className="hidden lg:flex items-center justify-between h-16 px-6 border-b border-gray-200 -mt-16 bg-white">
           <div className="flex items-center">
             <DollarSign className="w-8 h-8 text-primary-600" />
             <span className="ml-2 text-xl font-bold text-gray-900">NetWorth</span>
           </div>
+        </div>
+
+        {/* Close button for mobile */}
+        <div className="lg:hidden flex justify-end p-4 -mt-4">
           <button
-            className="lg:hidden"
             onClick={() => setSidebarOpen(false)}
           >
             <X className="w-6 h-6 text-gray-400" />
           </button>
         </div>
 
-        <nav className="mt-6 px-3">
+        <nav className="px-3 mt-6">
           <div className="space-y-1">
             {navigation.map((item) => {
               const isActive = location.pathname === item.href
@@ -84,51 +137,13 @@ function Layout({ children }: LayoutProps) {
           </div>
         </nav>
 
-        {/* Sidebar footer */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
-                <span className="text-primary-600 text-sm font-medium">U</span>
-              </div>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-900">User</p>
-              <p className="text-xs text-gray-500">Personal Dashboard</p>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Main content */}
-      <div className="lg:pl-64">
-        {/* Top header */}
-        <div className="sticky top-0 z-40 bg-white shadow-sm border-b border-gray-200">
-          <div className="flex items-center justify-between h-16 px-4 sm:px-6">
-            <button
-              className="lg:hidden"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <Menu className="w-6 h-6 text-gray-400" />
-            </button>
-            
-            <div className="flex items-center space-x-4">
-              <div className="hidden sm:block">
-                <p className="text-sm text-gray-500">
-                  Last updated: {new Date().toLocaleString()}
-                </p>
-              </div>
-              
-              <button className="btn-primary">
-                Refresh Data
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Page content */}
+      <div className="lg:pl-64 pt-16">
+        {/* Page content - now perfectly aligned with sidebar */}
         <main className="flex-1">
-          <div className="py-6 px-4 sm:px-6 lg:px-8">
+          <div className="px-4 sm:px-6 lg:px-8 pt-6 pb-6">
             {children}
           </div>
         </main>
