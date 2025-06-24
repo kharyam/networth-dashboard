@@ -65,15 +65,18 @@ export interface VestingSchedule {
 export interface RealEstate {
   id: number
   account_id: number
-  property_address?: string
+  property_name?: string
   property_type?: string
-  estimated_value: number
+  current_value: number
   purchase_price?: number
   purchase_date?: string
-  mortgage_balance?: number
-  equity_value?: number
-  value_source?: string
-  last_value_update?: string
+  outstanding_mortgage?: number
+  equity?: number
+  property_size_sqft?: number
+  lot_size_acres?: number
+  rental_income_monthly?: number
+  property_tax_annual?: number
+  notes?: string
   created_at: string
 }
 
