@@ -1,4 +1,5 @@
 import { Routes, Route } from 'react-router-dom'
+import { ThemeProvider } from '@/contexts/ThemeContext'
 import Layout from '@/components/Layout'
 import Dashboard from '@/pages/Dashboard'
 import Accounts from '@/pages/Accounts'
@@ -10,17 +11,19 @@ import Settings from '@/pages/Settings'
 
 function App() {
   return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/accounts" element={<Accounts />} />
-        <Route path="/stocks" element={<Stocks />} />
-        <Route path="/equity" element={<Equity />} />
-        <Route path="/real-estate" element={<RealEstate />} />
-        <Route path="/manual-entry" element={<ManualEntry />} />
-        <Route path="/settings" element={<Settings />} />
-      </Routes>
-    </Layout>
+    <ThemeProvider>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/accounts" element={<Accounts />} />
+          <Route path="/stocks" element={<Stocks />} />
+          <Route path="/equity" element={<Equity />} />
+          <Route path="/real-estate" element={<RealEstate />} />
+          <Route path="/manual-entry" element={<ManualEntry />} />
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </Layout>
+    </ThemeProvider>
   )
 }
 

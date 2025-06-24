@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { TrendingUp, TrendingDown, DollarSign, Briefcase, Building, PieChart } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell } from 'recharts'
 import { netWorthApi } from '@/services/api'
+import { useTheme } from '@/contexts/ThemeContext'
 import type { NetWorthSummary } from '@/types'
 
 // Mock data for charts
@@ -36,12 +37,14 @@ function MetricCard({
   icon: any
   prefix?: string
 }) {
+  const { isDarkMode } = useTheme()
+  
   return (
-    <div className="metric-card">
+    <div className={`metric-card ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium text-gray-600">{title}</p>
-          <p className="text-2xl font-bold text-gray-900">
+          <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{title}</p>
+          <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
             {prefix}{typeof value === 'number' ? value.toLocaleString() : value}
           </p>
           {change && (
@@ -59,8 +62,8 @@ function MetricCard({
             </div>
           )}
         </div>
-        <div className="p-3 bg-primary-50 rounded-lg">
-          <Icon className="w-6 h-6 text-primary-600" />
+        <div className={`p-3 ${isDarkMode ? 'bg-primary-900' : 'bg-primary-50'} rounded-lg`}>
+          <Icon className={`w-6 h-6 ${isDarkMode ? 'text-primary-400' : 'text-primary-600'}`} />
         </div>
       </div>
     </div>
@@ -70,6 +73,7 @@ function MetricCard({
 function Dashboard() {
   const [netWorth, setNetWorth] = useState<NetWorthSummary | null>(null)
   const [loading, setLoading] = useState(true)
+  const { isDarkMode } = useTheme()
 
   useEffect(() => {
     const fetchNetWorth = async () => {
@@ -109,8 +113,8 @@ function Dashboard() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-        <p className="mt-2 text-gray-600">
+        <h1 className={`text-3xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Dashboard</h1>
+        <p className={`mt-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
           Your complete financial overview
         </p>
       </div>
@@ -150,18 +154,30 @@ function Dashboard() {
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Net Worth Trend */}
-        <div className="card">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Net Worth Trend</h3>
+        <div className={`card ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+          <h3 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'} mb-4`}>Net Worth Trend</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={mockTrendData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
+                <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? '#374151' : '#e5e7eb'} />
+                <XAxis 
+                  dataKey="month" 
+                  tick={{ fill: isDarkMode ? '#9ca3af' : '#6b7280' }}
+                  axisLine={{ stroke: isDarkMode ? '#374151' : '#e5e7eb' }}
+                />
                 <YAxis 
                   tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`}
+                  tick={{ fill: isDarkMode ? '#9ca3af' : '#6b7280' }}
+                  axisLine={{ stroke: isDarkMode ? '#374151' : '#e5e7eb' }}
                 />
                 <Tooltip 
                   formatter={(value: number) => [`$${value.toLocaleString()}`, 'Net Worth']}
+                  contentStyle={{
+                    backgroundColor: isDarkMode ? '#1f2937' : '#ffffff',
+                    border: `1px solid ${isDarkMode ? '#374151' : '#e5e7eb'}`,
+                    borderRadius: '8px',
+                    color: isDarkMode ? '#ffffff' : '#000000'
+                  }}
                 />
                 <Line 
                   type="monotone" 
@@ -176,8 +192,8 @@ function Dashboard() {
         </div>
 
         {/* Asset Allocation */}
-        <div className="card">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Asset Allocation</h3>
+        <div className={`card ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+          <h3 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'} mb-4`}>Asset Allocation</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <RechartsPieChart>
@@ -194,7 +210,15 @@ function Dashboard() {
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value: number) => [`${value}%`, 'Allocation']} />
+                <Tooltip 
+                  formatter={(value: number) => [`${value}%`, 'Allocation']}
+                  contentStyle={{
+                    backgroundColor: isDarkMode ? '#1f2937' : '#ffffff',
+                    border: `1px solid ${isDarkMode ? '#374151' : '#e5e7eb'}`,
+                    borderRadius: '8px',
+                    color: isDarkMode ? '#ffffff' : '#000000'
+                  }}
+                />
               </RechartsPieChart>
             </ResponsiveContainer>
           </div>
@@ -205,7 +229,7 @@ function Dashboard() {
                   className="w-3 h-3 rounded-full mr-2"
                   style={{ backgroundColor: item.color }}
                 />
-                <span className="text-sm text-gray-600">
+                <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                   {item.name} ({item.value}%)
                 </span>
               </div>
@@ -215,8 +239,8 @@ function Dashboard() {
       </div>
 
       {/* Quick Actions */}
-      <div className="card">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
+      <div className={`card ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+        <h3 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'} mb-4`}>Quick Actions</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <button className="btn-primary flex items-center justify-center">
             <DollarSign className="w-4 h-4 mr-2" />
@@ -238,29 +262,29 @@ function Dashboard() {
       </div>
 
       {/* Recent Activity */}
-      <div className="card">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h3>
+      <div className={`card ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+        <h3 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'} mb-4`}>Recent Activity</h3>
         <div className="space-y-3">
-          <div className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
+          <div className={`flex items-center justify-between py-2 border-b ${isDarkMode ? 'border-gray-600' : 'border-gray-100'} last:border-b-0`}>
             <div className="flex items-center">
               <div className="w-2 h-2 bg-success-500 rounded-full mr-3"></div>
-              <span className="text-sm text-gray-900">Updated AAPL stock holding</span>
+              <span className={`text-sm ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>Updated AAPL stock holding</span>
             </div>
-            <span className="text-xs text-gray-500">2 hours ago</span>
+            <span className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>2 hours ago</span>
           </div>
-          <div className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
+          <div className={`flex items-center justify-between py-2 border-b ${isDarkMode ? 'border-gray-600' : 'border-gray-100'} last:border-b-0`}>
             <div className="flex items-center">
               <div className="w-2 h-2 bg-primary-500 rounded-full mr-3"></div>
-              <span className="text-sm text-gray-900">Added new equity grant</span>
+              <span className={`text-sm ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>Added new equity grant</span>
             </div>
-            <span className="text-xs text-gray-500">1 day ago</span>
+            <span className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>1 day ago</span>
           </div>
-          <div className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
+          <div className={`flex items-center justify-between py-2 border-b ${isDarkMode ? 'border-gray-600' : 'border-gray-100'} last:border-b-0`}>
             <div className="flex items-center">
               <div className="w-2 h-2 bg-warning-500 rounded-full mr-3"></div>
-              <span className="text-sm text-gray-900">Property value updated</span>
+              <span className={`text-sm ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>Property value updated</span>
             </div>
-            <span className="text-xs text-gray-500">3 days ago</span>
+            <span className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>3 days ago</span>
           </div>
         </div>
       </div>
