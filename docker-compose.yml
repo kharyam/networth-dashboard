@@ -13,7 +13,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/init:/docker-entrypoint-initdb.d
     networks:
       - networth-network
     healthcheck:
@@ -45,8 +44,6 @@ services:
         condition: service_healthy
     networks:
       - networth-network
-    volumes:
-      - ./backend/.env:/root/.env:ro
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s

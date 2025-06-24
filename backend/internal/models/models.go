@@ -144,6 +144,17 @@ type NetWorthSnapshot struct {
 	Timestamp            time.Time `json:"timestamp" db:"timestamp"`
 }
 
+type Transaction struct {
+	ID          int       `json:"id" db:"id"`
+	AccountID   int       `json:"account_id" db:"account_id"`
+	Type        string    `json:"type" db:"type"`
+	Amount      float64   `json:"amount" db:"amount"`
+	Currency    string    `json:"currency" db:"currency"`
+	Description string    `json:"description" db:"description"`
+	Date        time.Time `json:"date" db:"date"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+}
+
 // Response DTOs
 type NetWorthSummary struct {
 	NetWorth            float64   `json:"net_worth"`

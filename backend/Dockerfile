@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM docker.io/golang:1.21-alpine AS builder
 
 # Install git and ca-certificates
 RUN apk add --no-cache git ca-certificates
@@ -7,35 +7,32 @@ RUN apk add --no-cache git ca-certificates
 # Set working directory
 WORKDIR /app
 
-# Copy go mod files
-COPY go.mod go.sum ./
-
-# Download dependencies
-RUN go mod download
-
-# Copy source code
+# Copy source code first
 COPY . .
+
+# Download dependencies and generate go.sum
+RUN go mod download && go mod tidy
 
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
 # Final stage
-FROM alpine:latest
+FROM docker.io/alpine:latest
 
-# Install ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates
+# Install ca-certificates and wget for health checks
+RUN apk --no-cache add ca-certificates wget
 
 # Create non-root user
 RUN adduser -D -g '' appuser
 
-# Set working directory
-WORKDIR /root/
+# Set working directory to user home
+WORKDIR /home/appuser
 
 # Copy binary from builder stage
 COPY --from=builder /app/main .
 
-# Change ownership to non-root user
-RUN chown appuser:appuser main
+# Change ownership and make executable
+RUN chown appuser:appuser main && chmod +x main
 
 # Switch to non-root user
 USER appuser

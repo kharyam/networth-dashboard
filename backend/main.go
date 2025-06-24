@@ -32,10 +32,10 @@ func main() {
 	defer db.Close()
 
 	// Initialize plugin manager
-	pluginManager := plugins.NewManager(db)
+	pluginManager := plugins.NewManager(db.DB)
 
 	// Initialize API server
-	server := api.NewServer(cfg, db, pluginManager)
+	server := api.NewServer(cfg, db.DB, pluginManager)
 
 	// Start server
 	port := os.Getenv("PORT")

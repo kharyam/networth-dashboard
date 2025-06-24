@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
-	"time"
 
 	"networth-dashboard/internal/config"
 	"networth-dashboard/internal/plugins"

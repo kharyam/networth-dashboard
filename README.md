@@ -35,7 +35,7 @@ A comprehensive real-time net worth dashboard that aggregates financial data fro
 
 ### Prerequisites
 
-- Docker and Docker Compose
+- Docker and Docker Compose (or Podman and podman-compose)
 - Git
 
 ### Installation
@@ -53,8 +53,15 @@ A comprehensive real-time net worth dashboard that aggregates financial data fro
    ```
 
 3. **Start the application**
+   
+   **With Docker Compose:**
    ```bash
    docker-compose up -d
+   ```
+   
+   **With Podman Compose:**
+   ```bash
+   podman-compose up -d
    ```
 
 4. **Access the application**

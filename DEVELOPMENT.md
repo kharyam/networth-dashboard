@@ -46,8 +46,9 @@ networth-dashboard/
 
 ### Local Development
 
-#### Option 1: Full Docker Setup (Recommended)
+#### Option 1: Full Container Setup (Recommended)
 
+**With Docker Compose:**
 ```bash
 # Clone and start everything
 git clone <repo-url>
@@ -61,13 +62,35 @@ docker-compose logs -f
 docker-compose down
 ```
 
+**With Podman Compose:**
+```bash
+# Clone and start everything
+git clone <repo-url>
+cd networth-dashboard
+podman-compose up -d
+
+# View logs
+podman-compose logs -f
+
+# Stop services
+podman-compose down
+```
+
 #### Option 2: Hybrid Development
 
-Run database in Docker, develop services locally:
+Run database in containers, develop services locally:
 
+**With Docker Compose:**
 ```bash
 # Start only database
 docker-compose up -d database
+```
+
+**With Podman Compose:**
+```bash
+# Start only database
+podman-compose up -d database
+```
 
 # Backend development
 cd backend
@@ -444,6 +467,8 @@ export ENCRYPTION_KEY=$(openssl rand -base64 32)
 ### Common Issues
 
 1. **Database Connection**
+   
+   **Docker Compose:**
    ```bash
    # Check database status
    docker-compose logs database
@@ -451,8 +476,19 @@ export ENCRYPTION_KEY=$(openssl rand -base64 32)
    # Connect to database
    docker exec -it networth-db psql -U postgres -d networth_dashboard
    ```
+   
+   **Podman Compose:**
+   ```bash
+   # Check database status
+   podman-compose logs database
+   
+   # Connect to database
+   podman exec -it networth-db psql -U postgres -d networth_dashboard
+   ```
 
 2. **API Connection**
+   
+   **Docker Compose:**
    ```bash
    # Check backend logs
    docker-compose logs backend
@@ -460,15 +496,40 @@ export ENCRYPTION_KEY=$(openssl rand -base64 32)
    # Test API endpoint
    curl http://localhost:8080/health
    ```
+   
+   **Podman Compose:**
+   ```bash
+   # Check backend logs
+   podman-compose logs backend
+   
+   # Test API endpoint
+   curl http://localhost:8080/health
+   ```
 
 3. **Frontend Issues**
+   
+   **Docker/Podman Compose:**
    ```bash
    # Check frontend logs
-   docker-compose logs frontend
+   docker-compose logs frontend  # or podman-compose logs frontend
    
-   # Clear node modules
-   rm -rf frontend/node_modules
-   npm install
+   # Clear node modules and rebuild
+   rm -rf frontend/node_modules frontend/package-lock.json
+   cd frontend && npm install
+   ```
+
+4. **Podman-Specific Issues**
+   
+   ```bash
+   # If containers can't communicate, check network
+   podman network ls
+   podman network inspect networth-dashboard_networth-network
+   
+   # If volume permissions issues
+   sudo setsebool -P container_manage_cgroup true
+   
+   # If health checks fail
+   podman-compose up --no-healthcheck
    ```
 
 ## Development Best Practices

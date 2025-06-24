@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { TrendingUp, TrendingDown, DollarSign, Briefcase, Building, PieChart } from 'lucide-react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Cell } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell } from 'recharts'
 import { netWorthApi } from '@/services/api'
 import type { NetWorthSummary } from '@/types'
 
@@ -181,7 +181,7 @@ function Dashboard() {
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <RechartsPieChart>
-                <RechartsPieChart
+                <Pie
                   data={mockAllocationData}
                   cx="50%"
                   cy="50%"
@@ -193,7 +193,7 @@ function Dashboard() {
                   {mockAllocationData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
-                </RechartsPieChart>
+                </Pie>
                 <Tooltip formatter={(value: number) => [`${value}%`, 'Allocation']} />
               </RechartsPieChart>
             </ResponsiveContainer>
