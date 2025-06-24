@@ -89,61 +89,60 @@ function Layout({ children }: LayoutProps) {
         </div>
       </div>
 
-      {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 pt-16 ${
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      }`}>
-        {/* Logo in sidebar for desktop */}
-        <div className="hidden lg:flex items-center justify-between h-16 px-6 border-b border-gray-200 -mt-16 bg-white">
-          <div className="flex items-center">
-            <DollarSign className="w-8 h-8 text-primary-600" />
-            <span className="ml-2 text-xl font-bold text-gray-900">NetWorth</span>
+      {/* Main layout container with flexbox */}
+      <div className="flex pt-16">
+        {/* Sidebar */}
+        <aside className={`w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:transform-none lg:shadow-none lg:border-r lg:border-gray-200 ${
+          sidebarOpen ? 'translate-x-0 fixed inset-y-0 left-0 z-50 pt-16' : '-translate-x-full lg:translate-x-0'
+        }`}>
+          {/* Logo in sidebar for desktop */}
+          <div className="hidden lg:flex items-center justify-between h-16 px-6 border-b border-gray-200 -mt-16 bg-white">
+            <div className="flex items-center">
+              <DollarSign className="w-8 h-8 text-primary-600" />
+              <span className="ml-2 text-xl font-bold text-gray-900">NetWorth</span>
+            </div>
           </div>
-        </div>
 
-        {/* Close button for mobile */}
-        <div className="lg:hidden flex justify-end p-4 -mt-4">
-          <button
-            onClick={() => setSidebarOpen(false)}
-          >
-            <X className="w-6 h-6 text-gray-400" />
-          </button>
-        </div>
+          {/* Close button for mobile */}
+          <div className="lg:hidden flex justify-end p-4 -mt-4">
+            <button
+              onClick={() => setSidebarOpen(false)}
+            >
+              <X className="w-6 h-6 text-gray-400" />
+            </button>
+          </div>
 
-        <nav className="px-3 mt-6">
-          <div className="space-y-1">
-            {navigation.map((item) => {
-              const isActive = location.pathname === item.href
-              return (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  className={`group flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${
-                    isActive
-                      ? 'bg-primary-50 text-primary-700 border-r-2 border-primary-600'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <item.icon
-                    className={`mr-3 flex-shrink-0 h-5 w-5 ${
-                      isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-gray-500'
+          <nav className="px-3 mt-6">
+            <div className="space-y-1">
+              {navigation.map((item) => {
+                const isActive = location.pathname === item.href
+                return (
+                  <Link
+                    key={item.name}
+                    to={item.href}
+                    className={`group flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${
+                      isActive
+                        ? 'bg-primary-50 text-primary-700 border-r-2 border-primary-600'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                     }`}
-                  />
-                  {item.name}
-                </Link>
-              )
-            })}
-          </div>
-        </nav>
+                    onClick={() => setSidebarOpen(false)}
+                  >
+                    <item.icon
+                      className={`mr-3 flex-shrink-0 h-5 w-5 ${
+                        isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-gray-500'
+                      }`}
+                    />
+                    {item.name}
+                  </Link>
+                )
+              })}
+            </div>
+          </nav>
+        </aside>
 
-      </div>
-
-      {/* Main content */}
-      <div className="lg:pl-64 pt-16">
-        {/* Page content - now perfectly aligned with sidebar */}
-        <main className="flex-1">
-          <div className="px-4 sm:px-6 lg:px-8 pt-6 pb-6">
+        {/* Main content */}
+        <main className="flex-1 lg:min-h-screen">
+          <div className="px-4 sm:px-6 lg:px-8 mt-6 pb-6">
             {children}
           </div>
         </main>
