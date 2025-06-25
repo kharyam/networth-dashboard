@@ -151,8 +151,8 @@ export const manualEntriesApi = {
   create: (entry: any): Promise<any> =>
     api.post('/manual-entries', entry).then(res => res.data),
   
-  update: (id: number, entry: any): Promise<any> =>
-    api.put(`/manual-entries/${id}`, entry).then(res => res.data),
+  update: (id: number, entryType: string, entry: any): Promise<any> =>
+    api.put(`/manual-entries/${id}?type=${entryType}`, entry).then(res => res.data),
   
   delete: (id: number, entryType: string): Promise<void> =>
     api.delete(`/manual-entries/${id}?type=${entryType}`).then(() => undefined),

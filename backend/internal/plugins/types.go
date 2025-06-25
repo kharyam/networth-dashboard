@@ -43,17 +43,17 @@ type PluginConfig struct {
 
 // Plugin health status
 type PluginHealth struct {
-	Status      PluginStatus   `json:"status"`
-	LastChecked time.Time      `json:"last_checked"`
-	Message     string         `json:"message,omitempty"`
-	Metrics     PluginMetrics  `json:"metrics"`
+	Status      PluginStatus  `json:"status"`
+	LastChecked time.Time     `json:"last_checked"`
+	Message     string        `json:"message,omitempty"`
+	Metrics     PluginMetrics `json:"metrics"`
 }
 
 // Plugin performance metrics
 type PluginMetrics struct {
-	RequestCount int     `json:"request_count"`
-	ErrorCount   int     `json:"error_count"`
-	SuccessRate  float64 `json:"success_rate"`
+	RequestCount int       `json:"request_count"`
+	ErrorCount   int       `json:"error_count"`
+	SuccessRate  float64   `json:"success_rate"`
 	LastUpdate   time.Time `json:"last_update"`
 }
 
@@ -84,15 +84,15 @@ type Balance struct {
 
 // Transaction data structure
 type Transaction struct {
-	ID            string    `json:"id"`
-	AccountID     string    `json:"account_id"`
-	Amount        float64   `json:"amount"`
-	Currency      string    `json:"currency"`
-	Date          time.Time `json:"date"`
-	Description   string    `json:"description"`
-	Category      string    `json:"category,omitempty"`
-	TransactionType string  `json:"transaction_type"`
-	DataSource    string    `json:"data_source"`
+	ID              string    `json:"id"`
+	AccountID       string    `json:"account_id"`
+	Amount          float64   `json:"amount"`
+	Currency        string    `json:"currency"`
+	Date            time.Time `json:"date"`
+	Description     string    `json:"description"`
+	Category        string    `json:"category,omitempty"`
+	TransactionType string    `json:"transaction_type"`
+	DataSource      string    `json:"data_source"`
 }
 
 // Manual entry field specification
@@ -141,8 +141,8 @@ type ValidationError struct {
 
 // Validation result
 type ValidationResult struct {
-	Valid  bool              `json:"valid"`
-	Errors []ValidationError `json:"errors,omitempty"`
+	Valid  bool                   `json:"valid"`
+	Errors []ValidationError      `json:"errors,omitempty"`
 	Data   map[string]interface{} `json:"data,omitempty"`
 }
 
@@ -154,27 +154,28 @@ type FinancialDataPlugin interface {
 	GetDataSource() DataSourceType
 	GetVersion() string
 	GetDescription() string
-	
+
 	// Plugin lifecycle
 	Initialize(config PluginConfig) error
 	Authenticate() error
 	Disconnect() error
-	
+
 	// Health and status
 	IsHealthy() PluginHealth
 	RefreshData() error
 	GetLastUpdate() time.Time
-	
+
 	// Data fetching
 	GetAccounts() ([]Account, error)
 	GetBalances() ([]Balance, error)
 	GetTransactions(dateRange DateRange) ([]Transaction, error)
-	
+
 	// Manual entry support
 	SupportsManualEntry() bool
 	GetManualEntrySchema() ManualEntrySchema
 	ValidateManualEntry(data map[string]interface{}) ValidationResult
 	ProcessManualEntry(data map[string]interface{}) error
+	UpdateManualEntry(id int, data map[string]interface{}) error
 }
 
 // Helper function to get or create an account for a plugin
@@ -186,29 +187,29 @@ func GetOrCreatePluginAccount(db *sql.DB, accountName, accountType, institution,
 		WHERE account_name = $1 AND institution = $2 AND data_source_type = $3
 	`
 	err := db.QueryRow(query, accountName, institution, dataSourceType).Scan(&accountID)
-	
+
 	if err == nil {
 		// Account exists, return its ID
 		return accountID, nil
 	}
-	
+
 	if err != sql.ErrNoRows {
 		// Real error occurred
 		return 0, fmt.Errorf("error querying account: %w", err)
 	}
-	
+
 	// Account doesn't exist, create it
 	insertQuery := `
 		INSERT INTO accounts (account_name, account_type, institution, data_source_type, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id
 	`
-	
+
 	now := time.Now()
 	err = db.QueryRow(insertQuery, accountName, accountType, institution, dataSourceType, now, now).Scan(&accountID)
 	if err != nil {
 		return 0, fmt.Errorf("error creating account: %w", err)
 	}
-	
+
 	return accountID, nil
 }

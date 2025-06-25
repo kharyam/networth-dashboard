@@ -9,9 +9,10 @@ interface SmartDynamicFormProps {
   onSubmit: (data: Record<string, any>) => void
   loading?: boolean
   initialData?: Record<string, any>
+  submitText?: string
 }
 
-export function SmartDynamicForm({ schema, onSubmit, loading = false, initialData = {} }: SmartDynamicFormProps) {
+export function SmartDynamicForm({ schema, onSubmit, loading = false, initialData = {}, submitText = 'Submit' }: SmartDynamicFormProps) {
   // Initialize form data with default values from schema
   const getInitialFormData = () => {
     const defaultData: Record<string, any> = {}
@@ -315,7 +316,7 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
           disabled={loading}
           className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? 'Submitting...' : 'Submit'}
+          {loading ? 'Submitting...' : submitText}
         </button>
       </div>
     </form>

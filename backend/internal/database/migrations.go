@@ -113,6 +113,7 @@ const (
 			current_price DECIMAL(10,4) DEFAULT 0,
 			grant_date DATE NOT NULL,
 			vest_start_date DATE NOT NULL,
+			data_source VARCHAR(20) DEFAULT 'manual',
 			last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(account_id, grant_type, company_symbol, grant_date)
@@ -174,6 +175,11 @@ const (
 			real_estate_equity DECIMAL(15,2),
 			timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);`
+
+	// Schema updates for existing installations
+	updateEquityGrantsTable = `
+		ALTER TABLE equity_grants ADD COLUMN IF NOT EXISTS data_source VARCHAR(20) DEFAULT 'manual';
+	`
 
 	createIndices = `
 		CREATE INDEX IF NOT EXISTS idx_accounts_data_source ON accounts(data_source_id);

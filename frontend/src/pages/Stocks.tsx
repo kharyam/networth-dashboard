@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { stocksApi, equityApi } from '../services/api'
+import { RefreshCw } from 'lucide-react'
+import { stocksApi, equityApi, pricesApi } from '../services/api'
 import { StockHolding, StockConsolidation, EquityGrant } from '../types'
 
 function Stocks() {
@@ -7,6 +8,7 @@ function Stocks() {
   const [consolidatedStocks, setConsolidatedStocks] = useState<StockConsolidation[]>([])
   const [equityGrants, setEquityGrants] = useState<EquityGrant[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab] = useState<'individual' | 'consolidated' | 'equity'>('consolidated')
   const [error, setError] = useState<string | null>(null)
 
@@ -33,6 +35,19 @@ function Stocks() {
       setError('Failed to load stock data. Please try again.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleRefreshPrices = async () => {
+    setRefreshing(true)
+    try {
+      await pricesApi.refreshAll()
+      await loadAllData() // Reload all data after price refresh
+    } catch (error) {
+      console.error('Failed to refresh prices:', error)
+      setError('Failed to refresh prices. Please try again.')
+    } finally {
+      setRefreshing(false)
     }
   }
 
@@ -85,11 +100,22 @@ function Stocks() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Stock Holdings</h1>
-        <p className="mt-2 text-gray-600 dark:text-gray-400">
-          View and manage your stock portfolio across all platforms
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Stock Holdings</h1>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">
+            View and manage your stock portfolio across all platforms
+          </p>
+        </div>
+        
+        <button
+          onClick={handleRefreshPrices}
+          disabled={refreshing}
+          className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+        >
+          <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+          {refreshing ? 'Refreshing...' : 'Refresh Prices'}
+        </button>
       </div>
 
       {error && (
@@ -278,7 +304,9 @@ function Stocks() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Company</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Total Shares</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Vested</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Vested Value</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Unvested</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Unvested Value</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Strike Price</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Grant Date</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Data Source</th>
@@ -299,8 +327,14 @@ function Stocks() {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 dark:text-green-400">
                             {formatNumber(grant.vested_shares)}
                           </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 dark:text-green-400">
+                            {formatCurrency(grant.current_price ? grant.vested_shares * grant.current_price : 0)}
+                          </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-orange-600 dark:text-orange-400">
                             {formatNumber(grant.unvested_shares)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-orange-600 dark:text-orange-400">
+                            {formatCurrency(grant.current_price ? grant.unvested_shares * grant.current_price : 0)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                             {formatCurrency(grant.strike_price)}

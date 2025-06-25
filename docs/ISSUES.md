@@ -2,6 +2,7 @@
 * 
 
 # TODOs
+* The Edit icon on the properties in "real estate portfolio" do not work
 * The edit option for manual entries says functionality will be available in the future. Implement edit.
 * Under "Equity Compensation" on stocks page, data source is blank for rsus
 * Stocks page missing current price in "equity compensation"

@@ -64,7 +64,7 @@ func (p *MorganStanleyPlugin) Initialize(config PluginConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize Morgan Stanley account: %w", err)
 	}
-	
+
 	p.accountID = accountID
 	return nil
 }
@@ -112,7 +112,7 @@ func (p *MorganStanleyPlugin) GetBalances() ([]Balance, error) {
 		FROM equity_grants 
 		WHERE account_id = $1
 	`
-	
+
 	var vestedValue float64
 	err := p.db.QueryRow(query, p.accountID).Scan(&vestedValue)
 	if err != nil {
@@ -396,22 +396,22 @@ func (p *MorganStanleyPlugin) ProcessManualEntry(data map[string]interface{}) er
 	if !exists || grantType == "" {
 		return fmt.Errorf("grant_type is required and must be a string")
 	}
-	
+
 	symbol, exists := data["company_symbol"].(string)
 	if !exists || symbol == "" {
 		return fmt.Errorf("company_symbol is required and must be a string")
 	}
-	
+
 	totalShares, err := p.validateNumberField(data, "total_shares", true)
 	if err != nil {
 		return fmt.Errorf("total_shares validation failed: %s", err.Message)
 	}
-	
+
 	vestedShares, err := p.validateNumberField(data, "vested_shares", true)
 	if err != nil {
 		return fmt.Errorf("vested_shares validation failed: %s", err.Message)
 	}
-	
+
 	strikePrice, err := p.validateNumberField(data, "strike_price", false)
 	if err != nil {
 		return fmt.Errorf("strike_price validation failed: %s", err.Message)
@@ -421,7 +421,7 @@ func (p *MorganStanleyPlugin) ProcessManualEntry(data map[string]interface{}) er
 	if err != nil {
 		return fmt.Errorf("grant_date validation failed: %s", err.Message)
 	}
-	
+
 	vestStartDate, err := p.validateDateField(data, "vest_start_date", true)
 	if err != nil {
 		return fmt.Errorf("vest_start_date validation failed: %s", err.Message)
@@ -452,6 +452,73 @@ func (p *MorganStanleyPlugin) ProcessManualEntry(data map[string]interface{}) er
 
 	if execErr != nil {
 		return fmt.Errorf("failed to save equity grant: %w", execErr)
+	}
+
+	p.lastUpdated = time.Now()
+	return nil
+}
+
+// UpdateManualEntry updates an existing manual entry
+func (p *MorganStanleyPlugin) UpdateManualEntry(id int, data map[string]interface{}) error {
+	// Validate the data first
+	validation := p.ValidateManualEntry(data)
+	if !validation.Valid {
+		return fmt.Errorf("validation failed: %v", validation.Errors)
+	}
+
+	grantType := data["grant_type"].(string)
+	companySymbol := data["company_symbol"].(string)
+	totalShares := data["total_shares"].(float64)
+	vestedShares := data["vested_shares"].(float64)
+	unvestedShares := data["unvested_shares"].(float64)
+
+	var strikePrice float64
+	if sp, exists := data["strike_price"]; exists && sp != nil {
+		strikePrice = sp.(float64)
+	}
+
+	grantDate := data["grant_date"].(time.Time)
+	vestStartDate := data["vest_start_date"].(time.Time)
+
+	// Get current market price from price service
+	priceService := services.NewPriceService()
+	currentPrice, err := priceService.GetCurrentPrice(companySymbol)
+	if err != nil {
+		// Log error but continue with existing price
+		fmt.Printf("Warning: Could not fetch price for %s: %v\n", companySymbol, err)
+		// Get existing price from database
+		var existingPrice float64
+		priceQuery := "SELECT COALESCE(current_price, 0) FROM equity_grants WHERE id = $1"
+		p.db.QueryRow(priceQuery, id).Scan(&existingPrice)
+		currentPrice = existingPrice
+	}
+
+	// Update equity grant
+	query := `
+		UPDATE equity_grants 
+		SET grant_type = $1, company_symbol = $2, total_shares = $3, vested_shares = $4, 
+		    unvested_shares = $5, strike_price = $6, current_price = $7, grant_date = $8, 
+		    vest_start_date = $9, last_updated = $10
+		WHERE id = $11
+	`
+
+	result, err := p.db.Exec(query,
+		grantType, companySymbol, totalShares, vestedShares,
+		unvestedShares, strikePrice, currentPrice, grantDate, vestStartDate,
+		time.Now(), id,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to update equity grant: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check update result: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("equity grant not found")
 	}
 
 	p.lastUpdated = time.Now()

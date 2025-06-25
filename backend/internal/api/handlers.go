@@ -18,38 +18,38 @@ import (
 func (s *Server) getNetWorth(c *gin.Context) {
 	// Calculate stock holdings value
 	stockValue := s.calculateStockHoldingsValue()
-	
+
 	// Calculate vested equity value (only vested shares count toward net worth)
 	vestedEquityValue := s.calculateVestedEquityValue()
-	
+
 	// Calculate unvested equity value (future value, shown separately)
 	unvestedEquityValue := s.calculateUnvestedEquityValue()
-	
+
 	// Calculate real estate equity
 	realEstateEquity := s.calculateRealEstateEquity()
-	
+
 	// Calculate liabilities
 	totalLiabilities := s.calculateTotalLiabilities()
-	
+
 	// Net worth = only vested/liquid assets - liabilities
 	totalAssets := stockValue + vestedEquityValue + realEstateEquity
 	netWorth := totalAssets - totalLiabilities
-	
+
 	// Get price status information
 	priceStatus := s.getPriceStatus()
 
 	data := gin.H{
-		"net_worth":              netWorth,
-		"total_assets":           totalAssets,
-		"total_liabilities":      totalLiabilities,
-		"vested_equity_value":    vestedEquityValue,
-		"unvested_equity_value":  unvestedEquityValue, // Shown separately as future value
-		"stock_holdings_value":   stockValue,
-		"real_estate_equity":     realEstateEquity,
-		"price_last_updated":     priceStatus.LastUpdated,
-		"stale_price_count":      priceStatus.StaleCount,
-		"provider_name":          priceStatus.ProviderName,
-		"last_updated":           time.Now().Format(time.RFC3339),
+		"net_worth":             netWorth,
+		"total_assets":          totalAssets,
+		"total_liabilities":     totalLiabilities,
+		"vested_equity_value":   vestedEquityValue,
+		"unvested_equity_value": unvestedEquityValue, // Shown separately as future value
+		"stock_holdings_value":  stockValue,
+		"real_estate_equity":    realEstateEquity,
+		"price_last_updated":    priceStatus.LastUpdated,
+		"stale_price_count":     priceStatus.StaleCount,
+		"provider_name":         priceStatus.ProviderName,
+		"last_updated":          time.Now().Format(time.RFC3339),
 	}
 	c.JSON(http.StatusOK, data)
 }
@@ -133,10 +133,10 @@ type PriceStatus struct {
 
 func (s *Server) getPriceStatus() PriceStatus {
 	priceService := services.NewPriceService()
-	
+
 	// Count total symbols and stale prices
 	var totalCount, staleCount int
-	
+
 	// Count symbols with stale or missing prices (older than 1 hour or null)
 	staleQuery := `
 		SELECT COUNT(DISTINCT symbol) as stale_count,
@@ -153,13 +153,13 @@ func (s *Server) getPriceStatus() PriceStatus {
 		    WHERE current_price = 0 OR current_price IS NULL
 		) as stale_symbols
 	`
-	
+
 	err := s.db.QueryRow(staleQuery).Scan(&staleCount, &totalCount)
 	if err != nil {
 		staleCount = 0
 		totalCount = 0
 	}
-	
+
 	return PriceStatus{
 		LastUpdated:  time.Now().Format(time.RFC3339),
 		StaleCount:   staleCount,
@@ -246,7 +246,7 @@ func (s *Server) getStockHoldings(c *gin.Context) {
 		FROM stock_holdings h
 		ORDER BY h.symbol
 	`
-	
+
 	rows, err := s.db.Query(query)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -259,16 +259,16 @@ func (s *Server) getStockHoldings(c *gin.Context) {
 	holdings := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var holding struct {
-			ID           int     `json:"id"`
-			AccountID    int     `json:"account_id"`
-			Symbol       string  `json:"symbol"`
-			CompanyName  *string `json:"company_name"`
-			SharesOwned  float64 `json:"shares_owned"`
+			ID           int      `json:"id"`
+			AccountID    int      `json:"account_id"`
+			Symbol       string   `json:"symbol"`
+			CompanyName  *string  `json:"company_name"`
+			SharesOwned  float64  `json:"shares_owned"`
 			CostBasis    *float64 `json:"cost_basis"`
 			CurrentPrice *float64 `json:"current_price"`
-			MarketValue  float64 `json:"market_value"`
-			DataSource   string  `json:"data_source"`
-			CreatedAt    string  `json:"created_at"`
+			MarketValue  float64  `json:"market_value"`
+			DataSource   string   `json:"data_source"`
+			CreatedAt    string   `json:"created_at"`
 		}
 
 		err := rows.Scan(
@@ -320,7 +320,7 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 		GROUP BY symbol
 		ORDER BY total_value DESC
 	`
-	
+
 	rows, err := s.db.Query(query)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -333,12 +333,12 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 	consolidatedStocks := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var stock struct {
-			Symbol           string  `json:"symbol"`
-			CompanyName      string  `json:"company_name"`
-			TotalShares      float64 `json:"total_shares"`
-			CurrentPrice     float64 `json:"current_price"`
-			TotalValue       float64 `json:"total_value"`
-			UnrealizedGains  float64 `json:"unrealized_gains"`
+			Symbol          string  `json:"symbol"`
+			CompanyName     string  `json:"company_name"`
+			TotalShares     float64 `json:"total_shares"`
+			CurrentPrice    float64 `json:"current_price"`
+			TotalValue      float64 `json:"total_value"`
+			UnrealizedGains float64 `json:"unrealized_gains"`
 		}
 
 		err := rows.Scan(
@@ -359,23 +359,23 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 			WHERE symbol = $1 AND shares_owned > 0
 			ORDER BY data_source
 		`
-		
+
 		sourceRows, err := s.db.Query(sourcesQuery, stock.Symbol)
 		if err != nil {
 			continue // Skip if can't get sources, but continue with consolidated data
 		}
-		
+
 		sources := make([]map[string]interface{}, 0)
 		for sourceRows.Next() {
 			var source struct {
-				ID          int     `json:"id"`
-				AccountID   int     `json:"account_id"`
-				SharesOwned float64 `json:"shares_owned"`
+				ID          int      `json:"id"`
+				AccountID   int      `json:"account_id"`
+				SharesOwned float64  `json:"shares_owned"`
 				CostBasis   *float64 `json:"cost_basis"`
-				DataSource  string  `json:"data_source"`
-				CreatedAt   string  `json:"created_at"`
+				DataSource  string   `json:"data_source"`
+				CreatedAt   string   `json:"created_at"`
 			}
-			
+
 			err := sourceRows.Scan(
 				&source.ID, &source.AccountID, &source.SharesOwned,
 				&source.CostBasis, &source.DataSource, &source.CreatedAt,
@@ -383,7 +383,7 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 			if err != nil {
 				continue
 			}
-			
+
 			sourceMap := map[string]interface{}{
 				"id":            source.ID,
 				"account_id":    source.AccountID,
@@ -447,11 +447,11 @@ func (s *Server) getEquityGrants(c *gin.Context) {
 	query := `
 		SELECT id, account_id, grant_type, company_symbol, total_shares, 
 		       vested_shares, unvested_shares, strike_price, grant_date, 
-		       vest_start_date, current_price, created_at
+		       vest_start_date, current_price, data_source, created_at
 		FROM equity_grants
 		ORDER BY grant_date DESC
 	`
-	
+
 	rows, err := s.db.Query(query)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -464,24 +464,25 @@ func (s *Server) getEquityGrants(c *gin.Context) {
 	grants := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var grant struct {
-			ID            int      `json:"id"`
-			AccountID     int      `json:"account_id"`
-			GrantType     string   `json:"grant_type"`
-			CompanySymbol string   `json:"company_symbol"`
-			TotalShares   float64  `json:"total_shares"`
-			VestedShares  float64  `json:"vested_shares"`
-			UnvestedShares float64 `json:"unvested_shares"`
-			StrikePrice   *float64 `json:"strike_price"`
-			GrantDate     string   `json:"grant_date"`
-			VestStartDate string   `json:"vest_start_date"`
-			CurrentPrice  *float64 `json:"current_price"`
-			CreatedAt     string   `json:"created_at"`
+			ID             int      `json:"id"`
+			AccountID      int      `json:"account_id"`
+			GrantType      string   `json:"grant_type"`
+			CompanySymbol  string   `json:"company_symbol"`
+			TotalShares    float64  `json:"total_shares"`
+			VestedShares   float64  `json:"vested_shares"`
+			UnvestedShares float64  `json:"unvested_shares"`
+			StrikePrice    *float64 `json:"strike_price"`
+			GrantDate      string   `json:"grant_date"`
+			VestStartDate  string   `json:"vest_start_date"`
+			CurrentPrice   *float64 `json:"current_price"`
+			DataSource     string   `json:"data_source"`
+			CreatedAt      string   `json:"created_at"`
 		}
 
 		err := rows.Scan(
 			&grant.ID, &grant.AccountID, &grant.GrantType, &grant.CompanySymbol,
 			&grant.TotalShares, &grant.VestedShares, &grant.UnvestedShares,
-			&grant.StrikePrice, &grant.GrantDate, &grant.VestStartDate, &grant.CurrentPrice, &grant.CreatedAt,
+			&grant.StrikePrice, &grant.GrantDate, &grant.VestStartDate, &grant.CurrentPrice, &grant.DataSource, &grant.CreatedAt,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -502,6 +503,7 @@ func (s *Server) getEquityGrants(c *gin.Context) {
 			"grant_date":      grant.GrantDate,
 			"vest_start_date": grant.VestStartDate,
 			"current_price":   grant.CurrentPrice,
+			"data_source":     grant.DataSource,
 			"created_at":      grant.CreatedAt,
 		}
 		grants = append(grants, grantMap)
@@ -557,7 +559,7 @@ func (s *Server) getRealEstate(c *gin.Context) {
 		FROM real_estate_properties
 		ORDER BY property_name
 	`
-	
+
 	rows, err := s.db.Query(query)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -570,21 +572,21 @@ func (s *Server) getRealEstate(c *gin.Context) {
 	properties := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var property struct {
-			ID                    int      `json:"id"`
-			AccountID             int      `json:"account_id"`
-			PropertyType          string   `json:"property_type"`
-			PropertyName          string   `json:"property_name"`
-			PurchasePrice         float64  `json:"purchase_price"`
-			CurrentValue          float64  `json:"current_value"`
-			OutstandingMortgage   float64  `json:"outstanding_mortgage"`
-			Equity                float64  `json:"equity"`
-			PurchaseDate          string   `json:"purchase_date"`
-			PropertySizeSqft      *float64 `json:"property_size_sqft"`
-			LotSizeAcres          *float64 `json:"lot_size_acres"`
-			RentalIncomeMonthly   *float64 `json:"rental_income_monthly"`
-			PropertyTaxAnnual     *float64 `json:"property_tax_annual"`
-			Notes                 *string  `json:"notes"`
-			CreatedAt             string   `json:"created_at"`
+			ID                  int      `json:"id"`
+			AccountID           int      `json:"account_id"`
+			PropertyType        string   `json:"property_type"`
+			PropertyName        string   `json:"property_name"`
+			PurchasePrice       float64  `json:"purchase_price"`
+			CurrentValue        float64  `json:"current_value"`
+			OutstandingMortgage float64  `json:"outstanding_mortgage"`
+			Equity              float64  `json:"equity"`
+			PurchaseDate        string   `json:"purchase_date"`
+			PropertySizeSqft    *float64 `json:"property_size_sqft"`
+			LotSizeAcres        *float64 `json:"lot_size_acres"`
+			RentalIncomeMonthly *float64 `json:"rental_income_monthly"`
+			PropertyTaxAnnual   *float64 `json:"property_tax_annual"`
+			Notes               *string  `json:"notes"`
+			CreatedAt           string   `json:"created_at"`
 		}
 
 		err := rows.Scan(
@@ -602,21 +604,21 @@ func (s *Server) getRealEstate(c *gin.Context) {
 		}
 
 		propertyMap := map[string]interface{}{
-			"id":                      property.ID,
-			"account_id":              property.AccountID,
-			"property_type":           property.PropertyType,
-			"property_name":           property.PropertyName,
-			"purchase_price":          property.PurchasePrice,
-			"current_value":           property.CurrentValue,
-			"outstanding_mortgage":    property.OutstandingMortgage,
-			"equity":                  property.Equity,
-			"purchase_date":           property.PurchaseDate,
-			"property_size_sqft":      property.PropertySizeSqft,
-			"lot_size_acres":          property.LotSizeAcres,
-			"rental_income_monthly":   property.RentalIncomeMonthly,
-			"property_tax_annual":     property.PropertyTaxAnnual,
-			"notes":                   property.Notes,
-			"created_at":              property.CreatedAt,
+			"id":                    property.ID,
+			"account_id":            property.AccountID,
+			"property_type":         property.PropertyType,
+			"property_name":         property.PropertyName,
+			"purchase_price":        property.PurchasePrice,
+			"current_value":         property.CurrentValue,
+			"outstanding_mortgage":  property.OutstandingMortgage,
+			"equity":                property.Equity,
+			"purchase_date":         property.PurchaseDate,
+			"property_size_sqft":    property.PropertySizeSqft,
+			"lot_size_acres":        property.LotSizeAcres,
+			"rental_income_monthly": property.RentalIncomeMonthly,
+			"property_tax_annual":   property.PropertyTaxAnnual,
+			"notes":                 property.Notes,
+			"created_at":            property.CreatedAt,
 		}
 		properties = append(properties, propertyMap)
 	}
@@ -634,11 +636,48 @@ func (s *Server) createRealEstate(c *gin.Context) {
 }
 
 func (s *Server) updateRealEstate(c *gin.Context) {
-	id := c.Param("id")
-	// TODO: Implement real estate update
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid property ID",
+		})
+		return
+	}
+
+	var data map[string]interface{}
+	if err := c.ShouldBindJSON(&data); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid JSON data",
+		})
+		return
+	}
+
+	// Use real estate plugin to update the property
+	plugin, err := s.pluginManager.GetPlugin("real_estate")
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Real estate plugin not found",
+		})
+		return
+	}
+
+	if !plugin.SupportsManualEntry() {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Real estate plugin does not support manual entry",
+		})
+		return
+	}
+
+	// Update the property using the plugin
+	if err := plugin.UpdateManualEntry(id, data); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"property_id": id,
-		"message":     "Update real estate endpoint - to be implemented",
+		"message": "Property updated successfully",
 	})
 }
 
@@ -662,7 +701,7 @@ func (s *Server) getPlugins(c *gin.Context) {
 
 func (s *Server) getPluginSchema(c *gin.Context) {
 	pluginName := c.Param("name")
-	
+
 	plugin, err := s.pluginManager.GetPlugin(pluginName)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
@@ -684,7 +723,7 @@ func (s *Server) getPluginSchema(c *gin.Context) {
 
 func (s *Server) processManualEntry(c *gin.Context) {
 	pluginName := c.Param("name")
-	
+
 	var data map[string]interface{}
 	if err := c.ShouldBindJSON(&data); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -707,10 +746,10 @@ func (s *Server) processManualEntry(c *gin.Context) {
 
 func (s *Server) refreshPluginData(c *gin.Context) {
 	errors := s.pluginManager.RefreshAllData()
-	
+
 	if len(errors) > 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Some plugins failed to refresh",
+			"error":   "Some plugins failed to refresh",
 			"details": errors,
 		})
 		return
@@ -723,7 +762,7 @@ func (s *Server) refreshPluginData(c *gin.Context) {
 
 func (s *Server) getPluginHealth(c *gin.Context) {
 	health := s.pluginManager.GetPluginHealth()
-	
+
 	allHealthy := true
 	for _, pluginHealth := range health {
 		if pluginHealth.Status != "active" {
@@ -746,7 +785,7 @@ func (s *Server) getPluginHealth(c *gin.Context) {
 // Manual entry handlers
 func (s *Server) getManualEntries(c *gin.Context) {
 	entryType := c.Query("type") // Optional filter by entry type
-	
+
 	// Build unified query to get manual entries from all relevant tables
 	query := `
 		SELECT 'computershare' as entry_type, 
@@ -806,9 +845,9 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		LEFT JOIN accounts a ON re.account_id = a.id
 		WHERE re.created_at IS NOT NULL
 	`
-	
+
 	args := []interface{}{}
-	
+
 	// Add filter if entry type is specified
 	if entryType != "" {
 		query = `
@@ -820,7 +859,7 @@ func (s *Server) getManualEntries(c *gin.Context) {
 	} else {
 		query += " ORDER BY created_at DESC"
 	}
-	
+
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -880,11 +919,56 @@ func (s *Server) createManualEntry(c *gin.Context) {
 }
 
 func (s *Server) updateManualEntry(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
-	// TODO: Implement manual entry update
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid entry ID",
+		})
+		return
+	}
+
+	entryType := c.Query("type")
+	if entryType == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Entry type is required",
+		})
+		return
+	}
+
+	var data map[string]interface{}
+	if err := c.ShouldBindJSON(&data); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid JSON data",
+		})
+		return
+	}
+
+	// Use plugin manager to update the entry
+	plugin, err := s.pluginManager.GetPlugin(entryType)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Plugin not found",
+		})
+		return
+	}
+
+	if !plugin.SupportsManualEntry() {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Plugin does not support manual entry",
+		})
+		return
+	}
+
+	// Update the entry using the plugin
+	if err := plugin.UpdateManualEntry(id, data); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"entry_id": id,
-		"message":  "Update manual entry endpoint - to be implemented",
+		"message": "Manual entry updated successfully",
 	})
 }
 
@@ -896,7 +980,7 @@ func (s *Server) deleteManualEntry(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	entryType := c.Query("type")
 	if entryType == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -904,7 +988,7 @@ func (s *Server) deleteManualEntry(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	var query string
 	switch entryType {
 	case "computershare":
@@ -919,7 +1003,7 @@ func (s *Server) deleteManualEntry(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	result, err := s.db.Exec(query, id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -927,7 +1011,7 @@ func (s *Server) deleteManualEntry(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -935,14 +1019,14 @@ func (s *Server) deleteManualEntry(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	if rowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "Entry not found",
 		})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Entry deleted successfully",
 	})
@@ -958,18 +1042,18 @@ func (s *Server) getManualEntrySchemas(c *gin.Context) {
 // Price refresh handlers
 func (s *Server) refreshPrices(c *gin.Context) {
 	startTime := time.Now()
-	
+
 	// Get all unique symbols that need price updates
 	symbols := s.getAllActiveSymbols()
 	if len(symbols) == 0 {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "No symbols found to update",
 			"summary": services.PriceRefreshSummary{
-				TotalSymbols: 0,
+				TotalSymbols:   0,
 				UpdatedSymbols: 0,
-				FailedSymbols: 0,
-				Timestamp: time.Now(),
-				DurationMs: time.Since(startTime).Milliseconds(),
+				FailedSymbols:  0,
+				Timestamp:      time.Now(),
+				DurationMs:     time.Since(startTime).Milliseconds(),
 			},
 		})
 		return
@@ -977,7 +1061,7 @@ func (s *Server) refreshPrices(c *gin.Context) {
 
 	// Initialize price service
 	priceService := services.NewPriceService()
-	
+
 	// Track results
 	var results []services.PriceUpdateResult
 	updatedCount := 0
@@ -986,7 +1070,7 @@ func (s *Server) refreshPrices(c *gin.Context) {
 	for _, symbol := range symbols {
 		result := s.updateSymbolPrice(symbol, priceService)
 		results = append(results, result)
-		
+
 		if result.Updated {
 			updatedCount++
 		} else {
@@ -1048,7 +1132,7 @@ func (s *Server) getPricesStatus(c *gin.Context) {
 // Helper functions for price refresh
 func (s *Server) getAllActiveSymbols() []string {
 	var symbols []string
-	
+
 	// Get symbols from stock_holdings
 	stockQuery := `SELECT DISTINCT symbol FROM stock_holdings WHERE symbol IS NOT NULL AND symbol != ''`
 	rows, err := s.db.Query(stockQuery)
@@ -1061,7 +1145,7 @@ func (s *Server) getAllActiveSymbols() []string {
 			}
 		}
 	}
-	
+
 	// Get symbols from equity_grants
 	equityQuery := `SELECT DISTINCT company_symbol FROM equity_grants WHERE company_symbol IS NOT NULL AND company_symbol != ''`
 	rows, err = s.db.Query(equityQuery)
@@ -1085,7 +1169,7 @@ func (s *Server) getAllActiveSymbols() []string {
 			}
 		}
 	}
-	
+
 	return symbols
 }
 
@@ -1112,7 +1196,7 @@ func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceSe
 		LIMIT 1
 	`
 	s.db.QueryRow(priceQuery, symbol).Scan(&oldPrice)
-	
+
 	result.OldPrice = oldPrice
 	result.NewPrice = newPrice
 
@@ -1123,7 +1207,7 @@ func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceSe
 		WHERE symbol = $3
 	`
 	stockResult, err := s.db.Exec(stockUpdate, newPrice, time.Now(), symbol)
-	
+
 	// Update equity_grants
 	equityUpdate := `
 		UPDATE equity_grants 
@@ -1135,7 +1219,7 @@ func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceSe
 	// Check if any rows were updated
 	stockRows, _ := stockResult.RowsAffected()
 	equityRows, _ := equityResult.RowsAffected()
-	
+
 	if err != nil && err2 != nil {
 		result.Error = fmt.Sprintf("Update failed: %v, %v", err, err2)
 	} else if stockRows > 0 || equityRows > 0 {
