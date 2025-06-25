@@ -767,71 +767,62 @@ function CashHoldings() {
               </div>
             </div>
 
-            {/* Interest Rate Comparison */}
+            {/* Institution Distribution */}
             <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
               <div className="p-6">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Interest Rate Comparison
+                  Distribution by Institution
                 </h3>
-                {(() => {
-                  const isValidData = validateInterestRateData(interestRateData)
-                  
-                  // Final sanitization check before rendering
-                  const sanitizedData = interestRateData.map(item => ({
-                    ...item,
-                    rate: isValidNumber(item.rate) ? Number(item.rate) : 0,
-                    balance: isValidNumber(item.balance) ? Number(item.balance) : 0
-                  })).filter(item => item.rate > 0)
-                  
-                  // Use simple fixed domain to eliminate domain calculation as source of NaN
-                  const simpleDomain = [0, 10] // Simple fixed domain
-                  
-                  // Add final validation step - ensure no NaN/Infinity in data
-                  const ultraCleanData = sanitizedData.map(item => ({
-                    name: String(item.name || 'Unknown'),
-                    rate: Math.min(10, Math.max(0, Number(item.rate) || 0)), // Clamp between 0-10
-                    balance: Number(item.balance) || 0,
-                    type: String(item.type || '')
-                  })).filter(item => item.rate > 0 && item.rate <= 10)
-                  
-                  console.log('BarChart rendering with simplified approach:', {
-                    originalDataLength: interestRateData.length,
-                    sanitizedDataLength: sanitizedData.length,
-                    ultraCleanDataLength: ultraCleanData.length,
-                    isValidData,
-                    simpleDomain,
-                    ultraCleanData
-                  })
-                  
-                  return ultraCleanData.length > 0 ? (
-                    // Table fallback if chart fails but we have data
-                    <div className="h-64 overflow-auto">
-                      <div className="mb-2 text-sm text-blue-600 dark:text-blue-400">
-                        📊 Interest Rate Comparison (Table View)
-                      </div>
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-gray-200 dark:border-gray-700">
-                            <th className="text-left py-2 pr-4 font-medium text-gray-900 dark:text-white">Account</th>
-                            <th className="text-right py-2 font-medium text-gray-900 dark:text-white">Interest Rate</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {ultraCleanData.map((item, index) => (
-                            <tr key={index} className="border-b border-gray-100 dark:border-gray-800">
-                              <td className="py-2 pr-4 text-gray-800 dark:text-gray-200">{item.name}</td>
-                              <td className="text-right py-2 text-gray-800 dark:text-gray-200">{item.rate}%</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                {institutionDistribution.length > 0 ? (
+                  <>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={institutionDistribution}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            dataKey="value"
+                          >
+                            {institutionDistribution.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip 
+                            formatter={(value: number, _name: string, props: any) => [
+                              formatCurrency(value), 
+                              `${props.payload.name} (${props.payload.count} account${props.payload.count !== 1 ? 's' : ''})`
+                            ]}
+                          />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
                     </div>
-                  ) : (
-                    <div className="h-64 flex items-center justify-center text-gray-500 dark:text-gray-400">
-                      No interest rate data available - add accounts with interest rates to see comparison
+                    <div className="mt-4 space-y-2">
+                      {institutionDistribution.map((item) => (
+                        <div key={item.name} className="flex items-center justify-between">
+                          <div className="flex items-center">
+                            <div 
+                              className="w-3 h-3 rounded-full mr-2"
+                              style={{ backgroundColor: item.color }}
+                            />
+                            <span className="text-sm text-gray-600 dark:text-gray-300">
+                              {item.name}
+                            </span>
+                          </div>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                            {item.percentage}%
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                  )
-                })()}
+                  </>
+                ) : (
+                  <div className="h-64 flex items-center justify-center text-gray-500 dark:text-gray-400">
+                    No institution data available for chart
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -897,62 +888,71 @@ function CashHoldings() {
 
           {/* Phase 2 Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Institution Distribution */}
+            {/* Interest Rate Comparison */}
             <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
               <div className="p-6">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Distribution by Institution
+                  Interest Rate Comparison
                 </h3>
-                {institutionDistribution.length > 0 ? (
-                  <>
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={institutionDistribution}
-                            cx="50%"
-                            cy="50%"
-                            outerRadius={80}
-                            dataKey="value"
-                          >
-                            {institutionDistribution.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.color} />
-                            ))}
-                          </Pie>
-                          <Tooltip 
-                            formatter={(value: number, _name: string, props: any) => [
-                              formatCurrency(value), 
-                              `${props.payload.name} (${props.payload.count} account${props.payload.count !== 1 ? 's' : ''})`
-                            ]}
-                          />
-                          <Legend />
-                        </PieChart>
-                      </ResponsiveContainer>
+                {(() => {
+                  const isValidData = validateInterestRateData(interestRateData)
+                  
+                  // Final sanitization check before rendering
+                  const sanitizedData = interestRateData.map(item => ({
+                    ...item,
+                    rate: isValidNumber(item.rate) ? Number(item.rate) : 0,
+                    balance: isValidNumber(item.balance) ? Number(item.balance) : 0
+                  })).filter(item => item.rate > 0)
+                  
+                  // Use simple fixed domain to eliminate domain calculation as source of NaN
+                  const simpleDomain = [0, 10] // Simple fixed domain
+                  
+                  // Add final validation step - ensure no NaN/Infinity in data
+                  const ultraCleanData = sanitizedData.map(item => ({
+                    name: String(item.name || 'Unknown'),
+                    rate: Math.min(10, Math.max(0, Number(item.rate) || 0)), // Clamp between 0-10
+                    balance: Number(item.balance) || 0,
+                    type: String(item.type || '')
+                  })).filter(item => item.rate > 0 && item.rate <= 10)
+                  
+                  console.log('BarChart rendering with simplified approach:', {
+                    originalDataLength: interestRateData.length,
+                    sanitizedDataLength: sanitizedData.length,
+                    ultraCleanDataLength: ultraCleanData.length,
+                    isValidData,
+                    simpleDomain,
+                    ultraCleanData
+                  })
+                  
+                  return ultraCleanData.length > 0 ? (
+                    // Table fallback if chart fails but we have data
+                    <div className="h-64 overflow-auto">
+                      <div className="mb-2 text-sm text-blue-600 dark:text-blue-400">
+                        📊 Interest Rate Comparison (Table View)
+                      </div>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-200 dark:border-gray-700">
+                            <th className="text-left py-2 pr-4 font-medium text-gray-900 dark:text-white">Account</th>
+                            <th className="text-right py-2 font-medium text-gray-900 dark:text-white">Interest Rate</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ultraCleanData.map((item, index) => (
+                            <tr key={index} className="border-b border-gray-100 dark:border-gray-800">
+                              <td className="py-2 pr-4 text-gray-800 dark:text-gray-200">{item.name}</td>
+                              <td className="text-right py-2 text-gray-800 dark:text-gray-200">{item.rate}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                    <div className="mt-4 space-y-2">
-                      {institutionDistribution.map((item) => (
-                        <div key={item.name} className="flex items-center justify-between">
-                          <div className="flex items-center">
-                            <div 
-                              className="w-3 h-3 rounded-full mr-2"
-                              style={{ backgroundColor: item.color }}
-                            />
-                            <span className="text-sm text-gray-600 dark:text-gray-300">
-                              {item.name}
-                            </span>
-                          </div>
-                          <span className="text-sm font-medium text-gray-900 dark:text-white">
-                            {item.percentage}%
-                          </span>
-                        </div>
-                      ))}
+                  ) : (
+                    <div className="h-64 flex items-center justify-center text-gray-500 dark:text-gray-400">
+                      No interest rate data available - add accounts with interest rates to see comparison
                     </div>
-                  </>
-                ) : (
-                  <div className="h-64 flex items-center justify-center text-gray-500 dark:text-gray-400">
-                    No institution data available for chart
-                  </div>
-                )}
+                  )
+                })()}
               </div>
             </div>
 
