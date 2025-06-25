@@ -27,6 +27,7 @@ function RealEstate() {
   
   // Modal states
   const [addModalOpen, setAddModalOpen] = useState(false)
+  const [editModalOpen, setEditModalOpen] = useState(false)
   const [viewModalOpen, setViewModalOpen] = useState(false)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [selectedProperty, setSelectedProperty] = useState<RealEstateType | null>(null)
@@ -89,8 +90,32 @@ function RealEstate() {
 
   const handleEditProperty = (property: RealEstateType) => {
     setSelectedProperty(property)
-    // Edit functionality can be added in future
-    console.log('Edit property:', property)
+    setEditModalOpen(true)
+  }
+
+  const handleUpdateProperty = async (formData: Record<string, any>) => {
+    if (!selectedProperty) return
+
+    setSubmitting(true)
+    setMessage(null)
+
+    try {
+      await realEstateApi.update(selectedProperty.id, formData)
+      setMessage({ type: 'success', text: 'Property updated successfully!' })
+      
+      // Refresh properties list and close modal
+      await loadProperties()
+      closeModals()
+      
+      // Clear success message after delay
+      setTimeout(() => setMessage(null), 3000)
+    } catch (error: any) {
+      console.error('Failed to update property:', error)
+      const errorMessage = error.response?.data?.error || 'Failed to update property. Please try again.'
+      setMessage({ type: 'error', text: errorMessage })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleViewProperty = (property: RealEstateType) => {
@@ -158,9 +183,27 @@ function RealEstate() {
 
   const closeModals = () => {
     setAddModalOpen(false)
+    setEditModalOpen(false)
     setViewModalOpen(false)
     setDeleteModalOpen(false)
     setSelectedProperty(null)
+  }
+
+  // Helper to convert property data to form format
+  const propertyToFormData = (property: RealEstateType): Record<string, any> => {
+    return {
+      property_type: property.property_type,
+      property_name: property.property_name,
+      purchase_price: property.purchase_price,
+      current_value: property.current_value,
+      outstanding_mortgage: property.outstanding_mortgage || 0,
+      purchase_date: property.purchase_date || '',
+      property_size_sqft: property.property_size_sqft || '',
+      lot_size_acres: property.lot_size_acres || '',
+      rental_income_monthly: property.rental_income_monthly || '',
+      property_tax_annual: property.property_tax_annual || '',
+      notes: property.notes || ''
+    }
   }
 
   const formatCurrency = (amount: number) => {
@@ -464,6 +507,41 @@ function RealEstate() {
                   Delete
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Property Modal */}
+      {editModalOpen && selectedProperty && schema && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Edit Property
+              </h3>
+              <button
+                onClick={closeModals}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                {schema.name}
+              </h4>
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                {schema.description}
+              </p>
+              
+              <SmartDynamicForm
+                schema={schema}
+                initialData={propertyToFormData(selectedProperty)}
+                onSubmit={handleUpdateProperty}
+                loading={submitting}
+                submitText="Update Property"
+              />
             </div>
           </div>
         </div>

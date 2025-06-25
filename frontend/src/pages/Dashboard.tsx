@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, TrendingDown, DollarSign, Briefcase, Building, PieChart, RefreshCw, Clock, AlertTriangle } from 'lucide-react'
+import { TrendingUp, TrendingDown, DollarSign, Briefcase, Building, PieChart, RefreshCw, Clock, AlertTriangle, Wallet } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell } from 'recharts'
 import { netWorthApi, pricesApi } from '@/services/api'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -40,9 +40,10 @@ const generateAllocationData = (netWorth: NetWorthSummary | null) => {
   const stockValue = netWorth.stock_holdings_value || 0
   const equityValue = netWorth.vested_equity_value || 0
   const realEstateValue = netWorth.real_estate_equity || 0
+  const cashHoldingsValue = netWorth.cash_holdings_value || 0
   
-  // Calculate cash/other as remaining assets
-  const cashOtherValue = Math.max(0, totalAssets - stockValue - equityValue - realEstateValue)
+  // Calculate other assets as remaining assets (after separating cash holdings)
+  const otherValue = Math.max(0, totalAssets - stockValue - equityValue - realEstateValue - cashHoldingsValue)
   
   const allocation = [
     {
@@ -64,10 +65,16 @@ const generateAllocationData = (netWorth: NetWorthSummary | null) => {
       percentage: totalAssets > 0 ? Math.round((realEstateValue / totalAssets) * 100) : 0
     },
     {
-      name: 'Cash & Other',
-      value: cashOtherValue,
+      name: 'Cash Holdings',
+      value: cashHoldingsValue,
+      color: '#22c55e',
+      percentage: totalAssets > 0 ? Math.round((cashHoldingsValue / totalAssets) * 100) : 0
+    },
+    {
+      name: 'Other',
+      value: otherValue,
       color: '#f59e0b',
-      percentage: totalAssets > 0 ? Math.round((cashOtherValue / totalAssets) * 100) : 0
+      percentage: totalAssets > 0 ? Math.round((otherValue / totalAssets) * 100) : 0
     }
   ]
 
@@ -179,7 +186,8 @@ function Dashboard() {
         vested_equity_value: 75000,
         unvested_equity_value: 25000,
         stock_holdings_value: 100000,
-        real_estate_equity: 150000,
+        real_estate_equity: 125000,
+        cash_holdings_value: 25000,
         last_updated: new Date().toISOString(),
       })
     }
@@ -278,7 +286,7 @@ function Dashboard() {
       </div>
 
       {/* Net Worth Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
         <MetricCard
           title="Net Worth"
           value={netWorth?.net_worth || 0}
@@ -312,6 +320,13 @@ function Dashboard() {
           change={0}
           changeType="positive"
           icon={Building}
+        />
+        <MetricCard
+          title="Total Cash"
+          value={netWorth?.cash_holdings_value || 0}
+          change={0}
+          changeType="positive"
+          icon={Wallet}
         />
       </div>
 

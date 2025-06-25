@@ -62,7 +62,7 @@ func (p *RealEstatePlugin) Initialize(config PluginConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize Real Estate account: %w", err)
 	}
-	
+
 	p.accountID = accountID
 	return nil
 }
@@ -110,7 +110,7 @@ func (p *RealEstatePlugin) GetBalances() ([]Balance, error) {
 		FROM real_estate_properties 
 		WHERE account_id = $1
 	`
-	
+
 	var totalValue float64
 	err := p.db.QueryRow(query, p.accountID).Scan(&totalValue)
 	if err != nil {
@@ -378,7 +378,7 @@ func (p *RealEstatePlugin) ProcessManualEntry(data map[string]interface{}) error
 	propertyName := data["property_name"].(string)
 	purchasePrice := data["purchase_price"].(float64)
 	currentValue := data["current_value"].(float64)
-	
+
 	var outstandingMortgage float64
 	if om, exists := data["outstanding_mortgage"]; exists && om != nil {
 		outstandingMortgage = om.(float64)
@@ -426,6 +426,91 @@ func (p *RealEstatePlugin) ProcessManualEntry(data map[string]interface{}) error
 
 	if err != nil {
 		return fmt.Errorf("failed to save real estate property: %w", err)
+	}
+
+	p.lastUpdated = time.Now()
+	return nil
+}
+
+// UpdateManualEntry updates an existing manual entry
+func (p *RealEstatePlugin) UpdateManualEntry(id int, data map[string]interface{}) error {
+	// Validate the data first
+	validation := p.ValidateManualEntry(data)
+	if !validation.Valid {
+		return fmt.Errorf("validation failed: %v", validation.Errors)
+	}
+
+	propertyType := data["property_type"].(string)
+	propertyName := data["property_name"].(string)
+	purchasePrice := data["purchase_price"].(float64)
+	currentValue := data["current_value"].(float64)
+	outstandingMortgage := data["outstanding_mortgage"].(float64)
+	equity := currentValue - outstandingMortgage
+
+	purchaseDate := data["purchase_date"].(time.Time)
+
+	// Handle optional fields
+	var propertySizeSqft, lotSizeAcres, rentalIncomeMonthly, propertyTaxAnnual *float64
+	var notes *string
+
+	if val, exists := data["property_size_sqft"]; exists && val != nil {
+		if v, ok := val.(float64); ok && v > 0 {
+			propertySizeSqft = &v
+		}
+	}
+
+	if val, exists := data["lot_size_acres"]; exists && val != nil {
+		if v, ok := val.(float64); ok && v > 0 {
+			lotSizeAcres = &v
+		}
+	}
+
+	if val, exists := data["rental_income_monthly"]; exists && val != nil {
+		if v, ok := val.(float64); ok && v > 0 {
+			rentalIncomeMonthly = &v
+		}
+	}
+
+	if val, exists := data["property_tax_annual"]; exists && val != nil {
+		if v, ok := val.(float64); ok && v > 0 {
+			propertyTaxAnnual = &v
+		}
+	}
+
+	if val, exists := data["notes"]; exists && val != nil {
+		if v, ok := val.(string); ok && v != "" {
+			notes = &v
+		}
+	}
+
+	// Update real estate property
+	query := `
+		UPDATE real_estate_properties 
+		SET property_type = $1, property_name = $2, purchase_price = $3, current_value = $4, 
+		    outstanding_mortgage = $5, equity = $6, purchase_date = $7, property_size_sqft = $8, 
+		    lot_size_acres = $9, rental_income_monthly = $10, property_tax_annual = $11, notes = $12,
+		    updated_at = $13
+		WHERE id = $14
+	`
+
+	result, err := p.db.Exec(query,
+		propertyType, propertyName, purchasePrice, currentValue,
+		outstandingMortgage, equity, purchaseDate, propertySizeSqft,
+		lotSizeAcres, rentalIncomeMonthly, propertyTaxAnnual, notes,
+		time.Now(), id,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to update real estate property: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check update result: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("real estate property not found")
 	}
 
 	p.lastUpdated = time.Now()

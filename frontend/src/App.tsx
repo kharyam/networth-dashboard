@@ -6,6 +6,7 @@ import Accounts from '@/pages/Accounts'
 import Stocks from '@/pages/Stocks'
 import Equity from '@/pages/Equity'
 import RealEstate from '@/pages/RealEstate'
+import CashHoldings from '@/pages/CashHoldings'
 import ManualEntries from '@/pages/ManualEntries'
 import Credentials from '@/pages/Credentials'
 import Settings from '@/pages/Settings'
@@ -20,6 +21,7 @@ function App() {
           <Route path="/stocks" element={<Stocks />} />
           <Route path="/equity" element={<Equity />} />
           <Route path="/real-estate" element={<RealEstate />} />
+          <Route path="/cash-holdings" element={<CashHoldings />} />
           <Route path="/manual-entries" element={<ManualEntries />} />
           <Route path="/credentials" element={<Credentials />} />
           <Route path="/settings" element={<Settings />} />

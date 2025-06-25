@@ -64,7 +64,7 @@ func (p *ComputersharePlugin) Initialize(config PluginConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize Computershare account: %w", err)
 	}
-	
+
 	p.accountID = accountID
 	return nil
 }
@@ -112,7 +112,7 @@ func (p *ComputersharePlugin) GetBalances() ([]Balance, error) {
 		FROM stock_holdings 
 		WHERE account_id = $1
 	`
-	
+
 	var totalValue float64
 	err := p.db.QueryRow(query, p.accountID).Scan(&totalValue)
 	if err != nil {
@@ -326,7 +326,7 @@ func (p *ComputersharePlugin) ValidateManualEntry(data map[string]interface{}) V
 func (p *ComputersharePlugin) ProcessManualEntry(data map[string]interface{}) error {
 	symbol := data["symbol"].(string)
 	shares := data["shares_owned"].(float64)
-	
+
 	var costBasis float64
 	if cb, exists := data["cost_basis"]; exists && cb != nil {
 		costBasis = cb.(float64)
@@ -361,6 +361,70 @@ func (p *ComputersharePlugin) ProcessManualEntry(data map[string]interface{}) er
 
 	if execErr != nil {
 		return fmt.Errorf("failed to save stock holding: %w", execErr)
+	}
+
+	p.lastUpdated = time.Now()
+	return nil
+}
+
+// UpdateManualEntry updates an existing manual entry
+func (p *ComputersharePlugin) UpdateManualEntry(id int, data map[string]interface{}) error {
+	// Validate the data first
+	validation := p.ValidateManualEntry(data)
+	if !validation.Valid {
+		return fmt.Errorf("validation failed: %v", validation.Errors)
+	}
+
+	symbol := data["symbol"].(string)
+	shares := data["shares_owned"].(float64)
+
+	var costBasis float64
+	if cb, exists := data["cost_basis"]; exists && cb != nil {
+		costBasis = cb.(float64)
+	}
+
+	var companyName string
+	if cn, exists := data["company_name"]; exists && cn != nil {
+		companyName = cn.(string)
+	}
+
+	// Get current market price from price service
+	priceService := services.NewPriceService()
+	currentPrice, err := priceService.GetCurrentPrice(symbol)
+	if err != nil {
+		// Log error but continue with existing price
+		fmt.Printf("Warning: Could not fetch price for %s: %v\n", symbol, err)
+		// Get existing price from database
+		var existingPrice float64
+		priceQuery := "SELECT COALESCE(current_price, 0) FROM stock_holdings WHERE id = $1"
+		p.db.QueryRow(priceQuery, id).Scan(&existingPrice)
+		currentPrice = existingPrice
+	}
+
+	// Update stock holding
+	query := `
+		UPDATE stock_holdings 
+		SET symbol = $1, company_name = $2, shares_owned = $3, cost_basis = $4, 
+		    current_price = $5, last_updated = $6
+		WHERE id = $7 AND data_source = 'computershare'
+	`
+
+	result, err := p.db.Exec(query,
+		symbol, companyName, shares, costBasis,
+		currentPrice, time.Now(), id,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to update stock holding: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check update result: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("stock holding not found or not owned by this plugin")
 	}
 
 	p.lastUpdated = time.Now()

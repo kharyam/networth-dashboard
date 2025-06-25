@@ -149,6 +149,8 @@ function ManualEntries() {
         return `${data.company_symbol || 'Equity'} ${data.grant_type || 'Grant'}`
       case 'real_estate':
         return data.property_name || 'Real Estate Property'
+      case 'cash_holdings':
+        return `${data.institution_name || 'Bank'} - ${data.account_name || 'Account'} (${data.account_type || 'Cash'})`
       default:
         return `${entry.entry_type} Entry`
     }
@@ -182,6 +184,15 @@ function ManualEntries() {
           return `$${data.current_value.toLocaleString()}`
         }
         return 'N/A'
+      case 'cash_holdings':
+        if (data.current_balance) {
+          const currency = data.currency || 'USD'
+          return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: currency
+          }).format(data.current_balance)
+        }
+        return 'N/A'
       default:
         return 'N/A'
     }
@@ -211,6 +222,24 @@ function ManualEntries() {
     } catch (err) {
       console.error('Failed to delete entry:', err)
       setError('Failed to delete entry. Please try again.')
+    }
+  }
+
+  const handleEntryUpdate = async (updatedData: Record<string, any>) => {
+    if (!selectedEntry) return
+    
+    try {
+      await manualEntriesApi.update(selectedEntry.id, selectedEntry.entry_type, updatedData)
+      await loadEntries()
+      closeModals()
+      setMessage({ type: 'success', text: 'Entry updated successfully!' })
+      
+      // Clear success message after delay
+      setTimeout(() => setMessage(null), 3000)
+    } catch (err: any) {
+      console.error('Failed to update entry:', err)
+      const errorMessage = err.response?.data?.error || 'Failed to update entry. Please try again.'
+      setError(errorMessage)
     }
   }
 
@@ -420,6 +449,7 @@ function ManualEntries() {
                     {plugin.name === 'computershare' ? 'Computershare Stock' :
                      plugin.name === 'morgan_stanley' ? 'Morgan Stanley Equity' :
                      plugin.name === 'real_estate' ? 'Real Estate' :
+                     plugin.name === 'cash_holdings' ? 'Cash Holdings' :
                      plugin.name}
                   </h3>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
@@ -476,35 +506,13 @@ function ManualEntries() {
       )}
 
       {/* Edit Modal */}
-      {editModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                Edit Entry
-              </h3>
-              <button
-                onClick={closeModals}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="p-6">
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Editing functionality will be available in a future update. For now, you can delete and recreate the entry.
-              </p>
-              <div className="flex justify-end space-x-3">
-                <button
-                  onClick={closeModals}
-                  className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {editModalOpen && selectedEntry && (
+        <EditEntryModal
+          entry={selectedEntry}
+          onClose={closeModals}
+          onUpdate={handleEntryUpdate}
+          plugins={plugins}
+        />
       )}
 
       {/* Delete Modal */}
@@ -544,6 +552,123 @@ function ManualEntries() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// EditEntryModal component
+interface EditEntryModalProps {
+  entry: ManualEntry
+  onClose: () => void
+  onUpdate: (data: Record<string, any>) => Promise<void>
+  plugins: Plugin[]
+}
+
+function EditEntryModal({ entry, onClose, onUpdate }: EditEntryModalProps) {
+  const [schema, setSchema] = useState<ManualEntrySchema | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    loadSchema()
+  }, [entry.entry_type])
+
+  const loadSchema = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const pluginSchema = await pluginsApi.getSchema(entry.entry_type)
+      setSchema(pluginSchema)
+    } catch (err) {
+      console.error('Failed to load schema:', err)
+      setError('Failed to load entry form. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const parseEntryData = () => {
+    try {
+      return JSON.parse(entry.data_json)
+    } catch {
+      return {}
+    }
+  }
+
+  const handleSubmit = async (formData: Record<string, any>) => {
+    setSubmitting(true)
+    setError(null)
+
+    try {
+      await onUpdate(formData)
+    } catch (err: any) {
+      console.error('Failed to update entry:', err)
+      const errorMessage = err.response?.data?.error || 'Failed to update entry. Please try again.'
+      setError(errorMessage)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+            Edit Entry
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+        
+        <div className="p-6">
+          {error && (
+            <div className="mb-4 card border-l-4 bg-red-50 dark:bg-red-900/20 border-red-400 dark:border-red-600">
+              <p className="text-red-700 dark:text-red-300">{error}</p>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="flex justify-center items-center h-32">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+            </div>
+          ) : schema ? (
+            <div>
+              <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                {schema.name}
+              </h4>
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                {schema.description}
+              </p>
+              
+              <SmartDynamicForm
+                schema={schema}
+                initialData={parseEntryData()}
+                onSubmit={handleSubmit}
+                loading={submitting}
+                submitText="Update Entry"
+              />
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Failed to load the entry form.
+              </p>
+              <button
+                onClick={loadSchema}
+                className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+              >
+                Try Again
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

@@ -122,6 +122,12 @@ export const realEstateApi = {
     api.delete(`/real-estate/${id}`).then(() => undefined),
 }
 
+// Cash Holdings API
+export const cashHoldingsApi = {
+  getAll: (): Promise<any[]> =>
+    api.get('/cash-holdings').then(res => res.data.cash_holdings || []),
+}
+
 // Plugins API
 export const pluginsApi = {
   getAll: (): Promise<Plugin[]> =>
@@ -151,8 +157,8 @@ export const manualEntriesApi = {
   create: (entry: any): Promise<any> =>
     api.post('/manual-entries', entry).then(res => res.data),
   
-  update: (id: number, entry: any): Promise<any> =>
-    api.put(`/manual-entries/${id}`, entry).then(res => res.data),
+  update: (id: number, entryType: string, entry: any): Promise<any> =>
+    api.put(`/manual-entries/${id}?type=${entryType}`, entry).then(res => res.data),
   
   delete: (id: number, entryType: string): Promise<void> =>
     api.delete(`/manual-entries/${id}?type=${entryType}`).then(() => undefined),
