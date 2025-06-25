@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, ErrorInfo, Component } from 'react'
 import { 
   Plus, 
   RefreshCw, 
@@ -11,6 +11,11 @@ import {
   Building,
   TrendingUp,
 } from 'lucide-react'
+import { 
+  PieChart, Pie, Cell, LineChart, Line, 
+  XAxis, YAxis, CartesianGrid, 
+  Tooltip, Legend, ResponsiveContainer 
+} from 'recharts'
 import { pluginsApi, cashHoldingsApi } from '../services/api'
 import { ManualEntrySchema } from '../types'
 import SmartDynamicForm from '../components/SmartDynamicForm'
@@ -32,6 +37,43 @@ interface CashHolding {
 
 type ViewMode = 'grid' | 'list' | 'charts'
 
+// Error boundary for chart components
+class ChartErrorBoundary extends Component<
+  { children: React.ReactNode; fallback?: React.ReactNode },
+  { hasError: boolean; error?: Error }
+> {
+  constructor(props: any) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('Chart Error Boundary caught an error:', error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || (
+        <div className="h-64 flex items-center justify-center text-red-500 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg">
+          <div className="text-center">
+            <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
+            <p>Chart rendering error</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {this.state.error?.message || 'Unknown error occurred'}
+            </p>
+          </div>
+        </div>
+      )
+    }
+
+    return this.props.children
+  }
+}
+
 function CashHoldings() {
   const [cashHoldings, setCashHoldings] = useState<CashHolding[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,15 +94,72 @@ function CashHoldings() {
     loadSchema()
   }, [])
 
+  // Transform and validate API response data
+  const transformCashHoldingData = (rawData: any[]): CashHolding[] => {
+    console.log('Raw API response:', rawData) // Debug logging
+    
+    if (!Array.isArray(rawData)) {
+      console.warn('API response is not an array:', rawData)
+      return []
+    }
+    
+    return rawData.map((item, index) => {
+      try {
+        const transformed: CashHolding = {
+          id: typeof item.id === 'number' ? item.id : index,
+          institution_name: String(item.institution_name || ''),
+          account_name: String(item.account_name || ''),
+          account_type: String(item.account_type || ''),
+          current_balance: parseFloat(item.current_balance) || 0,
+          interest_rate: item.interest_rate !== null && item.interest_rate !== undefined 
+            ? parseFloat(item.interest_rate) || undefined 
+            : undefined,
+          monthly_contribution: item.monthly_contribution !== null && item.monthly_contribution !== undefined
+            ? parseFloat(item.monthly_contribution) || undefined
+            : undefined,
+          account_number_last4: item.account_number_last4 ? String(item.account_number_last4) : undefined,
+          currency: String(item.currency || 'USD'),
+          notes: item.notes ? String(item.notes) : undefined,
+          created_at: String(item.created_at || ''),
+          updated_at: String(item.updated_at || '')
+        }
+        
+        // Validate critical numeric fields
+        if (!isValidNumber(transformed.current_balance)) {
+          console.warn(`Invalid balance for holding ${index}:`, item.current_balance, 'converted to 0')
+          transformed.current_balance = 0
+        }
+        
+        return transformed
+      } catch (error) {
+        console.error(`Error transforming cash holding ${index}:`, error, item)
+        // Return a safe default object
+        return {
+          id: index,
+          institution_name: 'Unknown',
+          account_name: 'Unknown',
+          account_type: 'checking',
+          current_balance: 0,
+          currency: 'USD',
+          created_at: '',
+          updated_at: ''
+        }
+      }
+    })
+  }
+
   const loadCashHoldings = async () => {
     try {
       setLoading(true)
       setError(null)
-      const data = await cashHoldingsApi.getAll()
-      setCashHoldings(data)
+      const rawData = await cashHoldingsApi.getAll()
+      const transformedData = transformCashHoldingData(rawData)
+      console.log('Transformed cash holdings:', transformedData) // Debug logging
+      setCashHoldings(transformedData)
     } catch (err) {
       console.error('Failed to load cash holdings:', err)
       setError('Failed to load cash holdings. Please try again.')
+      setCashHoldings([]) // Ensure we have empty array on error
     } finally {
       setLoading(false)
     }
@@ -106,6 +205,11 @@ function CashHoldings() {
   }
 
   const formatCurrency = (amount: number, currency: string = 'USD') => {
+    // Handle invalid numbers
+    if (isNaN(amount) || !isFinite(amount)) {
+      return '$0'
+    }
+    
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: currency,
@@ -117,8 +221,23 @@ function CashHoldings() {
     return `${rate}%`
   }
 
+  // Comprehensive validation for numeric values (handles null, undefined, NaN, Infinity)
+  const isValidNumber = (value: any): value is number => {
+    return typeof value === 'number' && 
+           value !== null && 
+           !isNaN(value) && 
+           isFinite(value)
+  }
+
   const getTotalBalance = () => {
-    return cashHoldings.reduce((sum, holding) => sum + holding.current_balance, 0)
+    return cashHoldings.reduce((sum, holding) => {
+      const balance = holding.current_balance
+      // Validate that balance is a valid number (handles null, undefined, NaN, Infinity)
+      if (isValidNumber(balance)) {
+        return sum + balance
+      }
+      return sum
+    }, 0)
   }
 
   const getAccountTypeColor = (type: string) => {
@@ -154,6 +273,224 @@ function CashHoldings() {
         return type.charAt(0).toUpperCase() + type.slice(1)
     }
   }
+
+  const getAccountTypeColorCode = (type: string) => {
+    switch (type) {
+      case 'checking': return '#3b82f6'
+      case 'savings': return '#10b981'
+      case 'money_market': return '#8b5cf6'
+      case 'cd': return '#f59e0b'
+      case 'high_yield_savings': return '#06b6d4'
+      default: return '#6b7280'
+    }
+  }
+
+  // Memoized data processing functions for charts - prevents multiple calculations and ensures consistency
+  const accountTypeDistribution = useMemo(() => {
+    console.log('Calculating account type distribution for:', cashHoldings.length, 'holdings')
+    if (cashHoldings.length === 0) {
+      return []
+    }
+    
+    const distribution = cashHoldings.reduce((acc, holding) => {
+      const type = holding.account_type
+      const typeName = getAccountTypeName(type)
+      const balance = isValidNumber(holding.current_balance) ? holding.current_balance : 0
+      const existing = acc.find(item => item.name === typeName)
+      
+      if (existing) {
+        existing.value += balance
+        existing.count += 1
+      } else {
+        acc.push({
+          name: typeName,
+          value: balance,
+          count: 1,
+          color: getAccountTypeColorCode(type)
+        })
+      }
+      return acc
+    }, [] as Array<{name: string, value: number, count: number, color: string}>)
+
+    const totalBalance = getTotalBalance()
+    const result = distribution.map(item => ({
+      ...item,
+      percentage: totalBalance > 0 ? Math.round((item.value / totalBalance) * 100) : 0
+    }))
+    
+    console.log('Account type distribution result:', result)
+    return result
+  }, [cashHoldings])
+
+  const interestRateData = useMemo(() => {
+    console.log('Calculating interest rate data for:', cashHoldings.length, 'holdings')
+    const result = cashHoldings
+      .filter(holding => isValidNumber(holding.interest_rate) && holding.interest_rate > 0)
+      .map(holding => ({
+        name: `${holding.institution_name} - ${holding.account_name}`,
+        rate: isValidNumber(holding.interest_rate) ? Number(holding.interest_rate.toFixed(2)) : 0,
+        balance: isValidNumber(holding.current_balance) ? holding.current_balance : 0,
+        type: getAccountTypeName(holding.account_type)
+      }))
+      .filter(item => item.rate > 0 && isValidNumber(item.rate)) // Double validation for rate
+      .sort((a, b) => b.rate - a.rate)
+    
+    console.log('Interest rate data result:', result)
+    console.log('Interest rate data values:', result.map(item => ({ name: item.name, rate: item.rate })))
+    return result
+  }, [cashHoldings])
+
+
+  // Generate next 12 months starting from current month
+  const getNextMonths = () => {
+    const months = []
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const now = new Date()
+    
+    for (let i = 1; i <= 12; i++) {
+      const futureDate = new Date(now.getFullYear(), now.getMonth() + i, 1)
+      const monthName = monthNames[futureDate.getMonth()]
+      const year = futureDate.getFullYear()
+      months.push(`${monthName} ${year}`)
+    }
+    
+    return months
+  }
+
+  const growthProjectionData = useMemo(() => {
+    console.log('Calculating growth projection data for:', cashHoldings.length, 'holdings')
+    const currentBalance = getTotalBalance()
+    
+    // Calculate average interest rate with comprehensive validation
+    const holdingsWithInterest = cashHoldings.filter(h => isValidNumber(h.interest_rate) && h.interest_rate > 0)
+    const avgInterestRate = holdingsWithInterest.length > 0 
+      ? holdingsWithInterest.reduce((sum, h) => sum + (isValidNumber(h.interest_rate) ? h.interest_rate : 0), 0) / holdingsWithInterest.length
+      : 0
+    
+    const monthlyContribution = cashHoldings.reduce((sum, h) => {
+      const contribution = h.monthly_contribution
+      if (isValidNumber(contribution)) {
+        return sum + contribution
+      }
+      return sum
+    }, 0)
+    
+    const projectionData = []
+    const months = getNextMonths()
+    
+    // Ensure starting values are valid using comprehensive validation
+    let runningBalance = isValidNumber(currentBalance) ? currentBalance : 0
+    const safeMonthlyContrib = isValidNumber(monthlyContribution) ? monthlyContribution : 0
+    const safeCurrentBalance = isValidNumber(currentBalance) ? currentBalance : 0
+    
+    for (let i = 0; i < 12; i++) {
+      // Add monthly contribution
+      runningBalance += safeMonthlyContrib
+      
+      // Add monthly interest (simple calculation) - ensure avgInterestRate is valid
+      if (isValidNumber(avgInterestRate) && avgInterestRate > 0) {
+        const interestAmount = (runningBalance * (avgInterestRate / 100)) / 12
+        if (isValidNumber(interestAmount)) {
+          runningBalance += interestAmount
+        }
+      }
+      
+      // Ensure values are valid numbers - use safer fallbacks
+      let balanceValue = Math.round(runningBalance)
+      if (!isValidNumber(balanceValue)) {
+        balanceValue = Math.round(safeCurrentBalance + (safeMonthlyContrib * (i + 1)))
+      }
+      
+      let withoutInterestValue = Math.round(safeCurrentBalance + (safeMonthlyContrib * (i + 1)))
+      if (!isValidNumber(withoutInterestValue)) {
+        withoutInterestValue = Math.round(safeCurrentBalance)
+      }
+      
+      projectionData.push({
+        month: months[i],
+        balance: balanceValue,
+        withoutInterest: withoutInterestValue
+      })
+    }
+    
+    console.log('Growth projection data result:', projectionData)
+    return projectionData
+  }, [cashHoldings])
+
+  // Validate chart data to prevent NaN errors
+  const validateChartData = (data: any[]) => {
+    return data.every(item => {
+      return Object.values(item).every(value => {
+        return typeof value === 'string' || (typeof value === 'number' && !isNaN(value) && isFinite(value))
+      })
+    })
+  }
+
+  // Enhanced validation specifically for BarChart interest rate data
+  const validateInterestRateData = (data: typeof interestRateData) => {
+    if (!Array.isArray(data) || data.length === 0) {
+      console.log('Interest rate data validation: empty or invalid array')
+      return false
+    }
+    
+    const isValid = data.every((item, index) => {
+      const hasValidName = typeof item.name === 'string' && item.name.trim().length > 0
+      const hasValidRate = isValidNumber(item.rate) && item.rate > 0 && item.rate <= 100
+      const hasValidBalance = isValidNumber(item.balance) && item.balance >= 0
+      
+      if (!hasValidName || !hasValidRate || !hasValidBalance) {
+        console.log(`Interest rate data validation failed at index ${index}:`, {
+          item,
+          hasValidName,
+          hasValidRate,
+          hasValidBalance
+        })
+        return false
+      }
+      
+      return true
+    })
+    
+    console.log('Interest rate data validation result:', { isValid, dataLength: data.length })
+    return isValid
+  }
+
+  const institutionDistribution = useMemo(() => {
+    console.log('Calculating institution distribution for:', cashHoldings.length, 'holdings')
+    if (cashHoldings.length === 0) {
+      return []
+    }
+    
+    const distribution = cashHoldings.reduce((acc, holding) => {
+      const institution = holding.institution_name
+      const balance = isValidNumber(holding.current_balance) ? holding.current_balance : 0
+      const existing = acc.find(item => item.name === institution)
+      
+      if (existing) {
+        existing.value += balance
+        existing.count += 1
+      } else {
+        acc.push({
+          name: institution,
+          value: balance,
+          count: 1
+        })
+      }
+      return acc
+    }, [] as Array<{name: string, value: number, count: number}>)
+
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
+    const totalBalance = getTotalBalance()
+    
+    const result = distribution.map((item, index) => ({
+      ...item,
+      color: colors[index % colors.length],
+      percentage: totalBalance > 0 ? Math.round((item.value / totalBalance) * 100) : 0
+    }))
+    
+    console.log('Institution distribution result:', result)
+    return result
+  }, [cashHoldings])
 
   if (loading) {
     return (
@@ -341,7 +678,7 @@ function CashHoldings() {
         </div>
       )}
 
-      {/* Cash Holdings List/Grid */}
+      {/* Cash Holdings List/Grid/Charts */}
       {cashHoldings.length === 0 ? (
         <div className="text-center py-12">
           <Wallet className="mx-auto h-12 w-12 text-gray-400" />
@@ -359,6 +696,320 @@ function CashHoldings() {
             </button>
           </div>
         </div>
+      ) : viewMode === 'charts' ? (
+        // Enhanced loading protection for charts
+        loading || !cashHoldings || cashHoldings.length === 0 ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+              <p className="text-gray-500 dark:text-gray-400">
+                {loading ? 'Loading chart data...' : 'No cash holdings data available for charts'}
+              </p>
+            </div>
+          </div>
+        ) : (
+        <div className="space-y-6">
+          {/* Phase 1 Charts */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Account Type Distribution */}
+            <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                  Distribution by Account Type
+                </h3>
+                {accountTypeDistribution.length > 0 ? (
+                  <>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={accountTypeDistribution}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={40}
+                            outerRadius={80}
+                            paddingAngle={5}
+                            dataKey="value"
+                          >
+                            {accountTypeDistribution.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip 
+                            formatter={(value: number, _name: string, props: any) => [
+                              formatCurrency(value), 
+                              `${props.payload.name} (${props.payload.count} account${props.payload.count !== 1 ? 's' : ''})`
+                            ]}
+                          />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      {accountTypeDistribution.map((item) => (
+                        <div key={item.name} className="flex items-center">
+                          <div 
+                            className="w-3 h-3 rounded-full mr-2"
+                            style={{ backgroundColor: item.color }}
+                          />
+                          <span className="text-sm text-gray-600 dark:text-gray-300">
+                            {item.name} ({item.percentage}%)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="h-64 flex items-center justify-center text-gray-500 dark:text-gray-400">
+                    No account data available for chart
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Interest Rate Comparison */}
+            <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                  Interest Rate Comparison
+                </h3>
+                {(() => {
+                  const isValidData = validateInterestRateData(interestRateData)
+                  
+                  // Final sanitization check before rendering
+                  const sanitizedData = interestRateData.map(item => ({
+                    ...item,
+                    rate: isValidNumber(item.rate) ? Number(item.rate) : 0,
+                    balance: isValidNumber(item.balance) ? Number(item.balance) : 0
+                  })).filter(item => item.rate > 0)
+                  
+                  // Use simple fixed domain to eliminate domain calculation as source of NaN
+                  const simpleDomain = [0, 10] // Simple fixed domain
+                  
+                  // Add final validation step - ensure no NaN/Infinity in data
+                  const ultraCleanData = sanitizedData.map(item => ({
+                    name: String(item.name || 'Unknown'),
+                    rate: Math.min(10, Math.max(0, Number(item.rate) || 0)), // Clamp between 0-10
+                    balance: Number(item.balance) || 0,
+                    type: String(item.type || '')
+                  })).filter(item => item.rate > 0 && item.rate <= 10)
+                  
+                  console.log('BarChart rendering with simplified approach:', {
+                    originalDataLength: interestRateData.length,
+                    sanitizedDataLength: sanitizedData.length,
+                    ultraCleanDataLength: ultraCleanData.length,
+                    isValidData,
+                    simpleDomain,
+                    ultraCleanData
+                  })
+                  
+                  return ultraCleanData.length > 0 ? (
+                    // Table fallback if chart fails but we have data
+                    <div className="h-64 overflow-auto">
+                      <div className="mb-2 text-sm text-blue-600 dark:text-blue-400">
+                        📊 Interest Rate Comparison (Table View)
+                      </div>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-200 dark:border-gray-700">
+                            <th className="text-left py-2 pr-4 font-medium text-gray-900 dark:text-white">Account</th>
+                            <th className="text-right py-2 font-medium text-gray-900 dark:text-white">Interest Rate</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ultraCleanData.map((item, index) => (
+                            <tr key={index} className="border-b border-gray-100 dark:border-gray-800">
+                              <td className="py-2 pr-4 text-gray-800 dark:text-gray-200">{item.name}</td>
+                              <td className="text-right py-2 text-gray-800 dark:text-gray-200">{item.rate}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="h-64 flex items-center justify-center text-gray-500 dark:text-gray-400">
+                      No interest rate data available - add accounts with interest rates to see comparison
+                    </div>
+                  )
+                })()}
+              </div>
+            </div>
+          </div>
+
+          {/* Growth Projection */}
+          <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                12-Month Growth Projection
+              </h3>
+              {(() => {
+                const isValidData = validateChartData(growthProjectionData)
+                
+                return isValidData && growthProjectionData.length > 0 ? (
+                  <ChartErrorBoundary>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart 
+                          data={growthProjectionData}
+                          margin={{ left: 80, right: 30, top: 5, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="month" />
+                          <YAxis 
+                            width={80}
+                            tickFormatter={(value) => formatCurrency(value)}
+                            domain={[0, 'dataMax']}
+                          />
+                          <Tooltip 
+                            formatter={(value: number, name: string) => [
+                              formatCurrency(value), 
+                              name === 'With Interest' ? 'With Interest' : 'Without Interest'
+                            ]}
+                          />
+                          <Legend />
+                          <Line 
+                            type="monotone" 
+                            dataKey="balance" 
+                            stroke="#10b981" 
+                            strokeWidth={2}
+                            name="With Interest"
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="withoutInterest" 
+                            stroke="#6b7280" 
+                            strokeWidth={2}
+                            strokeDasharray="5 5"
+                            name="Without Interest"
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </ChartErrorBoundary>
+                ) : (
+                  <div className="h-64 flex items-center justify-center text-gray-500 dark:text-gray-400">
+                    No valid projection data available
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+
+          {/* Phase 2 Charts */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Institution Distribution */}
+            <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                  Distribution by Institution
+                </h3>
+                {institutionDistribution.length > 0 ? (
+                  <>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={institutionDistribution}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            dataKey="value"
+                          >
+                            {institutionDistribution.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip 
+                            formatter={(value: number, _name: string, props: any) => [
+                              formatCurrency(value), 
+                              `${props.payload.name} (${props.payload.count} account${props.payload.count !== 1 ? 's' : ''})`
+                            ]}
+                          />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      {institutionDistribution.map((item) => (
+                        <div key={item.name} className="flex items-center justify-between">
+                          <div className="flex items-center">
+                            <div 
+                              className="w-3 h-3 rounded-full mr-2"
+                              style={{ backgroundColor: item.color }}
+                            />
+                            <span className="text-sm text-gray-600 dark:text-gray-300">
+                              {item.name}
+                            </span>
+                          </div>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                            {item.percentage}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="h-64 flex items-center justify-center text-gray-500 dark:text-gray-400">
+                    No institution data available for chart
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Enhanced Metrics */}
+            <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                  Cash Holdings Metrics
+                </h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Highest Interest Rate</p>
+                      <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        {interestRateData.length > 0 
+                          ? `${interestRateData[0].rate}%` 
+                          : 'N/A'
+                        }
+                      </p>
+                    </div>
+                    <TrendingUp className="h-8 w-8 text-green-500" />
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Monthly Contributions</p>
+                      <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        {formatCurrency(cashHoldings.reduce((sum, h) => {
+                          return sum + (isValidNumber(h.monthly_contribution) ? h.monthly_contribution : 0)
+                        }, 0))}
+                      </p>
+                    </div>
+                    <Building className="h-8 w-8 text-blue-500" />
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Projected Annual Interest</p>
+                      <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        {formatCurrency(
+                          cashHoldings.reduce((sum, h) => {
+                            if (isValidNumber(h.interest_rate) && isValidNumber(h.current_balance)) {
+                              return sum + (h.current_balance * (h.interest_rate / 100))
+                            }
+                            return sum
+                          }, 0)
+                        )}
+                      </p>
+                    </div>
+                    <Wallet className="h-8 w-8 text-purple-500" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        )
       ) : (
         <div className={viewMode === 'grid' 
           ? 'grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3' 
