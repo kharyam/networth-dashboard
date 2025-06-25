@@ -122,6 +122,12 @@ export const realEstateApi = {
     api.delete(`/real-estate/${id}`).then(() => undefined),
 }
 
+// Cash Holdings API
+export const cashHoldingsApi = {
+  getAll: (): Promise<any[]> =>
+    api.get('/cash-holdings').then(res => res.data.cash_holdings || []),
+}
+
 // Plugins API
 export const pluginsApi = {
   getAll: (): Promise<Plugin[]> =>

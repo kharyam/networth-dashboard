@@ -99,6 +99,9 @@ func (s *Server) setupRouter() {
 		api.PUT("/real-estate/:id", s.updateRealEstate)
 		api.DELETE("/real-estate/:id", s.deleteRealEstate)
 
+		// Cash holdings endpoints
+		api.GET("/cash-holdings", s.getCashHoldings)
+
 		// Plugin management endpoints
 		api.GET("/plugins", s.getPlugins)
 		api.GET("/plugins/:name/schema", s.getPluginSchema)

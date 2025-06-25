@@ -152,6 +152,24 @@ const (
 			UNIQUE(account_id, property_name)
 		);`
 
+	createCashHoldingsTable = `
+		CREATE TABLE IF NOT EXISTS cash_holdings (
+			id SERIAL PRIMARY KEY,
+			account_id INTEGER REFERENCES accounts(id),
+			institution_name VARCHAR(100) NOT NULL,
+			account_name VARCHAR(100) NOT NULL,
+			account_type VARCHAR(50) NOT NULL,
+			current_balance DECIMAL(15,2) NOT NULL,
+			interest_rate DECIMAL(5,2),
+			monthly_contribution DECIMAL(10,2),
+			account_number_last4 VARCHAR(4),
+			currency VARCHAR(3) DEFAULT 'USD',
+			notes TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(account_id, institution_name, account_name)
+		);`
+
 	createMiscellaneousAssetsTable = `
 		CREATE TABLE IF NOT EXISTS miscellaneous_assets (
 			id SERIAL PRIMARY KEY,
@@ -194,6 +212,9 @@ const (
 		CREATE INDEX IF NOT EXISTS idx_vesting_schedule_date ON vesting_schedule(vest_date);
 		CREATE INDEX IF NOT EXISTS idx_real_estate_account ON real_estate_properties(account_id);
 		CREATE INDEX IF NOT EXISTS idx_real_estate_type ON real_estate_properties(property_type);
+		CREATE INDEX IF NOT EXISTS idx_cash_holdings_account ON cash_holdings(account_id);
+		CREATE INDEX IF NOT EXISTS idx_cash_holdings_type ON cash_holdings(account_type);
+		CREATE INDEX IF NOT EXISTS idx_cash_holdings_institution ON cash_holdings(institution_name);
 		CREATE INDEX IF NOT EXISTS idx_net_worth_snapshots_timestamp ON net_worth_snapshots(timestamp);
 	`
 )
