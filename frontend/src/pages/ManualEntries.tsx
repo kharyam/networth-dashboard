@@ -149,6 +149,8 @@ function ManualEntries() {
         return `${data.company_symbol || 'Equity'} ${data.grant_type || 'Grant'}`
       case 'real_estate':
         return data.property_name || 'Real Estate Property'
+      case 'cash_holdings':
+        return `${data.institution_name || 'Bank'} - ${data.account_name || 'Account'} (${data.account_type || 'Cash'})`
       default:
         return `${entry.entry_type} Entry`
     }
@@ -180,6 +182,15 @@ function ManualEntries() {
       case 'real_estate':
         if (data.current_value) {
           return `$${data.current_value.toLocaleString()}`
+        }
+        return 'N/A'
+      case 'cash_holdings':
+        if (data.current_balance) {
+          const currency = data.currency || 'USD'
+          return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: currency
+          }).format(data.current_balance)
         }
         return 'N/A'
       default:
@@ -438,6 +449,7 @@ function ManualEntries() {
                     {plugin.name === 'computershare' ? 'Computershare Stock' :
                      plugin.name === 'morgan_stanley' ? 'Morgan Stanley Equity' :
                      plugin.name === 'real_estate' ? 'Real Estate' :
+                     plugin.name === 'cash_holdings' ? 'Cash Holdings' :
                      plugin.name}
                   </h3>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">

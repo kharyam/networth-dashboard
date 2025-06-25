@@ -28,11 +28,14 @@ func (s *Server) getNetWorth(c *gin.Context) {
 	// Calculate real estate equity
 	realEstateEquity := s.calculateRealEstateEquity()
 
+	// Calculate cash holdings value
+	cashHoldingsValue := s.calculateCashHoldingsValue()
+
 	// Calculate liabilities
 	totalLiabilities := s.calculateTotalLiabilities()
 
 	// Net worth = only vested/liquid assets - liabilities
-	totalAssets := stockValue + vestedEquityValue + realEstateEquity
+	totalAssets := stockValue + vestedEquityValue + realEstateEquity + cashHoldingsValue
 	netWorth := totalAssets - totalLiabilities
 
 	// Get price status information
@@ -46,6 +49,7 @@ func (s *Server) getNetWorth(c *gin.Context) {
 		"unvested_equity_value": unvestedEquityValue, // Shown separately as future value
 		"stock_holdings_value":  stockValue,
 		"real_estate_equity":    realEstateEquity,
+		"cash_holdings_value":   cashHoldingsValue,
 		"price_last_updated":    priceStatus.LastUpdated,
 		"stale_price_count":     priceStatus.StaleCount,
 		"provider_name":         priceStatus.ProviderName,
@@ -102,6 +106,19 @@ func (s *Server) calculateRealEstateEquity() float64 {
 	query := `
 		SELECT COALESCE(SUM(equity), 0) 
 		FROM real_estate_properties
+	`
+	err := s.db.QueryRow(query).Scan(&value)
+	if err != nil {
+		return 0.0
+	}
+	return value
+}
+
+func (s *Server) calculateCashHoldingsValue() float64 {
+	var value float64
+	query := `
+		SELECT COALESCE(SUM(current_balance), 0) 
+		FROM cash_holdings
 	`
 	err := s.db.QueryRow(query).Scan(&value)
 	if err != nil {
@@ -628,6 +645,78 @@ func (s *Server) getRealEstate(c *gin.Context) {
 	})
 }
 
+func (s *Server) getCashHoldings(c *gin.Context) {
+	query := `
+		SELECT id, account_id, institution_name, account_name, account_type, 
+		       current_balance, interest_rate, monthly_contribution, 
+		       account_number_last4, currency, notes, created_at, updated_at
+		FROM cash_holdings
+		ORDER BY institution_name, account_name
+	`
+
+	rows, err := s.db.Query(query)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch cash holdings",
+		})
+		return
+	}
+	defer rows.Close()
+
+	holdings := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var holding struct {
+			ID                  int      `json:"id"`
+			AccountID           int      `json:"account_id"`
+			InstitutionName     string   `json:"institution_name"`
+			AccountName         string   `json:"account_name"`
+			AccountType         string   `json:"account_type"`
+			CurrentBalance      float64  `json:"current_balance"`
+			InterestRate        *float64 `json:"interest_rate"`
+			MonthlyContribution *float64 `json:"monthly_contribution"`
+			AccountNumberLast4  *string  `json:"account_number_last4"`
+			Currency            string   `json:"currency"`
+			Notes               *string  `json:"notes"`
+			CreatedAt           string   `json:"created_at"`
+			UpdatedAt           string   `json:"updated_at"`
+		}
+
+		err := rows.Scan(
+			&holding.ID, &holding.AccountID, &holding.InstitutionName, &holding.AccountName,
+			&holding.AccountType, &holding.CurrentBalance, &holding.InterestRate,
+			&holding.MonthlyContribution, &holding.AccountNumberLast4, &holding.Currency,
+			&holding.Notes, &holding.CreatedAt, &holding.UpdatedAt,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to scan cash holding",
+			})
+			return
+		}
+
+		holdingMap := map[string]interface{}{
+			"id":                   holding.ID,
+			"account_id":           holding.AccountID,
+			"institution_name":     holding.InstitutionName,
+			"account_name":         holding.AccountName,
+			"account_type":         holding.AccountType,
+			"current_balance":      holding.CurrentBalance,
+			"interest_rate":        holding.InterestRate,
+			"monthly_contribution": holding.MonthlyContribution,
+			"account_number_last4": holding.AccountNumberLast4,
+			"currency":             holding.Currency,
+			"notes":                holding.Notes,
+			"created_at":           holding.CreatedAt,
+			"updated_at":           holding.UpdatedAt,
+		}
+		holdings = append(holdings, holdingMap)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"cash_holdings": holdings,
+	})
+}
+
 func (s *Server) createRealEstate(c *gin.Context) {
 	// TODO: Implement real estate creation
 	c.JSON(http.StatusCreated, gin.H{
@@ -844,6 +933,26 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		FROM real_estate_properties re
 		LEFT JOIN accounts a ON re.account_id = a.id
 		WHERE re.created_at IS NOT NULL
+		
+		UNION ALL
+		
+		SELECT 'cash_holdings' as entry_type,
+		       ch.id, ch.account_id, ch.created_at, ch.updated_at,
+		       json_build_object(
+		           'institution_name', ch.institution_name,
+		           'account_name', ch.account_name,
+		           'account_type', ch.account_type,
+		           'current_balance', ch.current_balance,
+		           'interest_rate', ch.interest_rate,
+		           'monthly_contribution', ch.monthly_contribution,
+		           'account_number_last4', ch.account_number_last4,
+		           'currency', ch.currency,
+		           'notes', ch.notes
+		       ) as data_json,
+		       a.account_name, a.institution
+		FROM cash_holdings ch
+		LEFT JOIN accounts a ON ch.account_id = a.id
+		WHERE ch.created_at IS NOT NULL
 	`
 
 	args := []interface{}{}
