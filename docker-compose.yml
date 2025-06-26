@@ -6,9 +6,9 @@ services:
     image: postgres:15-alpine
     container_name: networth-db
     environment:
-      POSTGRES_DB: networth_dashboard
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
@@ -26,18 +26,27 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      pull_policy: missing
     container_name: networth-backend
     environment:
       - DB_HOST=database
-      - DB_PORT=5432
-      - DB_USER=postgres
-      - DB_PASSWORD=password
-      - DB_NAME=networth_dashboard
-      - DB_SSLMODE=disable
-      - PORT=8080
-      - JWT_SECRET=your-secret-key-change-in-production
-      - ENCRYPTION_KEY=your-encryption-key-32-chars-long-change-in-prod
-      - CREDENTIAL_KEY=your-credential-encryption-key-32-chars-change-prod
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - DB_SSLMODE=${DB_SSLMODE}
+      - PORT=${PORT}
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - CREDENTIAL_KEY=${CREDENTIAL_KEY}
+      - ALPHA_VANTAGE_API_KEY=${ALPHA_VANTAGE_API_KEY}
+      - ALPHA_VANTAGE_DAILY_LIMIT=${ALPHA_VANTAGE_DAILY_LIMIT}
+      - ALPHA_VANTAGE_RATE_LIMIT=${ALPHA_VANTAGE_RATE_LIMIT}
+      - CACHE_REFRESH_MINUTES=${CACHE_REFRESH_MINUTES}
+      - MARKET_OPEN_LOCAL=${MARKET_OPEN_LOCAL}
+      - MARKET_CLOSE_LOCAL=${MARKET_CLOSE_LOCAL}
+      - MARKET_TIMEZONE=${MARKET_TIMEZONE}
+      - RATE_LIMIT_RPS=${RATE_LIMIT_RPS}
     ports:
       - "8080:8080"
     depends_on:
@@ -58,6 +67,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      pull_policy: missing
     container_name: networth-frontend
     ports:
       - "3000:3000"

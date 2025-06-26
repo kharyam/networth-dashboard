@@ -61,10 +61,9 @@ A comprehensive real-time net worth dashboard that aggregates financial data fro
    
    **With Podman Compose:**
    ```bash
-   podman-compose up -d
 
    # Cleanly restart everything for development and show logs:
-   podman-compose down -v --remove-orphans ; podman system prune -af ; podman-compose build --no-cache ; podman-compose up
+   podman-compose down -v --remove-orphans ; podman system prune -af ; podman-compose build --no-cache ; set -a && source .env && set +a && podman-compose up
 
    ```
 

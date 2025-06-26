@@ -1,10 +1,15 @@
 package services
 
 import (
+	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
+	"net/http"
 	"strings"
 	"time"
+	"networth-dashboard/internal/config"
 )
 
 // PriceProvider interface allows easy swapping of price data sources
@@ -112,6 +117,256 @@ func (m *MockPriceProvider) GetProviderName() string {
 	return "Mock Price Provider"
 }
 
+// AlphaVantageResponse represents the response from Alpha Vantage API
+type AlphaVantageResponse struct {
+	GlobalQuote struct {
+		Symbol           string `json:"01. symbol"`
+		Open             string `json:"02. open"`
+		High             string `json:"03. high"`
+		Low              string `json:"04. low"`
+		Price            string `json:"05. price"`
+		Volume           string `json:"06. volume"`
+		LatestTradingDay string `json:"07. latest trading day"`
+		PreviousClose    string `json:"08. previous close"`
+		Change           string `json:"09. change"`
+		ChangePercent    string `json:"10. change percent"`
+	} `json:"Global Quote"`
+}
+
+// AlphaVantagePriceProvider provides real stock prices from Alpha Vantage API
+type AlphaVantagePriceProvider struct {
+	apiKey        string
+	client        *http.Client
+	db            *sql.DB
+	marketService *MarketHoursService
+	config        *config.ApiConfig
+	baseURL       string
+}
+
+// NewAlphaVantagePriceProvider creates a new Alpha Vantage price provider
+func NewAlphaVantagePriceProvider(apiKey string, db *sql.DB, marketService *MarketHoursService, cfg *config.ApiConfig) *AlphaVantagePriceProvider {
+	return &AlphaVantagePriceProvider{
+		apiKey:        apiKey,
+		client:        &http.Client{Timeout: 30 * time.Second},
+		db:            db,
+		marketService: marketService,
+		config:        cfg,
+		baseURL:       "https://www.alphavantage.co/query",
+	}
+}
+
+// GetCurrentPrice gets the current price for a symbol with market-aware caching
+func (av *AlphaVantagePriceProvider) GetCurrentPrice(symbol string) (float64, error) {
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+
+	if symbol == "" {
+		return 0, fmt.Errorf("symbol cannot be empty")
+	}
+
+	// Check cached price first
+	cachedPrice, lastUpdate, err := av.getCachedPrice(symbol)
+	var hasCache = err == nil
+	
+	if hasCache {
+		// Use market-aware caching logic
+		if !av.marketService.ShouldRefreshPrices(lastUpdate, av.config.CacheRefreshInterval) {
+			return cachedPrice, nil
+		}
+	}
+
+	// Check if we can make API call (rate limiting)
+	if !av.canMakeAPICall() {
+		if hasCache {
+			// Return cached price if we hit rate limits but have cache
+			return cachedPrice, nil
+		}
+		// No cache and rate limited - this is a problematic scenario
+		return 0, fmt.Errorf("rate limit exceeded and no cached price available for %s. Please try again later when rate limits reset", symbol)
+	}
+
+	// Fetch from Alpha Vantage API
+	url := fmt.Sprintf("%s?function=GLOBAL_QUOTE&symbol=%s&apikey=%s", av.baseURL, symbol, av.apiKey)
+
+	resp, err := av.client.Get(url)
+	if err != nil {
+		// Return cached price on API failure if we have one
+		if hasCache && cachedPrice > 0 {
+			return cachedPrice, nil
+		}
+		return 0, fmt.Errorf("failed to fetch price from Alpha Vantage and no cached price available for %s: %w", symbol, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Return cached price on API error if we have one
+		if hasCache && cachedPrice > 0 {
+			return cachedPrice, nil
+		}
+		return 0, fmt.Errorf("Alpha Vantage API returned status %d for %s and no cached price available", resp.StatusCode, symbol)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		if hasCache && cachedPrice > 0 {
+			return cachedPrice, nil
+		}
+		return 0, fmt.Errorf("failed to read response body for %s and no cached price available: %w", symbol, err)
+	}
+
+	var response AlphaVantageResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		if hasCache && cachedPrice > 0 {
+			return cachedPrice, nil
+		}
+		return 0, fmt.Errorf("failed to parse Alpha Vantage response for %s and no cached price available: %w", symbol, err)
+	}
+
+	// Extract price from response
+	priceStr := response.GlobalQuote.Price
+	if priceStr == "" {
+		if hasCache && cachedPrice > 0 {
+			return cachedPrice, nil
+		}
+		return 0, fmt.Errorf("no price data found for symbol %s and no cached price available", symbol)
+	}
+
+	price := 0.0
+	if _, err := fmt.Sscanf(priceStr, "%f", &price); err != nil {
+		if hasCache && cachedPrice > 0 {
+			return cachedPrice, nil
+		}
+		return 0, fmt.Errorf("failed to parse price %s for symbol %s and no cached price available: %w", priceStr, symbol, err)
+	}
+
+	// Cache the result
+	if err := av.cachePrice(symbol, price); err != nil {
+		fmt.Printf("Failed to cache price for %s: %v\n", symbol, err)
+	}
+
+	// Record API usage
+	av.recordAPICall()
+
+	return price, nil
+}
+
+// GetMultiplePrices gets prices for multiple symbols efficiently
+func (av *AlphaVantagePriceProvider) GetMultiplePrices(symbols []string) (map[string]float64, error) {
+	results := make(map[string]float64)
+	var errors []string
+
+	for _, symbol := range symbols {
+		price, err := av.GetCurrentPrice(symbol)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", symbol, err))
+			continue
+		}
+		results[symbol] = price
+	}
+
+	if len(errors) > 0 {
+		return results, fmt.Errorf("errors fetching prices: %s", strings.Join(errors, "; "))
+	}
+
+	return results, nil
+}
+
+// GetProviderName returns the name of this provider
+func (av *AlphaVantagePriceProvider) GetProviderName() string {
+	return "Alpha Vantage"
+}
+
+// getCachedPrice retrieves cached price from database
+func (av *AlphaVantagePriceProvider) getCachedPrice(symbol string) (float64, time.Time, error) {
+	query := `
+		SELECT price, timestamp 
+		FROM stock_prices 
+		WHERE symbol = $1 
+		ORDER BY timestamp DESC 
+		LIMIT 1
+	`
+
+	var price float64
+	var timestamp time.Time
+	err := av.db.QueryRow(query, symbol).Scan(&price, &timestamp)
+	
+	if err == sql.ErrNoRows {
+		return 0, time.Time{}, fmt.Errorf("no cached price found")
+	}
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+
+	return price, timestamp, nil
+}
+
+// cachePrice stores price in database
+func (av *AlphaVantagePriceProvider) cachePrice(symbol string, price float64) error {
+	query := `
+		INSERT INTO stock_prices (symbol, price, timestamp, source)
+		VALUES ($1, $2, $3, $4)
+	`
+
+	_, err := av.db.Exec(query, symbol, price, time.Now(), "alphavantage")
+	return err
+}
+
+// canMakeAPICall checks if we can make an API call based on rate limits
+func (av *AlphaVantagePriceProvider) canMakeAPICall() bool {
+	// Check daily limit
+	today := time.Now().Format("2006-01-02")
+	dailyCount := av.getAPICallCount(today)
+	
+	if dailyCount >= av.config.AlphaVantageDailyLimit {
+		return false
+	}
+
+	// Check rate limit (calls per minute)
+	lastMinute := time.Now().Add(-1 * time.Minute)
+	recentCount := av.getAPICallCountSince(lastMinute)
+	
+	return recentCount < av.config.AlphaVantageRateLimit
+}
+
+// getAPICallCount gets the number of API calls made today
+func (av *AlphaVantagePriceProvider) getAPICallCount(date string) int {
+	query := `
+		SELECT COUNT(*) 
+		FROM stock_prices 
+		WHERE source = 'alphavantage' 
+		AND DATE(timestamp) = $1
+	`
+
+	var count int
+	err := av.db.QueryRow(query, date).Scan(&count)
+	if err != nil {
+		return 0
+	}
+	return count
+}
+
+// getAPICallCountSince gets the number of API calls made since a specific time
+func (av *AlphaVantagePriceProvider) getAPICallCountSince(since time.Time) int {
+	query := `
+		SELECT COUNT(*) 
+		FROM stock_prices 
+		WHERE source = 'alphavantage' 
+		AND timestamp > $1
+	`
+
+	var count int
+	err := av.db.QueryRow(query, since).Scan(&count)
+	if err != nil {
+		return 0
+	}
+	return count
+}
+
+// recordAPICall records that an API call was made (this is implicit when caching prices)
+func (av *AlphaVantagePriceProvider) recordAPICall() {
+	// This is automatically recorded when we cache the price
+	// Could add explicit API call logging here if needed
+}
+
 // PriceService wraps a PriceProvider and provides additional functionality
 type PriceService struct {
 	provider PriceProvider
@@ -121,6 +376,19 @@ type PriceService struct {
 func NewPriceService() *PriceService {
 	return &PriceService{
 		provider: NewMockPriceProvider(),
+	}
+}
+
+// NewPriceServiceWithAlphaVantage creates a price service with Alpha Vantage provider
+func NewPriceServiceWithAlphaVantage(apiKey string, db *sql.DB, marketService *MarketHoursService, cfg *config.ApiConfig) *PriceService {
+	if apiKey == "" {
+		// Fallback to mock provider if no API key
+		return NewPriceService()
+	}
+	
+	alphaVantageProvider := NewAlphaVantagePriceProvider(apiKey, db, marketService, cfg)
+	return &PriceService{
+		provider: alphaVantageProvider,
 	}
 }
 

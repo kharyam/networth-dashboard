@@ -128,6 +128,24 @@ export const cashHoldingsApi = {
     api.get('/cash-holdings').then(res => res.data.cash_holdings || []),
 }
 
+// Crypto Holdings API
+export const cryptoHoldingsApi = {
+  getAll: (): Promise<any[]> =>
+    api.get('/crypto-holdings').then(res => res.data.crypto_holdings || []),
+  
+  getPrice: (symbol: string): Promise<any> =>
+    api.get(`/crypto/prices/${symbol}`).then(res => res.data),
+  
+  getPriceHistory: (days?: number): Promise<any> =>
+    api.get(`/crypto/prices/history${days ? `?days=${days}` : ''}`).then(res => res.data),
+  
+  refreshPrice: (symbol: string): Promise<any> =>
+    api.post(`/crypto/prices/refresh/${symbol}`).then(res => res.data),
+  
+  refreshAllPrices: (): Promise<any> =>
+    api.post('/crypto/prices/refresh').then(res => res.data),
+}
+
 // Plugins API
 export const pluginsApi = {
   getAll: (): Promise<Plugin[]> =>
@@ -174,6 +192,12 @@ export const pricesApi = {
   
   getStatus: (): Promise<any> =>
     api.get('/prices/status').then(res => res.data),
+}
+
+// Market Status API
+export const marketApi = {
+  getStatus: (): Promise<any> =>
+    api.get('/market/status').then(res => res.data),
 }
 
 export default api

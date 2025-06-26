@@ -51,7 +51,7 @@ function ManualEntries() {
   const loadPlugins = async () => {
     try {
       const pluginList = await pluginsApi.getAll()
-      const manualEntryPlugins = pluginList.filter(p => p.type === 'manual')
+      const manualEntryPlugins = pluginList.filter(p => p.type === 'manual' && p.enabled)
       setPlugins(manualEntryPlugins)
     } catch (error) {
       console.error('Failed to load plugins:', error)
@@ -151,6 +151,8 @@ function ManualEntries() {
         return data.property_name || 'Real Estate Property'
       case 'cash_holdings':
         return `${data.institution_name || 'Bank'} - ${data.account_name || 'Account'} (${data.account_type || 'Cash'})`
+      case 'crypto_holdings':
+        return `${data.institution_name || 'Exchange'} - ${data.crypto_symbol || 'Crypto'} (${data.balance_tokens || 0} tokens)`
       default:
         return `${entry.entry_type} Entry`
     }
@@ -193,6 +195,14 @@ function ManualEntries() {
           }).format(data.current_balance)
         }
         return 'N/A'
+      case 'crypto_holdings':
+        if (data.current_value_usd) {
+          return `$${data.current_value_usd.toLocaleString()}`
+        } else if (data.balance_tokens && data.current_price_usd) {
+          const value = data.balance_tokens * data.current_price_usd
+          return `$${value.toLocaleString()}`
+        }
+        return `${data.balance_tokens || 0} ${data.crypto_symbol || 'tokens'}`
       default:
         return 'N/A'
     }
@@ -446,11 +456,7 @@ function ManualEntries() {
                   }`}
                 >
                   <h3 className="font-medium text-gray-900 dark:text-white">
-                    {plugin.name === 'computershare' ? 'Computershare Stock' :
-                     plugin.name === 'morgan_stanley' ? 'Morgan Stanley Equity' :
-                     plugin.name === 'real_estate' ? 'Real Estate' :
-                     plugin.name === 'cash_holdings' ? 'Cash Holdings' :
-                     plugin.name}
+                    {plugin.friendly_name}
                   </h3>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                     {plugin.description}

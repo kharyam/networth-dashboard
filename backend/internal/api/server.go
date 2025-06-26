@@ -10,6 +10,7 @@ import (
 	"networth-dashboard/internal/credentials"
 	"networth-dashboard/internal/handlers"
 	"networth-dashboard/internal/plugins"
+	"networth-dashboard/internal/services"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -21,6 +22,9 @@ type Server struct {
 	db                *sql.DB
 	pluginManager     *plugins.Manager
 	credentialManager *credentials.Manager
+	cryptoService     *services.CryptoService
+	priceService      *services.PriceService
+	marketService     *services.MarketHoursService
 	httpServer        *http.Server
 }
 
@@ -31,11 +35,32 @@ func NewServer(cfg *config.Config, db *sql.DB, pluginManager *plugins.Manager) *
 		log.Fatal("Failed to initialize credential manager:", err)
 	}
 
+	// Initialize crypto service
+	cryptoService := services.NewCryptoService(db)
+
+	// Initialize market hours service
+	marketService, err := services.NewMarketHoursService(&cfg.Market)
+	if err != nil {
+		log.Fatal("Failed to initialize market hours service:", err)
+	}
+
+	// Initialize price service with Alpha Vantage
+	priceService := services.NewPriceServiceWithAlphaVantage(
+		cfg.API.AlphaVantageAPIKey,
+		db,
+		marketService,
+		&cfg.API,
+	)
+	log.Printf("INFO: Price service initialized with provider: %s", priceService.GetProviderName())
+
 	server := &Server{
 		config:            cfg,
 		db:                db,
 		pluginManager:     pluginManager,
 		credentialManager: credentialManager,
+		cryptoService:     cryptoService,
+		priceService:      priceService,
+		marketService:     marketService,
 	}
 
 	server.setupRouter()
@@ -102,6 +127,15 @@ func (s *Server) setupRouter() {
 		// Cash holdings endpoints
 		api.GET("/cash-holdings", s.getCashHoldings)
 
+		// Crypto holdings endpoints
+		api.GET("/crypto-holdings", s.getCryptoHoldings)
+
+		// Crypto price endpoints
+		api.GET("/crypto/prices/:symbol", s.getCryptoPrice)
+		api.GET("/crypto/prices/history", s.getCryptoPriceHistory)
+		api.POST("/crypto/prices/refresh", s.refreshCryptoPrices)
+		api.POST("/crypto/prices/refresh/:symbol", s.refreshCryptoPrice)
+
 		// Plugin management endpoints
 		api.GET("/plugins", s.getPlugins)
 		api.GET("/plugins/:name/schema", s.getPluginSchema)
@@ -120,6 +154,9 @@ func (s *Server) setupRouter() {
 		api.POST("/prices/refresh", s.refreshPrices)
 		api.POST("/prices/refresh/:symbol", s.refreshSymbolPrice)
 		api.GET("/prices/status", s.getPricesStatus)
+		
+		// Market status endpoints
+		api.GET("/market/status", s.getMarketStatus)
 
 		// Credential management endpoints
 		credentialHandler := handlers.NewCredentialHandler(s.credentialManager)

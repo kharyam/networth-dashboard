@@ -31,29 +31,33 @@ func (s *Server) getNetWorth(c *gin.Context) {
 	// Calculate cash holdings value
 	cashHoldingsValue := s.calculateCashHoldingsValue()
 
+	// Calculate crypto holdings value
+	cryptoHoldingsValue := s.calculateCryptoHoldingsValue()
+
 	// Calculate liabilities
 	totalLiabilities := s.calculateTotalLiabilities()
 
 	// Net worth = only vested/liquid assets - liabilities
-	totalAssets := stockValue + vestedEquityValue + realEstateEquity + cashHoldingsValue
+	totalAssets := stockValue + vestedEquityValue + realEstateEquity + cashHoldingsValue + cryptoHoldingsValue
 	netWorth := totalAssets - totalLiabilities
 
 	// Get price status information
 	priceStatus := s.getPriceStatus()
 
 	data := gin.H{
-		"net_worth":             netWorth,
-		"total_assets":          totalAssets,
-		"total_liabilities":     totalLiabilities,
-		"vested_equity_value":   vestedEquityValue,
-		"unvested_equity_value": unvestedEquityValue, // Shown separately as future value
-		"stock_holdings_value":  stockValue,
-		"real_estate_equity":    realEstateEquity,
-		"cash_holdings_value":   cashHoldingsValue,
-		"price_last_updated":    priceStatus.LastUpdated,
-		"stale_price_count":     priceStatus.StaleCount,
-		"provider_name":         priceStatus.ProviderName,
-		"last_updated":          time.Now().Format(time.RFC3339),
+		"net_worth":              netWorth,
+		"total_assets":           totalAssets,
+		"total_liabilities":      totalLiabilities,
+		"vested_equity_value":    vestedEquityValue,
+		"unvested_equity_value":  unvestedEquityValue, // Shown separately as future value
+		"stock_holdings_value":   stockValue,
+		"real_estate_equity":     realEstateEquity,
+		"cash_holdings_value":    cashHoldingsValue,
+		"crypto_holdings_value":  cryptoHoldingsValue,
+		"price_last_updated":     priceStatus.LastUpdated,
+		"stale_price_count":      priceStatus.StaleCount,
+		"provider_name":          priceStatus.ProviderName,
+		"last_updated":           time.Now().Format(time.RFC3339),
 	}
 	c.JSON(http.StatusOK, data)
 }
@@ -127,6 +131,25 @@ func (s *Server) calculateCashHoldingsValue() float64 {
 	return value
 }
 
+func (s *Server) calculateCryptoHoldingsValue() float64 {
+	var value float64
+	query := `
+		SELECT COALESCE(SUM(ch.balance_tokens * COALESCE(cp.price_usd, 0)), 0)
+		FROM crypto_holdings ch
+		LEFT JOIN crypto_prices cp ON ch.crypto_symbol = cp.symbol
+		AND cp.last_updated = (
+			SELECT MAX(last_updated)
+			FROM crypto_prices cp2
+			WHERE cp2.symbol = ch.crypto_symbol
+		)
+	`
+	err := s.db.QueryRow(query).Scan(&value)
+	if err != nil {
+		return 0.0
+	}
+	return value
+}
+
 func (s *Server) calculateTotalLiabilities() float64 {
 	var value float64
 	query := `
@@ -149,7 +172,7 @@ type PriceStatus struct {
 }
 
 func (s *Server) getPriceStatus() PriceStatus {
-	priceService := services.NewPriceService()
+	priceService := s.priceService
 
 	// Count total symbols and stale prices
 	var totalCount, staleCount int
@@ -322,6 +345,34 @@ func (s *Server) getStockHoldings(c *gin.Context) {
 
 func (s *Server) getConsolidatedStocks(c *gin.Context) {
 	query := `
+		WITH combined_holdings AS (
+			-- Direct stock holdings
+			SELECT symbol, 
+			       company_name,
+			       shares_owned, 
+			       cost_basis, 
+			       current_price, 
+			       'direct_stock' as source_type,
+			       data_source
+			FROM stock_holdings 
+			WHERE shares_owned > 0
+			
+			UNION ALL
+			
+			-- Vested equity compensation
+			SELECT company_symbol as symbol,
+			       company_symbol as company_name,  -- Use symbol as fallback company name
+			       vested_shares as shares_owned,
+			       CASE 
+			           WHEN grant_type = 'stock_option' THEN COALESCE(strike_price, 0)
+			           ELSE COALESCE(current_price, 0) -- For RSUs/ESPP, cost basis is current price at vest
+			       END as cost_basis,
+			       current_price,
+			       CONCAT('equity_', grant_type) as source_type,
+			       data_source
+			FROM equity_grants 
+			WHERE vested_shares > 0
+		)
 		SELECT symbol, 
 		       COALESCE(MAX(company_name), symbol) as company_name,
 		       SUM(shares_owned) as total_shares,
@@ -332,8 +383,7 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 		           SUM(shares_owned * COALESCE(cost_basis, 0)), 
 		           0
 		       ) as unrealized_gains
-		FROM stock_holdings 
-		WHERE shares_owned > 0
+		FROM combined_holdings
 		GROUP BY symbol
 		ORDER BY total_value DESC
 	`
@@ -369,12 +419,24 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 			return
 		}
 
-		// Get sources for this symbol
+		// Get sources for this symbol (both stock holdings and equity grants)
 		sourcesQuery := `
-			SELECT id, account_id, shares_owned, cost_basis, data_source, created_at
+			SELECT id, account_id, shares_owned, cost_basis, data_source, created_at, 'direct_stock' as source_type, NULL as grant_type
 			FROM stock_holdings 
 			WHERE symbol = $1 AND shares_owned > 0
-			ORDER BY data_source
+			
+			UNION ALL
+			
+			SELECT id, account_id, vested_shares as shares_owned, 
+			       CASE 
+			           WHEN grant_type = 'stock_option' THEN COALESCE(strike_price, 0)
+			           ELSE COALESCE(current_price, 0) 
+			       END as cost_basis,
+			       data_source, created_at, 'equity_compensation' as source_type, grant_type
+			FROM equity_grants 
+			WHERE company_symbol = $1 AND vested_shares > 0
+			
+			ORDER BY data_source, source_type
 		`
 
 		sourceRows, err := s.db.Query(sourcesQuery, stock.Symbol)
@@ -391,14 +453,23 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 				CostBasis   *float64 `json:"cost_basis"`
 				DataSource  string   `json:"data_source"`
 				CreatedAt   string   `json:"created_at"`
+				SourceType  string   `json:"source_type"`
+				GrantType   *string  `json:"grant_type"`
 			}
 
 			err := sourceRows.Scan(
 				&source.ID, &source.AccountID, &source.SharesOwned,
 				&source.CostBasis, &source.DataSource, &source.CreatedAt,
+				&source.SourceType, &source.GrantType,
 			)
 			if err != nil {
 				continue
+			}
+
+			// Build source display name
+			sourceName := source.DataSource
+			if source.SourceType == "equity_compensation" && source.GrantType != nil {
+				sourceName = fmt.Sprintf("%s (%s)", source.DataSource, *source.GrantType)
 			}
 
 			sourceMap := map[string]interface{}{
@@ -410,7 +481,9 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 				"cost_basis":    source.CostBasis,
 				"current_price": stock.CurrentPrice,
 				"market_value":  source.SharesOwned * stock.CurrentPrice,
-				"data_source":   source.DataSource,
+				"data_source":   sourceName,
+				"source_type":   source.SourceType,
+				"grant_type":    source.GrantType,
 				"created_at":    source.CreatedAt,
 			}
 			sources = append(sources, sourceMap)
@@ -717,6 +790,97 @@ func (s *Server) getCashHoldings(c *gin.Context) {
 	})
 }
 
+func (s *Server) getCryptoHoldings(c *gin.Context) {
+	query := `
+		SELECT ch.id, ch.account_id, ch.institution_name, ch.crypto_symbol, 
+		       ch.balance_tokens, ch.purchase_price_usd, ch.purchase_date,
+		       ch.wallet_address, ch.notes, ch.created_at, ch.updated_at,
+		       cp.price_usd, cp.price_btc, cp.price_change_24h, cp.last_updated
+		FROM crypto_holdings ch
+		LEFT JOIN crypto_prices cp ON ch.crypto_symbol = cp.symbol
+		AND cp.last_updated = (
+			SELECT MAX(last_updated)
+			FROM crypto_prices cp2
+			WHERE cp2.symbol = ch.crypto_symbol
+		)
+		ORDER BY ch.institution_name, ch.crypto_symbol
+	`
+
+	rows, err := s.db.Query(query)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch crypto holdings",
+		})
+		return
+	}
+	defer rows.Close()
+
+	holdings := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var holding struct {
+			ID               int      `json:"id"`
+			AccountID        int      `json:"account_id"`
+			InstitutionName  string   `json:"institution_name"`
+			CryptoSymbol     string   `json:"crypto_symbol"`
+			BalanceTokens    float64  `json:"balance_tokens"`
+			PurchasePriceUSD *float64 `json:"purchase_price_usd"`
+			PurchaseDate     *string  `json:"purchase_date"`
+			WalletAddress    *string  `json:"wallet_address"`
+			Notes            *string  `json:"notes"`
+			CreatedAt        string   `json:"created_at"`
+			UpdatedAt        string   `json:"updated_at"`
+			PriceUSD         *float64 `json:"current_price_usd"`
+			PriceBTC         *float64 `json:"current_price_btc"`
+			PriceChange24h   *float64 `json:"price_change_24h"`
+			PriceLastUpdated *string  `json:"price_last_updated"`
+		}
+
+		err := rows.Scan(
+			&holding.ID, &holding.AccountID, &holding.InstitutionName, &holding.CryptoSymbol,
+			&holding.BalanceTokens, &holding.PurchasePriceUSD, &holding.PurchaseDate,
+			&holding.WalletAddress, &holding.Notes, &holding.CreatedAt, &holding.UpdatedAt,
+			&holding.PriceUSD, &holding.PriceBTC, &holding.PriceChange24h, &holding.PriceLastUpdated,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to scan crypto holding",
+			})
+			return
+		}
+
+		// Calculate current value in USD
+		var currentValueUSD *float64
+		if holding.PriceUSD != nil {
+			value := holding.BalanceTokens * *holding.PriceUSD
+			currentValueUSD = &value
+		}
+
+		holdingMap := map[string]interface{}{
+			"id":                   holding.ID,
+			"account_id":           holding.AccountID,
+			"institution_name":     holding.InstitutionName,
+			"crypto_symbol":        holding.CryptoSymbol,
+			"balance_tokens":       holding.BalanceTokens,
+			"purchase_price_usd":   holding.PurchasePriceUSD,
+			"purchase_date":        holding.PurchaseDate,
+			"wallet_address":       holding.WalletAddress,
+			"notes":                holding.Notes,
+			"created_at":           holding.CreatedAt,
+			"updated_at":           holding.UpdatedAt,
+			"current_price_usd":    holding.PriceUSD,
+			"current_price_btc":    holding.PriceBTC,
+			"current_value_usd":    currentValueUSD,
+			"price_change_24h":     holding.PriceChange24h,
+			"price_last_updated":   holding.PriceLastUpdated,
+		}
+		holdings = append(holdings, holdingMap)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"crypto_holdings": holdings,
+	})
+}
+
 func (s *Server) createRealEstate(c *gin.Context) {
 	// TODO: Implement real estate creation
 	c.JSON(http.StatusCreated, gin.H{
@@ -953,6 +1117,24 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		FROM cash_holdings ch
 		LEFT JOIN accounts a ON ch.account_id = a.id
 		WHERE ch.created_at IS NOT NULL
+		
+		UNION ALL
+		
+		SELECT 'crypto_holdings' as entry_type,
+		       cry.id, cry.account_id, cry.created_at, cry.updated_at,
+		       json_build_object(
+		           'institution_name', cry.institution_name,
+		           'crypto_symbol', cry.crypto_symbol,
+		           'balance_tokens', cry.balance_tokens,
+		           'purchase_price_usd', cry.purchase_price_usd,
+		           'purchase_date', cry.purchase_date,
+		           'wallet_address', cry.wallet_address,
+		           'notes', cry.notes
+		       ) as data_json,
+		       a.account_name, a.institution
+		FROM crypto_holdings cry
+		LEFT JOIN accounts a ON cry.account_id = a.id
+		WHERE cry.created_at IS NOT NULL
 	`
 
 	args := []interface{}{}
@@ -1106,6 +1288,10 @@ func (s *Server) deleteManualEntry(c *gin.Context) {
 		query = "DELETE FROM equity_grants WHERE id = $1"
 	case "real_estate":
 		query = "DELETE FROM real_estate_properties WHERE id = $1"
+	case "cash_holdings":
+		query = "DELETE FROM cash_holdings WHERE id = $1"
+	case "crypto_holdings":
+		query = "DELETE FROM crypto_holdings WHERE id = $1"
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid entry type",
@@ -1169,7 +1355,7 @@ func (s *Server) refreshPrices(c *gin.Context) {
 	}
 
 	// Initialize price service
-	priceService := services.NewPriceService()
+	priceService := s.priceService
 
 	// Track results
 	var results []services.PriceUpdateResult
@@ -1219,7 +1405,7 @@ func (s *Server) refreshSymbolPrice(c *gin.Context) {
 		return
 	}
 
-	priceService := services.NewPriceService()
+	priceService := s.priceService
 	result := s.updateSymbolPrice(symbol, priceService)
 
 	status := http.StatusOK
@@ -1235,6 +1421,12 @@ func (s *Server) refreshSymbolPrice(c *gin.Context) {
 
 func (s *Server) getPricesStatus(c *gin.Context) {
 	status := s.getPriceStatus()
+	c.JSON(http.StatusOK, status)
+}
+
+// Market status endpoint
+func (s *Server) getMarketStatus(c *gin.Context) {
+	status := s.marketService.GetMarketStatus()
 	c.JSON(http.StatusOK, status)
 }
 
@@ -1338,4 +1530,150 @@ func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceSe
 	}
 
 	return result
+}
+
+// Crypto price handlers
+func (s *Server) getCryptoPrice(c *gin.Context) {
+	symbol := c.Param("symbol")
+	if symbol == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Symbol parameter is required",
+		})
+		return
+	}
+
+	price, err := s.cryptoService.GetPrice(symbol)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to get price for %s: %v", symbol, err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"symbol":           price.Symbol,
+		"price_usd":        price.PriceUSD,
+		"price_btc":        price.PriceBTC,
+		"market_cap_usd":   price.MarketCapUSD,
+		"volume_24h_usd":   price.Volume24hUSD,
+		"price_change_24h": price.PriceChange24h,
+		"last_updated":     price.LastUpdated.Format(time.RFC3339),
+	})
+}
+
+func (s *Server) refreshCryptoPrices(c *gin.Context) {
+	err := s.cryptoService.RefreshAllCryptoPrices()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to refresh crypto prices: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Crypto prices refreshed successfully",
+	})
+}
+
+func (s *Server) refreshCryptoPrice(c *gin.Context) {
+	symbol := c.Param("symbol")
+	if symbol == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Symbol parameter is required",
+		})
+		return
+	}
+
+	price, err := s.cryptoService.GetPrice(symbol)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to refresh price for %s: %v", symbol, err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Price refreshed for %s", symbol),
+		"symbol":           price.Symbol,
+		"price_usd":        price.PriceUSD,
+		"price_btc":        price.PriceBTC,
+		"market_cap_usd":   price.MarketCapUSD,
+		"volume_24h_usd":   price.Volume24hUSD,
+		"price_change_24h": price.PriceChange24h,
+		"last_updated":     price.LastUpdated.Format(time.RFC3339),
+	})
+}
+
+func (s *Server) getCryptoPriceHistory(c *gin.Context) {
+	// Optional query parameters for filtering
+	daysBack := c.DefaultQuery("days", "30") // Default to last 30 days
+	
+	// Parse days parameter
+	days := 30
+	if daysBack != "" {
+		if parsedDays, err := strconv.Atoi(daysBack); err == nil && parsedDays > 0 && parsedDays <= 365 {
+			days = parsedDays
+		}
+	}
+
+	// Calculate start date
+	startDate := time.Now().AddDate(0, 0, -days)
+
+	query := `
+		SELECT symbol, price_usd, price_btc, last_updated
+		FROM crypto_prices 
+		WHERE last_updated >= $1
+		ORDER BY symbol, last_updated
+	`
+
+	rows, err := s.db.Query(query, startDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch crypto price history",
+		})
+		return
+	}
+	defer rows.Close()
+
+	// Group data by symbol
+	historyMap := make(map[string][]map[string]interface{})
+	
+	for rows.Next() {
+		var symbol string
+		var priceUSD, priceBTC float64
+		var lastUpdated time.Time
+
+		err := rows.Scan(&symbol, &priceUSD, &priceBTC, &lastUpdated)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to scan price history data",
+			})
+			return
+		}
+
+		dataPoint := map[string]interface{}{
+			"timestamp":  lastUpdated.Format(time.RFC3339),
+			"price_usd":  priceUSD,
+			"price_btc":  priceBTC,
+		}
+
+		historyMap[symbol] = append(historyMap[symbol], dataPoint)
+	}
+
+	// Convert to array format
+	var history []map[string]interface{}
+	for symbol, data := range historyMap {
+		history = append(history, map[string]interface{}{
+			"symbol": symbol,
+			"data":   data,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"price_history": history,
+		"start_date":    startDate.Format(time.RFC3339),
+		"days_back":     days,
+		"total_symbols": len(history),
+		"disclaimer":    "This data represents cached price snapshots taken during application usage and may not reflect complete or real-time market data.",
+	})
 }

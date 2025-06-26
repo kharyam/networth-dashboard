@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, TrendingDown, DollarSign, Briefcase, Building, PieChart, RefreshCw, Clock, AlertTriangle, Wallet } from 'lucide-react'
+import { TrendingUp, TrendingDown, DollarSign, Briefcase, Building, PieChart, RefreshCw, Clock, AlertTriangle, Wallet, Coins } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell } from 'recharts'
 import { netWorthApi, pricesApi } from '@/services/api'
 import { useTheme } from '@/contexts/ThemeContext'
 import type { NetWorthSummary } from '@/types'
+import MarketStatus from '@/components/MarketStatus'
 
 // Generate realistic trend data based on current net worth
 const generateTrendData = (currentNetWorth: number) => {
@@ -41,9 +42,10 @@ const generateAllocationData = (netWorth: NetWorthSummary | null) => {
   const equityValue = netWorth.vested_equity_value || 0
   const realEstateValue = netWorth.real_estate_equity || 0
   const cashHoldingsValue = netWorth.cash_holdings_value || 0
+  const cryptoHoldingsValue = netWorth.crypto_holdings_value || 0
   
-  // Calculate other assets as remaining assets (after separating cash holdings)
-  const otherValue = Math.max(0, totalAssets - stockValue - equityValue - realEstateValue - cashHoldingsValue)
+  // Calculate other assets as remaining assets (after separating all known asset types)
+  const otherValue = Math.max(0, totalAssets - stockValue - equityValue - realEstateValue - cashHoldingsValue - cryptoHoldingsValue)
   
   const allocation = [
     {
@@ -69,6 +71,12 @@ const generateAllocationData = (netWorth: NetWorthSummary | null) => {
       value: cashHoldingsValue,
       color: '#22c55e',
       percentage: totalAssets > 0 ? Math.round((cashHoldingsValue / totalAssets) * 100) : 0
+    },
+    {
+      name: 'Crypto',
+      value: cryptoHoldingsValue,
+      color: '#f97316',
+      percentage: totalAssets > 0 ? Math.round((cryptoHoldingsValue / totalAssets) * 100) : 0
     },
     {
       name: 'Other',
@@ -180,14 +188,15 @@ function Dashboard() {
       console.error('Failed to fetch net worth:', error)
       // Use mock data for now
       setNetWorth({
-        net_worth: 250000,
-        total_assets: 300000,
+        net_worth: 270000,
+        total_assets: 320000,
         total_liabilities: 50000,
         vested_equity_value: 75000,
         unvested_equity_value: 25000,
         stock_holdings_value: 100000,
         real_estate_equity: 125000,
         cash_holdings_value: 25000,
+        crypto_holdings_value: 20000,
         last_updated: new Date().toISOString(),
       })
     }
@@ -248,6 +257,9 @@ function Dashboard() {
           <p className="mt-2 text-gray-600 dark:text-gray-400">
             Your complete financial overview
           </p>
+          <div className="mt-3">
+            <MarketStatus showDetails={true} />
+          </div>
         </div>
         
         {/* Price Status and Refresh */}
@@ -285,49 +297,82 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Net Worth Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
-        <MetricCard
-          title="Net Worth"
-          value={netWorth?.net_worth || 0}
-          change={0}
-          changeType="positive"
-          icon={DollarSign}
-        />
-        <MetricCard
-          title="Total Assets"
-          value={netWorth?.total_assets || 0}
-          change={0}
-          changeType="positive"
-          icon={TrendingUp}
-        />
-        <MetricCard
-          title="Vested Equity"
-          value={netWorth?.vested_equity_value || 0}
-          change={0}
-          changeType="positive"
-          icon={Briefcase}
-        />
-        <MetricCard
-          title="Future Value"
-          value={netWorth?.unvested_equity_value || 0}
-          icon={PieChart}
-          prefix="$"
-        />
-        <MetricCard
-          title="Real Estate Equity"
-          value={netWorth?.real_estate_equity || 0}
-          change={0}
-          changeType="positive"
-          icon={Building}
-        />
-        <MetricCard
-          title="Total Cash"
-          value={netWorth?.cash_holdings_value || 0}
-          change={0}
-          changeType="positive"
-          icon={Wallet}
-        />
+      {/* Net Worth Hero Section */}
+      <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-lg p-8 text-white">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-blue-100 text-lg font-medium">Total Net Worth</p>
+            <p className="text-4xl font-bold mt-2">
+              ${(netWorth?.net_worth || 0).toLocaleString()}
+            </p>
+            <div className="flex items-center mt-3 text-blue-100">
+              <TrendingUp className="w-5 h-5 mr-2" />
+              <span className="text-sm font-medium">+0% from last month</span>
+            </div>
+          </div>
+          <div className="p-4 bg-white bg-opacity-20 rounded-full">
+            <DollarSign className="w-12 h-12" />
+          </div>
+        </div>
+      </div>
+
+      {/* Financial Metrics Summary */}
+      <div className="space-y-6">
+        {/* First Row - Primary Assets */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <MetricCard
+            title="Total Assets"
+            value={netWorth?.total_assets || 0}
+            change={0}
+            changeType="positive"
+            icon={TrendingUp}
+          />
+          <MetricCard
+            title="Vested Equity"
+            value={netWorth?.vested_equity_value || 0}
+            change={0}
+            changeType="positive"
+            icon={Briefcase}
+          />
+          <MetricCard
+            title="Real Estate Equity"
+            value={netWorth?.real_estate_equity || 0}
+            change={0}
+            changeType="positive"
+            icon={Building}
+          />
+          <MetricCard
+            title="Future Value"
+            value={netWorth?.unvested_equity_value || 0}
+            icon={PieChart}
+            prefix="$"
+          />
+        </div>
+
+        {/* Second Row - Liquid Assets */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <MetricCard
+            title="Total Cash"
+            value={netWorth?.cash_holdings_value || 0}
+            change={0}
+            changeType="positive"
+            icon={Wallet}
+          />
+          <MetricCard
+            title="Crypto Holdings"
+            value={netWorth?.crypto_holdings_value || 0}
+            change={0}
+            changeType="positive"
+            icon={Coins}
+          />
+          <MetricCard
+            title="Stock Holdings"
+            value={netWorth?.stock_holdings_value || 0}
+            change={0}
+            changeType="positive"
+            icon={TrendingUp}
+          />
+        </div>
       </div>
 
       {/* Charts Section */}

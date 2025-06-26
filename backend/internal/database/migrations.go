@@ -194,6 +194,35 @@ const (
 			timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);`
 
+	createCryptoHoldingsTable = `
+		CREATE TABLE IF NOT EXISTS crypto_holdings (
+			id SERIAL PRIMARY KEY,
+			account_id INTEGER REFERENCES accounts(id),
+			institution_name VARCHAR(100) NOT NULL,
+			crypto_symbol VARCHAR(20) NOT NULL,
+			balance_tokens DECIMAL(20,8) NOT NULL,
+			purchase_price_usd DECIMAL(15,2),
+			purchase_date DATE,
+			wallet_address VARCHAR(255),
+			notes TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(account_id, institution_name, crypto_symbol)
+		);`
+
+	createCryptoPricesTable = `
+		CREATE TABLE IF NOT EXISTS crypto_prices (
+			id SERIAL PRIMARY KEY,
+			symbol VARCHAR(20) NOT NULL,
+			price_usd DECIMAL(15,8) NOT NULL,
+			price_btc DECIMAL(15,8),
+			market_cap_usd DECIMAL(20,2),
+			volume_24h_usd DECIMAL(20,2),
+			price_change_24h DECIMAL(8,4),
+			last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			source VARCHAR(50) DEFAULT 'coingecko'
+		);`
+
 	// Schema updates for existing installations
 	updateEquityGrantsTable = `
 		ALTER TABLE equity_grants ADD COLUMN IF NOT EXISTS data_source VARCHAR(20) DEFAULT 'manual';
@@ -215,6 +244,12 @@ const (
 		CREATE INDEX IF NOT EXISTS idx_cash_holdings_account ON cash_holdings(account_id);
 		CREATE INDEX IF NOT EXISTS idx_cash_holdings_type ON cash_holdings(account_type);
 		CREATE INDEX IF NOT EXISTS idx_cash_holdings_institution ON cash_holdings(institution_name);
+		CREATE INDEX IF NOT EXISTS idx_crypto_holdings_account ON crypto_holdings(account_id);
+		CREATE INDEX IF NOT EXISTS idx_crypto_holdings_symbol ON crypto_holdings(crypto_symbol);
+		CREATE INDEX IF NOT EXISTS idx_crypto_holdings_institution ON crypto_holdings(institution_name);
+		CREATE INDEX IF NOT EXISTS idx_crypto_prices_symbol ON crypto_prices(symbol);
+		CREATE INDEX IF NOT EXISTS idx_crypto_prices_updated ON crypto_prices(last_updated);
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_crypto_prices_symbol_minute ON crypto_prices (symbol, date_trunc('minute', last_updated));
 		CREATE INDEX IF NOT EXISTS idx_net_worth_snapshots_timestamp ON net_worth_snapshots(timestamp);
 	`
 )

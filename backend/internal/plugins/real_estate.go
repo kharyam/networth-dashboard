@@ -29,6 +29,11 @@ func (p *RealEstatePlugin) GetName() string {
 	return p.name
 }
 
+// GetFriendlyName returns the user-friendly plugin name
+func (p *RealEstatePlugin) GetFriendlyName() string {
+	return "Real Estate"
+}
+
 // GetType returns the plugin type
 func (p *RealEstatePlugin) GetType() PluginType {
 	return PluginTypeManual
