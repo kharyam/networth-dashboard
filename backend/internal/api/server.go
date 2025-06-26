@@ -10,6 +10,7 @@ import (
 	"networth-dashboard/internal/credentials"
 	"networth-dashboard/internal/handlers"
 	"networth-dashboard/internal/plugins"
+	"networth-dashboard/internal/services"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -21,6 +22,7 @@ type Server struct {
 	db                *sql.DB
 	pluginManager     *plugins.Manager
 	credentialManager *credentials.Manager
+	cryptoService     *services.CryptoService
 	httpServer        *http.Server
 }
 
@@ -31,11 +33,15 @@ func NewServer(cfg *config.Config, db *sql.DB, pluginManager *plugins.Manager) *
 		log.Fatal("Failed to initialize credential manager:", err)
 	}
 
+	// Initialize crypto service
+	cryptoService := services.NewCryptoService(db)
+
 	server := &Server{
 		config:            cfg,
 		db:                db,
 		pluginManager:     pluginManager,
 		credentialManager: credentialManager,
+		cryptoService:     cryptoService,
 	}
 
 	server.setupRouter()
@@ -101,6 +107,14 @@ func (s *Server) setupRouter() {
 
 		// Cash holdings endpoints
 		api.GET("/cash-holdings", s.getCashHoldings)
+
+		// Crypto holdings endpoints
+		api.GET("/crypto-holdings", s.getCryptoHoldings)
+
+		// Crypto price endpoints
+		api.GET("/crypto/prices/:symbol", s.getCryptoPrice)
+		api.POST("/crypto/prices/refresh", s.refreshCryptoPrices)
+		api.POST("/crypto/prices/refresh/:symbol", s.refreshCryptoPrice)
 
 		// Plugin management endpoints
 		api.GET("/plugins", s.getPlugins)

@@ -89,6 +89,7 @@ export interface NetWorthSummary {
   stock_holdings_value: number
   real_estate_equity: number
   cash_holdings_value: number
+  crypto_holdings_value: number
   last_updated: string
 }
 

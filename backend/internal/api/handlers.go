@@ -31,29 +31,33 @@ func (s *Server) getNetWorth(c *gin.Context) {
 	// Calculate cash holdings value
 	cashHoldingsValue := s.calculateCashHoldingsValue()
 
+	// Calculate crypto holdings value
+	cryptoHoldingsValue := s.calculateCryptoHoldingsValue()
+
 	// Calculate liabilities
 	totalLiabilities := s.calculateTotalLiabilities()
 
 	// Net worth = only vested/liquid assets - liabilities
-	totalAssets := stockValue + vestedEquityValue + realEstateEquity + cashHoldingsValue
+	totalAssets := stockValue + vestedEquityValue + realEstateEquity + cashHoldingsValue + cryptoHoldingsValue
 	netWorth := totalAssets - totalLiabilities
 
 	// Get price status information
 	priceStatus := s.getPriceStatus()
 
 	data := gin.H{
-		"net_worth":             netWorth,
-		"total_assets":          totalAssets,
-		"total_liabilities":     totalLiabilities,
-		"vested_equity_value":   vestedEquityValue,
-		"unvested_equity_value": unvestedEquityValue, // Shown separately as future value
-		"stock_holdings_value":  stockValue,
-		"real_estate_equity":    realEstateEquity,
-		"cash_holdings_value":   cashHoldingsValue,
-		"price_last_updated":    priceStatus.LastUpdated,
-		"stale_price_count":     priceStatus.StaleCount,
-		"provider_name":         priceStatus.ProviderName,
-		"last_updated":          time.Now().Format(time.RFC3339),
+		"net_worth":              netWorth,
+		"total_assets":           totalAssets,
+		"total_liabilities":      totalLiabilities,
+		"vested_equity_value":    vestedEquityValue,
+		"unvested_equity_value":  unvestedEquityValue, // Shown separately as future value
+		"stock_holdings_value":   stockValue,
+		"real_estate_equity":     realEstateEquity,
+		"cash_holdings_value":    cashHoldingsValue,
+		"crypto_holdings_value":  cryptoHoldingsValue,
+		"price_last_updated":     priceStatus.LastUpdated,
+		"stale_price_count":      priceStatus.StaleCount,
+		"provider_name":          priceStatus.ProviderName,
+		"last_updated":           time.Now().Format(time.RFC3339),
 	}
 	c.JSON(http.StatusOK, data)
 }
@@ -119,6 +123,25 @@ func (s *Server) calculateCashHoldingsValue() float64 {
 	query := `
 		SELECT COALESCE(SUM(current_balance), 0) 
 		FROM cash_holdings
+	`
+	err := s.db.QueryRow(query).Scan(&value)
+	if err != nil {
+		return 0.0
+	}
+	return value
+}
+
+func (s *Server) calculateCryptoHoldingsValue() float64 {
+	var value float64
+	query := `
+		SELECT COALESCE(SUM(ch.balance_tokens * COALESCE(cp.price_usd, 0)), 0)
+		FROM crypto_holdings ch
+		LEFT JOIN crypto_prices cp ON ch.crypto_symbol = cp.symbol
+		AND cp.last_updated = (
+			SELECT MAX(last_updated)
+			FROM crypto_prices cp2
+			WHERE cp2.symbol = ch.crypto_symbol
+		)
 	`
 	err := s.db.QueryRow(query).Scan(&value)
 	if err != nil {
@@ -714,6 +737,97 @@ func (s *Server) getCashHoldings(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"cash_holdings": holdings,
+	})
+}
+
+func (s *Server) getCryptoHoldings(c *gin.Context) {
+	query := `
+		SELECT ch.id, ch.account_id, ch.institution_name, ch.crypto_symbol, 
+		       ch.balance_tokens, ch.purchase_price_usd, ch.purchase_date,
+		       ch.wallet_address, ch.notes, ch.created_at, ch.updated_at,
+		       cp.price_usd, cp.price_btc, cp.price_change_24h, cp.last_updated
+		FROM crypto_holdings ch
+		LEFT JOIN crypto_prices cp ON ch.crypto_symbol = cp.symbol
+		AND cp.last_updated = (
+			SELECT MAX(last_updated)
+			FROM crypto_prices cp2
+			WHERE cp2.symbol = ch.crypto_symbol
+		)
+		ORDER BY ch.institution_name, ch.crypto_symbol
+	`
+
+	rows, err := s.db.Query(query)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch crypto holdings",
+		})
+		return
+	}
+	defer rows.Close()
+
+	holdings := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var holding struct {
+			ID               int      `json:"id"`
+			AccountID        int      `json:"account_id"`
+			InstitutionName  string   `json:"institution_name"`
+			CryptoSymbol     string   `json:"crypto_symbol"`
+			BalanceTokens    float64  `json:"balance_tokens"`
+			PurchasePriceUSD *float64 `json:"purchase_price_usd"`
+			PurchaseDate     *string  `json:"purchase_date"`
+			WalletAddress    *string  `json:"wallet_address"`
+			Notes            *string  `json:"notes"`
+			CreatedAt        string   `json:"created_at"`
+			UpdatedAt        string   `json:"updated_at"`
+			PriceUSD         *float64 `json:"current_price_usd"`
+			PriceBTC         *float64 `json:"current_price_btc"`
+			PriceChange24h   *float64 `json:"price_change_24h"`
+			PriceLastUpdated *string  `json:"price_last_updated"`
+		}
+
+		err := rows.Scan(
+			&holding.ID, &holding.AccountID, &holding.InstitutionName, &holding.CryptoSymbol,
+			&holding.BalanceTokens, &holding.PurchasePriceUSD, &holding.PurchaseDate,
+			&holding.WalletAddress, &holding.Notes, &holding.CreatedAt, &holding.UpdatedAt,
+			&holding.PriceUSD, &holding.PriceBTC, &holding.PriceChange24h, &holding.PriceLastUpdated,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to scan crypto holding",
+			})
+			return
+		}
+
+		// Calculate current value in USD
+		var currentValueUSD *float64
+		if holding.PriceUSD != nil {
+			value := holding.BalanceTokens * *holding.PriceUSD
+			currentValueUSD = &value
+		}
+
+		holdingMap := map[string]interface{}{
+			"id":                   holding.ID,
+			"account_id":           holding.AccountID,
+			"institution_name":     holding.InstitutionName,
+			"crypto_symbol":        holding.CryptoSymbol,
+			"balance_tokens":       holding.BalanceTokens,
+			"purchase_price_usd":   holding.PurchasePriceUSD,
+			"purchase_date":        holding.PurchaseDate,
+			"wallet_address":       holding.WalletAddress,
+			"notes":                holding.Notes,
+			"created_at":           holding.CreatedAt,
+			"updated_at":           holding.UpdatedAt,
+			"current_price_usd":    holding.PriceUSD,
+			"current_price_btc":    holding.PriceBTC,
+			"current_value_usd":    currentValueUSD,
+			"price_change_24h":     holding.PriceChange24h,
+			"price_last_updated":   holding.PriceLastUpdated,
+		}
+		holdings = append(holdings, holdingMap)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"crypto_holdings": holdings,
 	})
 }
 
@@ -1338,4 +1452,76 @@ func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceSe
 	}
 
 	return result
+}
+
+// Crypto price handlers
+func (s *Server) getCryptoPrice(c *gin.Context) {
+	symbol := c.Param("symbol")
+	if symbol == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Symbol parameter is required",
+		})
+		return
+	}
+
+	price, err := s.cryptoService.GetPrice(symbol)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to get price for %s: %v", symbol, err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"symbol":           price.Symbol,
+		"price_usd":        price.PriceUSD,
+		"price_btc":        price.PriceBTC,
+		"market_cap_usd":   price.MarketCapUSD,
+		"volume_24h_usd":   price.Volume24hUSD,
+		"price_change_24h": price.PriceChange24h,
+		"last_updated":     price.LastUpdated.Format(time.RFC3339),
+	})
+}
+
+func (s *Server) refreshCryptoPrices(c *gin.Context) {
+	err := s.cryptoService.RefreshAllCryptoPrices()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to refresh crypto prices: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Crypto prices refreshed successfully",
+	})
+}
+
+func (s *Server) refreshCryptoPrice(c *gin.Context) {
+	symbol := c.Param("symbol")
+	if symbol == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Symbol parameter is required",
+		})
+		return
+	}
+
+	price, err := s.cryptoService.GetPrice(symbol)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to refresh price for %s: %v", symbol, err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Price refreshed for %s", symbol),
+		"symbol":           price.Symbol,
+		"price_usd":        price.PriceUSD,
+		"price_btc":        price.PriceBTC,
+		"market_cap_usd":   price.MarketCapUSD,
+		"volume_24h_usd":   price.Volume24hUSD,
+		"price_change_24h": price.PriceChange24h,
+		"last_updated":     price.LastUpdated.Format(time.RFC3339),
+	})
 }

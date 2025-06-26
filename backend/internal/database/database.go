@@ -57,6 +57,8 @@ func (db *DB) runMigrations() error {
 		createCashHoldingsTable,
 		createMiscellaneousAssetsTable,
 		createNetWorthSnapshotsTable,
+		createCryptoHoldingsTable,
+		createCryptoPricesTable,
 		updateEquityGrantsTable,
 		createIndices,
 	}

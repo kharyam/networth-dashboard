@@ -13,7 +13,8 @@ import {
   Sun,
   Moon,
   Key,
-  Wallet
+  Wallet,
+  Coins
 } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
 
@@ -28,6 +29,7 @@ const navigation = [
   { name: 'Equity Comp', href: '/equity', icon: DollarSign },
   { name: 'Real Estate', href: '/real-estate', icon: Building },
   { name: 'Cash Holdings', href: '/cash-holdings', icon: Wallet },
+  { name: 'Crypto', href: '/crypto-holdings', icon: Coins },
   { name: 'Manual Entries', href: '/manual-entries', icon: Edit3 },
   { name: 'Credentials', href: '/credentials', icon: Key },
   { name: 'Settings', href: '/settings', icon: Settings },
