@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { stocksApi, equityApi, pricesApi } from '../services/api'
 import { StockHolding, StockConsolidation, EquityGrant } from '../types'
+import MarketStatus from '../components/MarketStatus'
 
 function Stocks() {
   const [stockHoldings, setStockHoldings] = useState<StockHolding[]>([])
@@ -100,12 +101,15 @@ function Stocks() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Stock Holdings</h1>
           <p className="mt-2 text-gray-600 dark:text-gray-400">
             View and manage your stock portfolio across all platforms
           </p>
+          <div className="mt-3">
+            <MarketStatus showDetails={true} />
+          </div>
         </div>
         
         <button

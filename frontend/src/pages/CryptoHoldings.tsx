@@ -626,7 +626,7 @@ function CryptoHoldings() {
                           strokeWidth={2}
                           dot={false}
                           name={crypto.symbol.toUpperCase()}
-                          connectNulls={false}
+                          connectNulls={true}
                         />
                       ))}
                     </LineChart>

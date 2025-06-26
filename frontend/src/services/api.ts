@@ -194,4 +194,10 @@ export const pricesApi = {
     api.get('/prices/status').then(res => res.data),
 }
 
+// Market Status API
+export const marketApi = {
+  getStatus: (): Promise<any> =>
+    api.get('/market/status').then(res => res.data),
+}
+
 export default api

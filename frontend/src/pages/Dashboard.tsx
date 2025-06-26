@@ -4,6 +4,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { netWorthApi, pricesApi } from '@/services/api'
 import { useTheme } from '@/contexts/ThemeContext'
 import type { NetWorthSummary } from '@/types'
+import MarketStatus from '@/components/MarketStatus'
 
 // Generate realistic trend data based on current net worth
 const generateTrendData = (currentNetWorth: number) => {
@@ -256,6 +257,9 @@ function Dashboard() {
           <p className="mt-2 text-gray-600 dark:text-gray-400">
             Your complete financial overview
           </p>
+          <div className="mt-3">
+            <MarketStatus />
+          </div>
         </div>
         
         {/* Price Status and Refresh */}

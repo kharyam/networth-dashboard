@@ -172,7 +172,7 @@ type PriceStatus struct {
 }
 
 func (s *Server) getPriceStatus() PriceStatus {
-	priceService := services.NewPriceService()
+	priceService := s.priceService
 
 	// Count total symbols and stale prices
 	var totalCount, staleCount int
@@ -345,6 +345,34 @@ func (s *Server) getStockHoldings(c *gin.Context) {
 
 func (s *Server) getConsolidatedStocks(c *gin.Context) {
 	query := `
+		WITH combined_holdings AS (
+			-- Direct stock holdings
+			SELECT symbol, 
+			       company_name,
+			       shares_owned, 
+			       cost_basis, 
+			       current_price, 
+			       'direct_stock' as source_type,
+			       data_source
+			FROM stock_holdings 
+			WHERE shares_owned > 0
+			
+			UNION ALL
+			
+			-- Vested equity compensation
+			SELECT company_symbol as symbol,
+			       company_symbol as company_name,  -- Use symbol as fallback company name
+			       vested_shares as shares_owned,
+			       CASE 
+			           WHEN grant_type = 'stock_option' THEN COALESCE(strike_price, 0)
+			           ELSE COALESCE(current_price, 0) -- For RSUs/ESPP, cost basis is current price at vest
+			       END as cost_basis,
+			       current_price,
+			       CONCAT('equity_', grant_type) as source_type,
+			       data_source
+			FROM equity_grants 
+			WHERE vested_shares > 0
+		)
 		SELECT symbol, 
 		       COALESCE(MAX(company_name), symbol) as company_name,
 		       SUM(shares_owned) as total_shares,
@@ -355,8 +383,7 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 		           SUM(shares_owned * COALESCE(cost_basis, 0)), 
 		           0
 		       ) as unrealized_gains
-		FROM stock_holdings 
-		WHERE shares_owned > 0
+		FROM combined_holdings
 		GROUP BY symbol
 		ORDER BY total_value DESC
 	`
@@ -392,12 +419,24 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 			return
 		}
 
-		// Get sources for this symbol
+		// Get sources for this symbol (both stock holdings and equity grants)
 		sourcesQuery := `
-			SELECT id, account_id, shares_owned, cost_basis, data_source, created_at
+			SELECT id, account_id, shares_owned, cost_basis, data_source, created_at, 'direct_stock' as source_type, NULL as grant_type
 			FROM stock_holdings 
 			WHERE symbol = $1 AND shares_owned > 0
-			ORDER BY data_source
+			
+			UNION ALL
+			
+			SELECT id, account_id, vested_shares as shares_owned, 
+			       CASE 
+			           WHEN grant_type = 'stock_option' THEN COALESCE(strike_price, 0)
+			           ELSE COALESCE(current_price, 0) 
+			       END as cost_basis,
+			       data_source, created_at, 'equity_compensation' as source_type, grant_type
+			FROM equity_grants 
+			WHERE company_symbol = $1 AND vested_shares > 0
+			
+			ORDER BY data_source, source_type
 		`
 
 		sourceRows, err := s.db.Query(sourcesQuery, stock.Symbol)
@@ -414,14 +453,23 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 				CostBasis   *float64 `json:"cost_basis"`
 				DataSource  string   `json:"data_source"`
 				CreatedAt   string   `json:"created_at"`
+				SourceType  string   `json:"source_type"`
+				GrantType   *string  `json:"grant_type"`
 			}
 
 			err := sourceRows.Scan(
 				&source.ID, &source.AccountID, &source.SharesOwned,
 				&source.CostBasis, &source.DataSource, &source.CreatedAt,
+				&source.SourceType, &source.GrantType,
 			)
 			if err != nil {
 				continue
+			}
+
+			// Build source display name
+			sourceName := source.DataSource
+			if source.SourceType == "equity_compensation" && source.GrantType != nil {
+				sourceName = fmt.Sprintf("%s (%s)", source.DataSource, *source.GrantType)
 			}
 
 			sourceMap := map[string]interface{}{
@@ -433,7 +481,9 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 				"cost_basis":    source.CostBasis,
 				"current_price": stock.CurrentPrice,
 				"market_value":  source.SharesOwned * stock.CurrentPrice,
-				"data_source":   source.DataSource,
+				"data_source":   sourceName,
+				"source_type":   source.SourceType,
+				"grant_type":    source.GrantType,
 				"created_at":    source.CreatedAt,
 			}
 			sources = append(sources, sourceMap)
@@ -1305,7 +1355,7 @@ func (s *Server) refreshPrices(c *gin.Context) {
 	}
 
 	// Initialize price service
-	priceService := services.NewPriceService()
+	priceService := s.priceService
 
 	// Track results
 	var results []services.PriceUpdateResult
@@ -1355,7 +1405,7 @@ func (s *Server) refreshSymbolPrice(c *gin.Context) {
 		return
 	}
 
-	priceService := services.NewPriceService()
+	priceService := s.priceService
 	result := s.updateSymbolPrice(symbol, priceService)
 
 	status := http.StatusOK
@@ -1371,6 +1421,12 @@ func (s *Server) refreshSymbolPrice(c *gin.Context) {
 
 func (s *Server) getPricesStatus(c *gin.Context) {
 	status := s.getPriceStatus()
+	c.JSON(http.StatusOK, status)
+}
+
+// Market status endpoint
+func (s *Server) getMarketStatus(c *gin.Context) {
+	status := s.marketService.GetMarketStatus()
 	c.JSON(http.StatusOK, status)
 }
 

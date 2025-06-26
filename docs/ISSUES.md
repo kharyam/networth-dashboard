@@ -19,7 +19,7 @@ DONE Maybe add a friendly name for each plugin instead of mapping plugin.name to
 
 DONE It looks like the crypto price history is kept in a database table. Create a chart that shows the price history of all cryptos in there for "cached crypto prices history".  There should be a disclaimer that this information is based on "random" snapshots taken over the lifecylce of the application.  Should have the option to show the price in USD or BTC (link this to the toggle at the top of the screen, if it already exists)
 
-On the crypto price history graph, the lines for each crypto are disconnected.  Can they be made continuous? I would have expected this to be default behaviour of the line chart?
+DONE On the crypto price history graph, the lines for each crypto are disconnected.  Can they be made continuous? I would have expected this to be default behaviour of the line chart?
 
 
 ## Cash holdings DONE
