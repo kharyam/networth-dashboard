@@ -31,6 +31,11 @@ func (p *ComputersharePlugin) GetName() string {
 	return p.name
 }
 
+// GetFriendlyName returns the user-friendly plugin name
+func (p *ComputersharePlugin) GetFriendlyName() string {
+	return "Computershare Stock"
+}
+
 // GetType returns the plugin type
 func (p *ComputersharePlugin) GetType() PluginType {
 	return PluginTypeManual

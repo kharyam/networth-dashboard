@@ -113,6 +113,7 @@ func (s *Server) setupRouter() {
 
 		// Crypto price endpoints
 		api.GET("/crypto/prices/:symbol", s.getCryptoPrice)
+		api.GET("/crypto/prices/history", s.getCryptoPriceHistory)
 		api.POST("/crypto/prices/refresh", s.refreshCryptoPrices)
 		api.POST("/crypto/prices/refresh/:symbol", s.refreshCryptoPrice)
 

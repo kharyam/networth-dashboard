@@ -138,6 +138,7 @@ export interface ManualEntrySchema {
 
 export interface Plugin {
   name: string
+  friendly_name: string
   type: string
   data_source: string
   version: string
@@ -178,4 +179,23 @@ export interface AllocationData {
   value: number
   color: string
   percentage: number
+}
+
+export interface CryptoPriceHistoryPoint {
+  timestamp: string
+  price_usd: number
+  price_btc: number
+}
+
+export interface CryptoPriceHistory {
+  symbol: string
+  data: CryptoPriceHistoryPoint[]
+}
+
+export interface CryptoPriceHistoryResponse {
+  price_history: CryptoPriceHistory[]
+  start_date: string
+  days_back: number
+  total_symbols: number
+  disclaimer: string
 }

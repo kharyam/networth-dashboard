@@ -29,6 +29,11 @@ func (p *CryptoHoldingsPlugin) GetName() string {
 	return p.name
 }
 
+// GetFriendlyName returns the user-friendly plugin name
+func (p *CryptoHoldingsPlugin) GetFriendlyName() string {
+	return "Crypto Holdings"
+}
+
 // GetType returns the plugin type
 func (p *CryptoHoldingsPlugin) GetType() PluginType {
 	return PluginTypeManual

@@ -150,6 +150,7 @@ type ValidationResult struct {
 type FinancialDataPlugin interface {
 	// Plugin metadata
 	GetName() string
+	GetFriendlyName() string
 	GetType() PluginType
 	GetDataSource() DataSourceType
 	GetVersion() string

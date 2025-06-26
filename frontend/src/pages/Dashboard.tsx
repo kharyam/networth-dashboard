@@ -293,56 +293,82 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Net Worth Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-6">
-        <MetricCard
-          title="Net Worth"
-          value={netWorth?.net_worth || 0}
-          change={0}
-          changeType="positive"
-          icon={DollarSign}
-        />
-        <MetricCard
-          title="Total Assets"
-          value={netWorth?.total_assets || 0}
-          change={0}
-          changeType="positive"
-          icon={TrendingUp}
-        />
-        <MetricCard
-          title="Vested Equity"
-          value={netWorth?.vested_equity_value || 0}
-          change={0}
-          changeType="positive"
-          icon={Briefcase}
-        />
-        <MetricCard
-          title="Future Value"
-          value={netWorth?.unvested_equity_value || 0}
-          icon={PieChart}
-          prefix="$"
-        />
-        <MetricCard
-          title="Real Estate Equity"
-          value={netWorth?.real_estate_equity || 0}
-          change={0}
-          changeType="positive"
-          icon={Building}
-        />
-        <MetricCard
-          title="Total Cash"
-          value={netWorth?.cash_holdings_value || 0}
-          change={0}
-          changeType="positive"
-          icon={Wallet}
-        />
-        <MetricCard
-          title="Crypto Holdings"
-          value={netWorth?.crypto_holdings_value || 0}
-          change={0}
-          changeType="positive"
-          icon={Coins}
-        />
+      {/* Net Worth Hero Section */}
+      <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-lg p-8 text-white">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-blue-100 text-lg font-medium">Total Net Worth</p>
+            <p className="text-4xl font-bold mt-2">
+              ${(netWorth?.net_worth || 0).toLocaleString()}
+            </p>
+            <div className="flex items-center mt-3 text-blue-100">
+              <TrendingUp className="w-5 h-5 mr-2" />
+              <span className="text-sm font-medium">+0% from last month</span>
+            </div>
+          </div>
+          <div className="p-4 bg-white bg-opacity-20 rounded-full">
+            <DollarSign className="w-12 h-12" />
+          </div>
+        </div>
+      </div>
+
+      {/* Financial Metrics Summary */}
+      <div className="space-y-6">
+        {/* First Row - Primary Assets */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <MetricCard
+            title="Total Assets"
+            value={netWorth?.total_assets || 0}
+            change={0}
+            changeType="positive"
+            icon={TrendingUp}
+          />
+          <MetricCard
+            title="Vested Equity"
+            value={netWorth?.vested_equity_value || 0}
+            change={0}
+            changeType="positive"
+            icon={Briefcase}
+          />
+          <MetricCard
+            title="Real Estate Equity"
+            value={netWorth?.real_estate_equity || 0}
+            change={0}
+            changeType="positive"
+            icon={Building}
+          />
+          <MetricCard
+            title="Future Value"
+            value={netWorth?.unvested_equity_value || 0}
+            icon={PieChart}
+            prefix="$"
+          />
+        </div>
+
+        {/* Second Row - Liquid Assets */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <MetricCard
+            title="Total Cash"
+            value={netWorth?.cash_holdings_value || 0}
+            change={0}
+            changeType="positive"
+            icon={Wallet}
+          />
+          <MetricCard
+            title="Crypto Holdings"
+            value={netWorth?.crypto_holdings_value || 0}
+            change={0}
+            changeType="positive"
+            icon={Coins}
+          />
+          <MetricCard
+            title="Stock Holdings"
+            value={netWorth?.stock_holdings_value || 0}
+            change={0}
+            changeType="positive"
+            icon={TrendingUp}
+          />
+        </div>
       </div>
 
       {/* Charts Section */}

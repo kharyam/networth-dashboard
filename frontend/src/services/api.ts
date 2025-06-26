@@ -136,6 +136,9 @@ export const cryptoHoldingsApi = {
   getPrice: (symbol: string): Promise<any> =>
     api.get(`/crypto/prices/${symbol}`).then(res => res.data),
   
+  getPriceHistory: (days?: number): Promise<any> =>
+    api.get(`/crypto/prices/history${days ? `?days=${days}` : ''}`).then(res => res.data),
+  
   refreshPrice: (symbol: string): Promise<any> =>
     api.post(`/crypto/prices/refresh/${symbol}`).then(res => res.data),
   

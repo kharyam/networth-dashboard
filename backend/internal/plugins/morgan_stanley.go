@@ -31,6 +31,11 @@ func (p *MorganStanleyPlugin) GetName() string {
 	return p.name
 }
 
+// GetFriendlyName returns the user-friendly plugin name
+func (p *MorganStanleyPlugin) GetFriendlyName() string {
+	return "Morgan Stanley Equity"
+}
+
 // GetType returns the plugin type
 func (p *MorganStanleyPlugin) GetType() PluginType {
 	return PluginTypeManual

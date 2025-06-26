@@ -9,13 +9,15 @@ import {
   AlertTriangle,
   X,
   ExternalLink,
+  Clock,
 } from 'lucide-react'
 import { 
   PieChart, Pie, Cell,
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer 
 } from 'recharts'
 import { pluginsApi, cryptoHoldingsApi } from '../services/api'
-import { ManualEntrySchema } from '../types'
+import { ManualEntrySchema, CryptoPriceHistoryResponse } from '../types'
 import SmartDynamicForm from '../components/SmartDynamicForm'
 
 interface CryptoHolding {
@@ -36,7 +38,7 @@ interface CryptoHolding {
   price_last_updated?: string
 }
 
-type ViewMode = 'grid' | 'list' | 'charts'
+type ViewMode = 'grid' | 'list' | 'charts' | 'history'
 type PriceMode = 'usd' | 'btc'
 
 // Error boundary for chart components
@@ -91,11 +93,22 @@ function CryptoHoldings() {
   const [schema, setSchema] = useState<ManualEntrySchema | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+  
+  // Price history states
+  const [priceHistory, setPriceHistory] = useState<CryptoPriceHistoryResponse | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
 
   useEffect(() => {
     loadCryptoHoldings()
     loadSchema()
   }, [])
+
+  useEffect(() => {
+    if (viewMode === 'history') {
+      loadPriceHistory()
+    }
+  }, [viewMode])
 
   // Transform and validate API response data
   const transformCryptoHoldingData = (rawData: any[]): CryptoHolding[] => {
@@ -154,6 +167,20 @@ function CryptoHoldings() {
     }
   }
 
+  const loadPriceHistory = async () => {
+    try {
+      setHistoryLoading(true)
+      setHistoryError(null)
+      const data = await cryptoHoldingsApi.getPriceHistory(30) // Default to 30 days
+      setPriceHistory(data)
+    } catch (err) {
+      console.error('Failed to load price history:', err)
+      setHistoryError('Failed to load price history')
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
   const handleRefresh = async () => {
     try {
       setRefreshing(true)
@@ -203,12 +230,23 @@ function CryptoHoldings() {
     return `${amount.toFixed(decimals)} ${symbol}`
   }
 
+  // Get current BTC price for conversions
+  const btcPrice = useMemo(() => {
+    const btcHolding = cryptoHoldings.find(h => h.crypto_symbol === 'BTC')
+    return btcHolding?.current_price_usd || 45000 // Fallback BTC price
+  }, [cryptoHoldings])
+
   // Calculate total portfolio value
   const totalPortfolioValue = useMemo(() => {
     return cryptoHoldings.reduce((total, holding) => {
       return total + (holding.current_value_usd || 0)
     }, 0)
   }, [cryptoHoldings])
+
+  // Helper function to convert USD to BTC
+  const convertToBTC = (usdAmount: number) => {
+    return usdAmount / btcPrice
+  }
 
   // Data for charts
   const portfolioDistributionData = useMemo(() => {
@@ -217,12 +255,13 @@ function CryptoHoldings() {
       .map(holding => ({
         name: holding.crypto_symbol,
         value: holding.current_value_usd!,
+        valueBTC: convertToBTC(holding.current_value_usd!),
         tokens: holding.balance_tokens,
       }))
       .sort((a, b) => b.value - a.value)
     
     return data
-  }, [cryptoHoldings])
+  }, [cryptoHoldings, btcPrice])
 
   const institutionDistributionData = useMemo(() => {
     const institutionMap = new Map<string, number>()
@@ -235,9 +274,13 @@ function CryptoHoldings() {
 
     return Array.from(institutionMap.entries())
       .filter(([, value]) => value > 0)
-      .map(([name, value]) => ({ name, value }))
+      .map(([name, value]) => ({ 
+        name, 
+        value,
+        valueBTC: convertToBTC(value)
+      }))
       .sort((a, b) => b.value - a.value)
-  }, [cryptoHoldings])
+  }, [cryptoHoldings, btcPrice])
 
   // Colors for charts
   const COLORS = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#F97316', '#06B6D4', '#84CC16']
@@ -319,6 +362,16 @@ function CryptoHoldings() {
             >
               <BarChart3 className="h-4 w-4" />
             </button>
+            <button
+              onClick={() => setViewMode('history')}
+              className={`p-2 rounded transition-colors ${
+                viewMode === 'history'
+                  ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              <Clock className="h-4 w-4" />
+            </button>
           </div>
 
           <button
@@ -372,7 +425,10 @@ function CryptoHoldings() {
           <div className="text-center">
             <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Portfolio Value</p>
             <p className="text-2xl font-bold text-gray-900 dark:text-white">
-              {formatCurrency(totalPortfolioValue)}
+              {priceMode === 'btc' 
+                ? formatCurrency(convertToBTC(totalPortfolioValue), 'BTC')
+                : formatCurrency(totalPortfolioValue)
+              }
             </p>
           </div>
           <div className="text-center">
@@ -413,7 +469,12 @@ function CryptoHoldings() {
                       ))}
                     </Pie>
                     <Tooltip 
-                      formatter={(value: number) => [formatCurrency(value), 'Value']}
+                      formatter={(value: number, _name: string, props: any) => {
+                        if (priceMode === 'btc') {
+                          return [formatCurrency(props.payload.valueBTC, 'BTC'), 'Value']
+                        }
+                        return [formatCurrency(value), 'Value']
+                      }}
                       labelFormatter={(label) => `${label}`}
                     />
                     <Legend />
@@ -442,7 +503,12 @@ function CryptoHoldings() {
                       ))}
                     </Pie>
                     <Tooltip 
-                      formatter={(value: number) => [formatCurrency(value), 'Value']}
+                      formatter={(value: number, _name: string, props: any) => {
+                        if (priceMode === 'btc') {
+                          return [formatCurrency(props.payload.valueBTC, 'BTC'), 'Value']
+                        }
+                        return [formatCurrency(value), 'Value']
+                      }}
                       labelFormatter={(label) => `${label}`}
                     />
                     <Legend />
@@ -450,6 +516,141 @@ function CryptoHoldings() {
                 </ResponsiveContainer>
               </ChartErrorBoundary>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Price History View */}
+      {viewMode === 'history' && (
+        <div className="space-y-6">
+          {/* Disclaimer */}
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+            <div className="flex items-start space-x-3">
+              <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5" />
+              <div>
+                <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                  Cached Price Data Disclaimer
+                </h3>
+                <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                  {priceHistory?.disclaimer || 'This data represents cached price snapshots taken during application usage and may not reflect complete or real-time market data.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Price History Chart */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Crypto Price History ({priceMode.toUpperCase()})
+            </h3>
+            
+            {historyLoading ? (
+              <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : historyError ? (
+              <div className="flex items-center justify-center h-64 text-red-500 dark:text-red-400">
+                <div className="text-center">
+                  <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
+                  <p>{historyError}</p>
+                  <button
+                    onClick={loadPriceHistory}
+                    className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              </div>
+            ) : !priceHistory || priceHistory.price_history.length === 0 ? (
+              <div className="flex items-center justify-center h-64 text-gray-500 dark:text-gray-400">
+                <div className="text-center">
+                  <Clock className="h-8 w-8 mx-auto mb-2" />
+                  <p>No price history data available</p>
+                  <p className="text-sm mt-2">Price data will accumulate as you use the application</p>
+                </div>
+              </div>
+            ) : (
+              <ChartErrorBoundary>
+                <div className="h-96">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={(() => {
+                      // Combine all data points with timestamps as the key
+                      const allDataPoints = new Map()
+                      
+                      priceHistory.price_history.forEach(crypto => {
+                        crypto.data.forEach(point => {
+                          const timestamp = point.timestamp
+                          if (!allDataPoints.has(timestamp)) {
+                            allDataPoints.set(timestamp, { timestamp })
+                          }
+                          const dataPoint = allDataPoints.get(timestamp)
+                          dataPoint[crypto.symbol] = priceMode === 'btc' ? point.price_btc : point.price_usd
+                        })
+                      })
+                      
+                      return Array.from(allDataPoints.values()).sort((a, b) => 
+                        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+                      )
+                    })()}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis 
+                        dataKey="timestamp"
+                        tick={{ fontSize: 12 }}
+                        tickFormatter={(value) => new Date(value).toLocaleDateString()}
+                      />
+                      <YAxis 
+                        tick={{ fontSize: 12 }}
+                        tickFormatter={(value) => {
+                          if (priceMode === 'btc') {
+                            return `₿${value.toFixed(8)}`
+                          }
+                          return `$${value.toLocaleString()}`
+                        }}
+                      />
+                      <Tooltip 
+                        labelFormatter={(value) => new Date(value).toLocaleString()}
+                        formatter={(value: number, name: string) => {
+                          if (priceMode === 'btc') {
+                            return [`₿${value.toFixed(8)}`, name.toUpperCase()]
+                          }
+                          return [`$${value.toLocaleString()}`, name.toUpperCase()]
+                        }}
+                      />
+                      <Legend />
+                      {priceHistory.price_history.map((crypto, index) => (
+                        <Line
+                          key={crypto.symbol}
+                          type="monotone"
+                          dataKey={crypto.symbol}
+                          stroke={COLORS[index % COLORS.length]}
+                          strokeWidth={2}
+                          dot={false}
+                          name={crypto.symbol.toUpperCase()}
+                          connectNulls={false}
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </ChartErrorBoundary>
+            )}
+            
+            {priceHistory && (
+              <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600 dark:text-gray-400">
+                <div>
+                  <span className="font-medium">Data Period:</span> {priceHistory.days_back} days
+                </div>
+                <div>
+                  <span className="font-medium">Symbols:</span> {priceHistory.total_symbols}
+                </div>
+                <div>
+                  <span className="font-medium">Start Date:</span> {new Date(priceHistory.start_date).toLocaleDateString()}
+                </div>
+                <div>
+                  <span className="font-medium">Mode:</span> {priceMode.toUpperCase()}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

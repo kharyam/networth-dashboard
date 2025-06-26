@@ -1067,6 +1067,24 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		FROM cash_holdings ch
 		LEFT JOIN accounts a ON ch.account_id = a.id
 		WHERE ch.created_at IS NOT NULL
+		
+		UNION ALL
+		
+		SELECT 'crypto_holdings' as entry_type,
+		       cry.id, cry.account_id, cry.created_at, cry.updated_at,
+		       json_build_object(
+		           'institution_name', cry.institution_name,
+		           'crypto_symbol', cry.crypto_symbol,
+		           'balance_tokens', cry.balance_tokens,
+		           'purchase_price_usd', cry.purchase_price_usd,
+		           'purchase_date', cry.purchase_date,
+		           'wallet_address', cry.wallet_address,
+		           'notes', cry.notes
+		       ) as data_json,
+		       a.account_name, a.institution
+		FROM crypto_holdings cry
+		LEFT JOIN accounts a ON cry.account_id = a.id
+		WHERE cry.created_at IS NOT NULL
 	`
 
 	args := []interface{}{}
@@ -1220,6 +1238,10 @@ func (s *Server) deleteManualEntry(c *gin.Context) {
 		query = "DELETE FROM equity_grants WHERE id = $1"
 	case "real_estate":
 		query = "DELETE FROM real_estate_properties WHERE id = $1"
+	case "cash_holdings":
+		query = "DELETE FROM cash_holdings WHERE id = $1"
+	case "crypto_holdings":
+		query = "DELETE FROM crypto_holdings WHERE id = $1"
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid entry type",
@@ -1523,5 +1545,79 @@ func (s *Server) refreshCryptoPrice(c *gin.Context) {
 		"volume_24h_usd":   price.Volume24hUSD,
 		"price_change_24h": price.PriceChange24h,
 		"last_updated":     price.LastUpdated.Format(time.RFC3339),
+	})
+}
+
+func (s *Server) getCryptoPriceHistory(c *gin.Context) {
+	// Optional query parameters for filtering
+	daysBack := c.DefaultQuery("days", "30") // Default to last 30 days
+	
+	// Parse days parameter
+	days := 30
+	if daysBack != "" {
+		if parsedDays, err := strconv.Atoi(daysBack); err == nil && parsedDays > 0 && parsedDays <= 365 {
+			days = parsedDays
+		}
+	}
+
+	// Calculate start date
+	startDate := time.Now().AddDate(0, 0, -days)
+
+	query := `
+		SELECT symbol, price_usd, price_btc, last_updated
+		FROM crypto_prices 
+		WHERE last_updated >= $1
+		ORDER BY symbol, last_updated
+	`
+
+	rows, err := s.db.Query(query, startDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch crypto price history",
+		})
+		return
+	}
+	defer rows.Close()
+
+	// Group data by symbol
+	historyMap := make(map[string][]map[string]interface{})
+	
+	for rows.Next() {
+		var symbol string
+		var priceUSD, priceBTC float64
+		var lastUpdated time.Time
+
+		err := rows.Scan(&symbol, &priceUSD, &priceBTC, &lastUpdated)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to scan price history data",
+			})
+			return
+		}
+
+		dataPoint := map[string]interface{}{
+			"timestamp":  lastUpdated.Format(time.RFC3339),
+			"price_usd":  priceUSD,
+			"price_btc":  priceBTC,
+		}
+
+		historyMap[symbol] = append(historyMap[symbol], dataPoint)
+	}
+
+	// Convert to array format
+	var history []map[string]interface{}
+	for symbol, data := range historyMap {
+		history = append(history, map[string]interface{}{
+			"symbol": symbol,
+			"data":   data,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"price_history": history,
+		"start_date":    startDate.Format(time.RFC3339),
+		"days_back":     days,
+		"total_symbols": len(history),
+		"disclaimer":    "This data represents cached price snapshots taken during application usage and may not reflect complete or real-time market data.",
 	})
 }

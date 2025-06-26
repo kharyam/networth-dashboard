@@ -86,14 +86,15 @@ func (r *Registry) List() []PluginInfo {
 		}
 		
 		plugins = append(plugins, PluginInfo{
-			Name:        name,
-			Type:        plugin.GetType(),
-			DataSource:  plugin.GetDataSource(),
-			Version:     plugin.GetVersion(),
-			Description: plugin.GetDescription(),
-			Enabled:     config.Enabled,
-			Status:      status,
-			Health:      health,
+			Name:         name,
+			FriendlyName: plugin.GetFriendlyName(),
+			Type:         plugin.GetType(),
+			DataSource:   plugin.GetDataSource(),
+			Version:      plugin.GetVersion(),
+			Description:  plugin.GetDescription(),
+			Enabled:      config.Enabled,
+			Status:       status,
+			Health:       health,
 		})
 	}
 
@@ -242,12 +243,13 @@ func (r *Registry) RefreshAll() map[string]error {
 
 // PluginInfo contains metadata about a registered plugin
 type PluginInfo struct {
-	Name        string       `json:"name"`
-	Type        PluginType   `json:"type"`
-	DataSource  DataSourceType `json:"data_source"`
-	Version     string       `json:"version"`
-	Description string       `json:"description"`
-	Enabled     bool         `json:"enabled"`
-	Status      string       `json:"status"`
-	Health      PluginHealth `json:"health"`
+	Name         string       `json:"name"`
+	FriendlyName string       `json:"friendly_name"`
+	Type         PluginType   `json:"type"`
+	DataSource   DataSourceType `json:"data_source"`
+	Version      string       `json:"version"`
+	Description  string       `json:"description"`
+	Enabled      bool         `json:"enabled"`
+	Status       string       `json:"status"`
+	Health       PluginHealth `json:"health"`
 }

@@ -29,6 +29,11 @@ func (p *CashHoldingsPlugin) GetName() string {
 	return p.name
 }
 
+// GetFriendlyName returns the user-friendly plugin name
+func (p *CashHoldingsPlugin) GetFriendlyName() string {
+	return "Cash Holdings"
+}
+
 // GetType returns the plugin type
 func (p *CashHoldingsPlugin) GetType() PluginType {
 	return PluginTypeManual
