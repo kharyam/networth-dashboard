@@ -46,8 +46,8 @@ func (mhs *MarketHoursService) IsMarketOpen() bool {
 		return false
 	}
 
-	openTime := mhs.getTodayTime(mhs.config.OpenTimeUTC)
-	closeTime := mhs.getTodayTime(mhs.config.CloseTimeUTC)
+	openTime := mhs.getTodayTime(mhs.config.OpenTimeLocal)
+	closeTime := mhs.getTodayTime(mhs.config.CloseTimeLocal)
 
 	return now.After(openTime) && now.Before(closeTime)
 }
@@ -56,8 +56,8 @@ func (mhs *MarketHoursService) IsMarketOpen() bool {
 func (mhs *MarketHoursService) GetMarketStatus() *MarketStatus {
 	now := time.Now().In(mhs.location)
 	
-	openTime := mhs.getTodayTime(mhs.config.OpenTimeUTC)
-	closeTime := mhs.getTodayTime(mhs.config.CloseTimeUTC)
+	openTime := mhs.getTodayTime(mhs.config.OpenTimeLocal)
+	closeTime := mhs.getTodayTime(mhs.config.CloseTimeLocal)
 	
 	isOpen := mhs.IsMarketOpen()
 	
@@ -137,9 +137,9 @@ func (mhs *MarketHoursService) GetSecondsUntilNextRefresh(lastUpdate time.Time, 
 	return int64(nextRefresh.Sub(now).Seconds())
 }
 
-// getTodayTime parses time string (HH:MM) and returns today's time in market timezone
+// getTodayTime parses time string (HH:MM) as UTC time and returns today's time
 func (mhs *MarketHoursService) getTodayTime(timeStr string) time.Time {
-	now := time.Now().In(mhs.location)
+	now := time.Now()
 	
 	// Parse the time string
 	t, err := time.Parse("15:04", timeStr)
@@ -148,7 +148,8 @@ func (mhs *MarketHoursService) getTodayTime(timeStr string) time.Time {
 		return now
 	}
 	
-	return time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, mhs.location)
+	// Create UTC time for today with the parsed hour and minute
+	return time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, time.UTC)
 }
 
 // getNextBusinessDay returns the next business day's time

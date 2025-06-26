@@ -34,25 +34,25 @@ type ServerConfig struct {
 }
 
 type SecurityConfig struct {
-	JWTSecret         string
-	EncryptionKey     string
-	CredentialKey     string
-	RateLimitEnable   bool
-	RateLimitRPS      int
+	JWTSecret       string
+	EncryptionKey   string
+	CredentialKey   string
+	RateLimitEnable bool
+	RateLimitRPS    int
 }
 
 type ApiConfig struct {
-	AlphaVantageAPIKey    string
+	AlphaVantageAPIKey     string
 	AlphaVantageDailyLimit int
 	AlphaVantageRateLimit  int
 	CacheRefreshInterval   time.Duration
 }
 
 type MarketConfig struct {
-	OpenTimeUTC   string
-	CloseTimeUTC  string
-	Timezone      string
-	WeekendTrades bool
+	OpenTimeLocal  string
+	CloseTimeLocal string
+	Timezone       string
+	WeekendTrades  bool
 }
 
 func Load() (*Config, error) {
@@ -61,7 +61,7 @@ func Load() (*Config, error) {
 	alphaVantageDailyLimit, _ := strconv.Atoi(getEnvOrDefault("ALPHA_VANTAGE_DAILY_LIMIT", "25"))
 	alphaVantageRateLimit, _ := strconv.Atoi(getEnvOrDefault("ALPHA_VANTAGE_RATE_LIMIT", "5"))
 	cacheRefreshMinutes, _ := strconv.Atoi(getEnvOrDefault("CACHE_REFRESH_MINUTES", "15"))
-	
+
 	// Debug logging for API key
 	apiKey := getEnvOrDefault("ALPHA_VANTAGE_API_KEY", "")
 	if apiKey == "" {
@@ -69,7 +69,7 @@ func Load() (*Config, error) {
 	} else {
 		log.Printf("INFO: Alpha Vantage API key loaded (length: %d characters)", len(apiKey))
 	}
-	
+
 	return &Config{
 		Database: DatabaseConfig{
 			Host:     getEnvOrDefault("DB_HOST", "localhost"),
@@ -95,16 +95,16 @@ func Load() (*Config, error) {
 			RateLimitRPS:    rateLimitRPS,
 		},
 		API: ApiConfig{
-			AlphaVantageAPIKey:    apiKey,
+			AlphaVantageAPIKey:     apiKey,
 			AlphaVantageDailyLimit: alphaVantageDailyLimit,
 			AlphaVantageRateLimit:  alphaVantageRateLimit,
 			CacheRefreshInterval:   time.Duration(cacheRefreshMinutes) * time.Minute,
 		},
 		Market: MarketConfig{
-			OpenTimeUTC:   getEnvOrDefault("MARKET_OPEN_UTC", "14:30"),  // 9:30 AM ET
-			CloseTimeUTC:  getEnvOrDefault("MARKET_CLOSE_UTC", "21:00"), // 4:00 PM ET
-			Timezone:      getEnvOrDefault("MARKET_TIMEZONE", "America/New_York"),
-			WeekendTrades: false,
+			OpenTimeLocal:  getEnvOrDefault("MARKET_OPEN_LOCAL", "09:30"),  // 9:30 AM ET
+			CloseTimeLocal: getEnvOrDefault("MARKET_CLOSE_LOCAL", "16:00"), // 4:00 PM ET
+			Timezone:       getEnvOrDefault("MARKET_TIMEZONE", "America/New_York"),
+			WeekendTrades:  false,
 		},
 	}, nil
 }

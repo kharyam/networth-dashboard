@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, Clock, AlertTriangle } from 'lucide-react'
 import { stocksApi, equityApi, pricesApi } from '../services/api'
 import { StockHolding, StockConsolidation, EquityGrant } from '../types'
 import MarketStatus from '../components/MarketStatus'
@@ -12,9 +12,13 @@ function Stocks() {
   const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab] = useState<'individual' | 'consolidated' | 'equity'>('consolidated')
   const [error, setError] = useState<string | null>(null)
+  const [priceStatus, setPriceStatus] = useState<any>(null)
 
   useEffect(() => {
-    loadAllData()
+    const loadData = async () => {
+      await Promise.all([loadAllData(), fetchPriceStatus()])
+    }
+    loadData()
   }, [])
 
   const loadAllData = async () => {
@@ -23,9 +27,9 @@ function Stocks() {
       setError(null)
       
       const [stocks, consolidated, equity] = await Promise.all([
-        stocksApi.getAll().catch(() => []),
-        stocksApi.getConsolidated().catch(() => []),
-        equityApi.getAll().catch(() => [])
+        stocksApi.getAll(),
+        stocksApi.getConsolidated(),
+        equityApi.getAll()
       ])
       
       setStockHoldings(stocks)
@@ -39,11 +43,21 @@ function Stocks() {
     }
   }
 
+  const fetchPriceStatus = async () => {
+    try {
+      const status = await pricesApi.getStatus()
+      setPriceStatus(status)
+    } catch (error) {
+      console.error('Failed to fetch price status:', error)
+    }
+  }
+
   const handleRefreshPrices = async () => {
     setRefreshing(true)
     try {
       await pricesApi.refreshAll()
       await loadAllData() // Reload all data after price refresh
+      await fetchPriceStatus() // Update price status
     } catch (error) {
       console.error('Failed to refresh prices:', error)
       setError('Failed to refresh prices. Please try again.')
@@ -112,14 +126,39 @@ function Stocks() {
           </div>
         </div>
         
-        <button
-          onClick={handleRefreshPrices}
-          disabled={refreshing}
-          className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-          {refreshing ? 'Refreshing...' : 'Refresh Prices'}
-        </button>
+        {/* Price Status and Refresh */}
+        <div className="flex items-center space-x-4">
+          {priceStatus && (
+            <div className="flex items-center space-x-2 text-sm">
+              <div className="flex items-center space-x-1">
+                {priceStatus.stale_count > 0 ? (
+                  <AlertTriangle className="w-4 h-4 text-yellow-500" />
+                ) : (
+                  <Clock className="w-4 h-4 text-green-500" />
+                )}
+                <span className="text-gray-600 dark:text-gray-400">
+                  {priceStatus.stale_count > 0 
+                    ? `${priceStatus.stale_count} stale prices`
+                    : 'Prices up to date'
+                  }
+                </span>
+              </div>
+              <span className="text-gray-500 dark:text-gray-500">•</span>
+              <span className="text-gray-500 dark:text-gray-500 text-xs">
+                {priceStatus.provider_name}
+              </span>
+            </div>
+          )}
+          
+          <button
+            onClick={handleRefreshPrices}
+            disabled={refreshing}
+            className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Refreshing...' : 'Refresh Prices'}
+          </button>
+        </div>
       </div>
 
       {error && (

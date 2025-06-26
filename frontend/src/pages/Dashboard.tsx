@@ -258,7 +258,7 @@ function Dashboard() {
             Your complete financial overview
           </p>
           <div className="mt-3">
-            <MarketStatus />
+            <MarketStatus showDetails={true} />
           </div>
         </div>
         

@@ -89,9 +89,11 @@ export default function MarketStatus({ className = '', showDetails = false }: Ma
   const formatTime = (timeStr: string) => {
     try {
       const date = new Date(timeStr)
+      // Format in Eastern timezone to match market timezone
       return date.toLocaleTimeString('en-US', {
         hour: 'numeric',
         minute: '2-digit',
+        timeZone: 'America/New_York',
         timeZoneName: 'short'
       })
     } catch {
