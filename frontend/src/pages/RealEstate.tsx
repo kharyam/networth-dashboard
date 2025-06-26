@@ -24,6 +24,7 @@ function RealEstate() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [featureEnabled, setFeatureEnabled] = useState<boolean | null>(null)
   
   // Modal states
   const [addModalOpen, setAddModalOpen] = useState(false)
@@ -40,7 +41,19 @@ function RealEstate() {
   useEffect(() => {
     loadProperties()
     loadSchema()
+    checkFeatureStatus()
   }, [])
+
+  const checkFeatureStatus = async () => {
+    try {
+      const enabled = await propertyValuationService.isFeatureEnabled()
+      setFeatureEnabled(enabled)
+      console.log('🔧 [RealEstate] Property valuation feature status:', enabled)
+    } catch (error) {
+      console.error('❌ [RealEstate] Failed to check feature status:', error)
+      setFeatureEnabled(false)
+    }
+  }
 
   const loadProperties = async () => {
     try {
@@ -152,13 +165,20 @@ function RealEstate() {
   }
 
   const handleRefreshAll = async () => {
+    // Check if feature is enabled
+    if (featureEnabled === false) {
+      setError('Property valuation feature is currently disabled')
+      setTimeout(() => setError(null), 5000)
+      return
+    }
+
     setRefreshing(true)
     try {
       // Refresh all property values
       const refreshPromises = properties.map(async (property) => {
         if (property.property_name) {
           try {
-            const valuation = await propertyValuationService.refreshPropertyValue(
+            const valuation = await propertyValuationService.refreshPropertyValueLegacy(
               property.property_name,
               property.current_value
             )
@@ -194,14 +214,19 @@ function RealEstate() {
     return {
       property_type: property.property_type,
       property_name: property.property_name,
+      street_address: property.street_address || '',
+      city: property.city || '',
+      state: property.state || '',
+      zip_code: property.zip_code || '',
       purchase_price: property.purchase_price,
       current_value: property.current_value,
       outstanding_mortgage: property.outstanding_mortgage || 0,
       purchase_date: property.purchase_date || '',
-      property_size_sqft: property.property_size_sqft || '',
-      lot_size_acres: property.lot_size_acres || '',
-      rental_income_monthly: property.rental_income_monthly || '',
-      property_tax_annual: property.property_tax_annual || '',
+      // For optional numeric fields, preserve null values instead of converting to empty strings
+      property_size_sqft: property.property_size_sqft,
+      lot_size_acres: property.lot_size_acres,
+      rental_income_monthly: property.rental_income_monthly,
+      property_tax_annual: property.property_tax_annual,
       notes: property.notes || ''
     }
   }
@@ -290,8 +315,9 @@ function RealEstate() {
           {/* Action Buttons */}
           <button
             onClick={handleRefreshAll}
-            disabled={refreshing || properties.length === 0}
+            disabled={refreshing || properties.length === 0 || featureEnabled === false}
             className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            title={featureEnabled === false ? "Property valuation feature is disabled" : "Refresh property values using external APIs"}
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
             {refreshing ? 'Refreshing...' : 'Refresh Values'}
@@ -448,6 +474,21 @@ function RealEstate() {
                   <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">Property Name</h4>
                   <p className="text-gray-900 dark:text-white">{selectedProperty.property_name}</p>
                 </div>
+                {(selectedProperty.street_address || selectedProperty.city || selectedProperty.state || selectedProperty.zip_code) && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">Address</h4>
+                    <div className="text-gray-900 dark:text-white">
+                      {selectedProperty.street_address && <p>{selectedProperty.street_address}</p>}
+                      {(selectedProperty.city || selectedProperty.state || selectedProperty.zip_code) && (
+                        <p>
+                          {[selectedProperty.city, selectedProperty.state, selectedProperty.zip_code]
+                            .filter(Boolean)
+                            .join(', ')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">Current Value</h4>
                   <p className="text-gray-900 dark:text-white">{formatCurrency(selectedProperty.current_value)}</p>
@@ -462,6 +503,19 @@ function RealEstate() {
                   <div>
                     <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">Mortgage Balance</h4>
                     <p className="text-gray-900 dark:text-white">{formatCurrency(selectedProperty.outstanding_mortgage)}</p>
+                  </div>
+                )}
+                {selectedProperty.api_estimated_value && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">API Estimated Value</h4>
+                    <p className="text-gray-900 dark:text-white">
+                      {formatCurrency(selectedProperty.api_estimated_value)}
+                      {selectedProperty.api_provider && (
+                        <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
+                          (from {selectedProperty.api_provider})
+                        </span>
+                      )}
+                    </p>
                   </div>
                 )}
                 <div>

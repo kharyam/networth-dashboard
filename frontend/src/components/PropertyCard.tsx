@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { 
   Home, 
   Building, 
@@ -23,6 +23,24 @@ interface PropertyCardProps {
 
 function PropertyCard({ property, onEdit, onDelete, onView, onValueRefresh }: PropertyCardProps) {
   const [refreshing, setRefreshing] = useState(false)
+  const [refreshMessage, setRefreshMessage] = useState<string | null>(null)
+  const [featureEnabled, setFeatureEnabled] = useState<boolean | null>(null)
+
+  // Check feature status on component mount
+  useEffect(() => {
+    const checkFeatureStatus = async () => {
+      try {
+        const enabled = await propertyValuationService.isFeatureEnabled()
+        setFeatureEnabled(enabled)
+        console.log('🔧 [PropertyCard] Property valuation feature status:', enabled)
+      } catch (error) {
+        console.error('❌ [PropertyCard] Failed to check feature status:', error)
+        setFeatureEnabled(false)
+      }
+    }
+    
+    checkFeatureStatus()
+  }, [])
 
   // Calculate derived values
   const equity = property.current_value - (property.outstanding_mortgage || 0)
@@ -71,23 +89,91 @@ function PropertyCard({ property, onEdit, onDelete, onView, onValueRefresh }: Pr
 
   // Handle value refresh
   const handleRefreshValue = async () => {
-    if (!property.property_name) return
+    console.log('🔄 [PropertyCard] Refresh button clicked for property:', property.property_name)
+    console.log('🔄 [PropertyCard] Button disabled state:', refreshing || !property.property_name)
+    console.log('🔄 [PropertyCard] Property data:', {
+      id: property.id,
+      property_name: property.property_name,
+      street_address: property.street_address,
+      city: property.city,
+      state: property.state,
+      zip_code: property.zip_code,
+      current_value: property.current_value
+    })
+    
+    // Clear previous messages
+    setRefreshMessage(null)
+    
+    // Check if feature is enabled
+    if (featureEnabled === false) {
+      console.log('⚠️ [PropertyCard] Property valuation feature is disabled')
+      setRefreshMessage('Property valuation feature is currently disabled')
+      return
+    }
+    
+    // Check if we have any address data to work with
+    const hasAddressData = property.street_address || property.city || property.state || property.zip_code || property.property_name
+    console.log('🔄 [PropertyCard] Has address data:', hasAddressData)
+    
+    if (!hasAddressData) {
+      console.log('❌ [PropertyCard] No address data available, aborting refresh')
+      setRefreshMessage('No address data available for refresh')
+      return
+    }
 
+    console.log('🔄 [PropertyCard] Setting refreshing state to true')
     setRefreshing(true)
+    
     try {
-      const valuation = await propertyValuationService.refreshPropertyValue(
-        property.property_name,
-        property.current_value
-      )
+      // Build address object for API call
+      const addressParams = {
+        address: property.street_address || undefined,
+        city: property.city || undefined,
+        state: property.state || undefined,
+        zip_code: property.zip_code || undefined,
+        currentValue: property.current_value
+      }
+
+      // If no structured address data, fall back to property_name as address
+      if (!addressParams.address && !addressParams.city && !addressParams.state && !addressParams.zip_code) {
+        console.log('🔄 [PropertyCard] No structured address data, using property_name as address')
+        addressParams.address = property.property_name
+      }
+
+      console.log('🔄 [PropertyCard] Built address params:', addressParams)
+      console.log('🔄 [PropertyCard] About to call propertyValuationService.refreshPropertyValue()')
       
-      // For now, manual provider returns the same value
-      // In future, this could update with API-provided values
+      const valuation = await propertyValuationService.refreshPropertyValue(addressParams)
+      
+      console.log('✅ [PropertyCard] Received valuation response:', valuation)
+      
+      // Show success message
+      if (valuation.source === 'Manual Entry') {
+        setRefreshMessage('Refresh completed - using current value (external API unavailable)')
+      } else {
+        setRefreshMessage(`Property value updated from ${valuation.source}`)
+      }
+      
+      // Update the property with new valuation
       if (onValueRefresh) {
         onValueRefresh(property, valuation.estimated_value)
       }
-    } catch (error) {
-      console.error('Failed to refresh property value:', error)
+      
+      // Clear message after 3 seconds
+      setTimeout(() => setRefreshMessage(null), 3000)
+    } catch (error: unknown) {
+      console.error('❌ [PropertyCard] Failed to refresh property value:', error)
+      console.error('❌ [PropertyCard] Error details:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        name: error instanceof Error ? error.name : typeof error
+      })
+      setRefreshMessage('Failed to refresh value - please try again')
+      
+      // Clear error message after 5 seconds
+      setTimeout(() => setRefreshMessage(null), 5000)
     } finally {
+      console.log('🔄 [PropertyCard] Setting refreshing state to false')
       setRefreshing(false)
     }
   }
@@ -136,9 +222,9 @@ function PropertyCard({ property, onEdit, onDelete, onView, onValueRefresh }: Pr
         <div className="flex items-center space-x-2">
           <button
             onClick={handleRefreshValue}
-            disabled={refreshing || !property.property_name}
+            disabled={refreshing || !property.property_name || featureEnabled === false}
             className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
-            title="Refresh Property Value"
+            title={featureEnabled === false ? "Property valuation feature is disabled" : "Refresh Property Value"}
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
@@ -165,6 +251,17 @@ function PropertyCard({ property, onEdit, onDelete, onView, onValueRefresh }: Pr
           </button>
         </div>
       </div>
+
+      {/* Refresh Status Message */}
+      {refreshMessage && (
+        <div className={`mb-3 p-2 rounded text-sm text-center ${
+          refreshMessage.includes('Failed') || refreshMessage.includes('No address') 
+            ? 'bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-200' 
+            : 'bg-blue-50 text-blue-700 dark:bg-blue-900 dark:text-blue-200'
+        }`}>
+          {refreshMessage}
+        </div>
+      )}
 
       {/* Financial Summary */}
       <div className="grid grid-cols-2 gap-4 mb-4">

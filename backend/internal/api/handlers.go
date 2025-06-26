@@ -643,9 +643,12 @@ func (s *Server) deleteEquityGrant(c *gin.Context) {
 func (s *Server) getRealEstate(c *gin.Context) {
 	query := `
 		SELECT id, account_id, property_type, property_name, purchase_price, 
-		       current_value, outstanding_mortgage, equity, purchase_date, 
+		       current_value, outstanding_mortgage, equity, 
+		       TO_CHAR(purchase_date, 'YYYY-MM-DD') as purchase_date, 
 		       property_size_sqft, lot_size_acres, rental_income_monthly, 
-		       property_tax_annual, notes, created_at
+		       property_tax_annual, notes, street_address, city, state, zip_code,
+		       latitude, longitude, api_estimated_value, api_estimate_date, 
+		       api_provider, created_at
 		FROM real_estate_properties
 		ORDER BY property_name
 	`
@@ -676,6 +679,15 @@ func (s *Server) getRealEstate(c *gin.Context) {
 			RentalIncomeMonthly *float64 `json:"rental_income_monthly"`
 			PropertyTaxAnnual   *float64 `json:"property_tax_annual"`
 			Notes               *string  `json:"notes"`
+			StreetAddress       *string  `json:"street_address"`
+			City                *string  `json:"city"`
+			State               *string  `json:"state"`
+			ZipCode             *string  `json:"zip_code"`
+			Latitude            *float64 `json:"latitude"`
+			Longitude           *float64 `json:"longitude"`
+			APIEstimatedValue   *float64 `json:"api_estimated_value"`
+			APIEstimateDate     *string  `json:"api_estimate_date"`
+			APIProvider         *string  `json:"api_provider"`
 			CreatedAt           string   `json:"created_at"`
 		}
 
@@ -684,7 +696,10 @@ func (s *Server) getRealEstate(c *gin.Context) {
 			&property.PurchasePrice, &property.CurrentValue, &property.OutstandingMortgage,
 			&property.Equity, &property.PurchaseDate, &property.PropertySizeSqft,
 			&property.LotSizeAcres, &property.RentalIncomeMonthly, &property.PropertyTaxAnnual,
-			&property.Notes, &property.CreatedAt,
+			&property.Notes, &property.StreetAddress, &property.City, &property.State, 
+			&property.ZipCode, &property.Latitude, &property.Longitude, 
+			&property.APIEstimatedValue, &property.APIEstimateDate, &property.APIProvider,
+			&property.CreatedAt,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -708,6 +723,15 @@ func (s *Server) getRealEstate(c *gin.Context) {
 			"rental_income_monthly": property.RentalIncomeMonthly,
 			"property_tax_annual":   property.PropertyTaxAnnual,
 			"notes":                 property.Notes,
+			"street_address":        property.StreetAddress,
+			"city":                  property.City,
+			"state":                 property.State,
+			"zip_code":              property.ZipCode,
+			"latitude":              property.Latitude,
+			"longitude":             property.Longitude,
+			"api_estimated_value":   property.APIEstimatedValue,
+			"api_estimate_date":     property.APIEstimateDate,
+			"api_provider":          property.APIProvider,
 			"created_at":            property.CreatedAt,
 		}
 		properties = append(properties, propertyMap)
@@ -1082,11 +1106,15 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		       json_build_object(
 		           'property_type', re.property_type,
 		           'property_name', re.property_name,
+		           'street_address', re.street_address,
+		           'city', re.city,
+		           'state', re.state,
+		           'zip_code', re.zip_code,
 		           'purchase_price', re.purchase_price,
 		           'current_value', re.current_value,
 		           'outstanding_mortgage', re.outstanding_mortgage,
 		           'equity', re.equity,
-		           'purchase_date', re.purchase_date,
+		           'purchase_date', TO_CHAR(re.purchase_date, 'YYYY-MM-DD'),
 		           'property_size_sqft', re.property_size_sqft,
 		           'lot_size_acres', re.lot_size_acres,
 		           'rental_income_monthly', re.rental_income_monthly,
@@ -1675,5 +1703,124 @@ func (s *Server) getCryptoPriceHistory(c *gin.Context) {
 		"days_back":     days,
 		"total_symbols": len(history),
 		"disclaimer":    "This data represents cached price snapshots taken during application usage and may not reflect complete or real-time market data.",
+	})
+}
+
+// Property valuation handlers
+func (s *Server) getPropertyValuation(c *gin.Context) {
+	// Check if property valuation feature is enabled
+	if !s.propertyValuationService.IsPropertyValuationEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Property valuation feature is currently disabled",
+			"feature_enabled": false,
+		})
+		return
+	}
+	
+	address := c.Query("address")
+	city := c.Query("city")
+	state := c.Query("state")
+	zipCode := c.Query("zip_code")
+	
+	// At least one parameter is required
+	if address == "" && city == "" && state == "" && zipCode == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "At least one address component is required (address, city, state, or zip_code)",
+		})
+		return
+	}
+	
+	valuation, err := s.propertyValuationService.GetPropertyValuation(address, city, state, zipCode)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to get property valuation: %v", err),
+		})
+		return
+	}
+	
+	c.JSON(http.StatusOK, valuation)
+}
+
+func (s *Server) refreshPropertyValuation(c *gin.Context) {
+	// Check if property valuation feature is enabled
+	if !s.propertyValuationService.IsPropertyValuationEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Property valuation feature is currently disabled",
+			"feature_enabled": false,
+		})
+		return
+	}
+	
+	address := c.Query("address")
+	city := c.Query("city")
+	state := c.Query("state")
+	zipCode := c.Query("zip_code")
+	
+	// At least one parameter is required
+	if address == "" && city == "" && state == "" && zipCode == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "At least one address component is required (address, city, state, or zip_code)",
+		})
+		return
+	}
+	
+	valuation, err := s.propertyValuationService.RefreshPropertyValuation(address, city, state, zipCode)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to refresh property valuation: %v", err),
+		})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Property valuation refreshed successfully",
+		"valuation": valuation,
+	})
+}
+
+func (s *Server) getPropertyValuationProviders(c *gin.Context) {
+	// Check if property valuation feature is enabled
+	if !s.propertyValuationService.IsPropertyValuationEnabled() {
+		c.JSON(http.StatusOK, gin.H{
+			"providers": []gin.H{
+				{
+					"name": "Manual Entry",
+					"available": true,
+					"description": "Manual property value entry (external APIs disabled)",
+				},
+			},
+			"active_provider": "Manual Entry",
+			"feature_enabled": false,
+			"message": "Property valuation feature is disabled",
+		})
+		return
+	}
+	
+	providers := []gin.H{
+		{
+			"name": "Manual Entry",
+			"available": true,
+			"description": "Manual property value entry",
+		},
+	}
+	
+	if s.propertyValuationService.IsAttomDataAvailable() {
+		providers = append(providers, gin.H{
+			"name": "ATTOM Data API",
+			"available": true,
+			"description": "Professional property data and valuation from ATTOM Data",
+		})
+	} else {
+		providers = append(providers, gin.H{
+			"name": "ATTOM Data API",
+			"available": false,
+			"description": "Professional property data and valuation from ATTOM Data (API key required or feature disabled)",
+		})
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"providers": providers,
+		"active_provider": s.propertyValuationService.GetProviderName(),
+		"feature_enabled": true,
 	})
 }

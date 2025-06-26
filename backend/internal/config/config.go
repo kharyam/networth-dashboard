@@ -46,6 +46,11 @@ type ApiConfig struct {
 	AlphaVantageDailyLimit int
 	AlphaVantageRateLimit  int
 	CacheRefreshInterval   time.Duration
+	AttomDataAPIKey        string
+	AttomDataBaseURL       string
+	// Feature flags for property valuation
+	PropertyValuationEnabled bool
+	AttomDataEnabled         bool
 }
 
 type MarketConfig struct {
@@ -61,6 +66,10 @@ func Load() (*Config, error) {
 	alphaVantageDailyLimit, _ := strconv.Atoi(getEnvOrDefault("ALPHA_VANTAGE_DAILY_LIMIT", "25"))
 	alphaVantageRateLimit, _ := strconv.Atoi(getEnvOrDefault("ALPHA_VANTAGE_RATE_LIMIT", "5"))
 	cacheRefreshMinutes, _ := strconv.Atoi(getEnvOrDefault("CACHE_REFRESH_MINUTES", "15"))
+	
+	// Parse feature flag boolean values (default to false for safety)
+	propertyValuationEnabled, _ := strconv.ParseBool(getEnvOrDefault("PROPERTY_VALUATION_ENABLED", "false"))
+	attomDataEnabled, _ := strconv.ParseBool(getEnvOrDefault("ATTOM_DATA_ENABLED", "false"))
 
 	// Debug logging for API key
 	apiKey := getEnvOrDefault("ALPHA_VANTAGE_API_KEY", "")
@@ -95,10 +104,14 @@ func Load() (*Config, error) {
 			RateLimitRPS:    rateLimitRPS,
 		},
 		API: ApiConfig{
-			AlphaVantageAPIKey:     apiKey,
-			AlphaVantageDailyLimit: alphaVantageDailyLimit,
-			AlphaVantageRateLimit:  alphaVantageRateLimit,
-			CacheRefreshInterval:   time.Duration(cacheRefreshMinutes) * time.Minute,
+			AlphaVantageAPIKey:       apiKey,
+			AlphaVantageDailyLimit:   alphaVantageDailyLimit,
+			AlphaVantageRateLimit:    alphaVantageRateLimit,
+			CacheRefreshInterval:     time.Duration(cacheRefreshMinutes) * time.Minute,
+			AttomDataAPIKey:          getEnvOrDefault("ATTOM_DATA_API_KEY", ""),
+			AttomDataBaseURL:         getEnvOrDefault("ATTOM_DATA_BASE_URL", "https://api.gateway.attomdata.com/propertyapi/v1.0.0"),
+			PropertyValuationEnabled: propertyValuationEnabled,
+			AttomDataEnabled:         attomDataEnabled,
 		},
 		Market: MarketConfig{
 			OpenTimeLocal:  getEnvOrDefault("MARKET_OPEN_LOCAL", "09:30"),  // 9:30 AM ET

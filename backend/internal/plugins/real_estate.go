@@ -169,13 +169,107 @@ func (p *RealEstatePlugin) GetManualEntrySchema() ManualEntrySchema {
 			{
 				Name:        "property_name",
 				Type:        "text",
-				Label:       "Property Name/Address",
-				Description: "Name or address to identify this property",
+				Label:       "Property Name/Description",
+				Description: "Name or description to identify this property",
 				Required:    true,
 				Validation: FieldValidation{
 					MaxLength: func(i int) *int { return &i }(200),
 				},
-				Placeholder: "123 Main St, City, State",
+				Placeholder: "My Primary Home, Beach House, etc.",
+			},
+			{
+				Name:        "street_address",
+				Type:        "text",
+				Label:       "Street Address",
+				Description: "Street address of the property",
+				Required:    false,
+				Validation: FieldValidation{
+					MaxLength: func(i int) *int { return &i }(200),
+				},
+				Placeholder: "123 Main Street",
+			},
+			{
+				Name:        "city",
+				Type:        "text",
+				Label:       "City",
+				Description: "City where the property is located",
+				Required:    false,
+				Validation: FieldValidation{
+					MaxLength: func(i int) *int { return &i }(100),
+				},
+				Placeholder: "Los Angeles",
+			},
+			{
+				Name:        "state",
+				Type:        "select",
+				Label:       "State",
+				Description: "US state where the property is located",
+				Required:    false,
+				Options: []FieldOption{
+					{Value: "", Label: "Select State"},
+					{Value: "AL", Label: "Alabama"},
+					{Value: "AK", Label: "Alaska"},
+					{Value: "AZ", Label: "Arizona"},
+					{Value: "AR", Label: "Arkansas"},
+					{Value: "CA", Label: "California"},
+					{Value: "CO", Label: "Colorado"},
+					{Value: "CT", Label: "Connecticut"},
+					{Value: "DE", Label: "Delaware"},
+					{Value: "FL", Label: "Florida"},
+					{Value: "GA", Label: "Georgia"},
+					{Value: "HI", Label: "Hawaii"},
+					{Value: "ID", Label: "Idaho"},
+					{Value: "IL", Label: "Illinois"},
+					{Value: "IN", Label: "Indiana"},
+					{Value: "IA", Label: "Iowa"},
+					{Value: "KS", Label: "Kansas"},
+					{Value: "KY", Label: "Kentucky"},
+					{Value: "LA", Label: "Louisiana"},
+					{Value: "ME", Label: "Maine"},
+					{Value: "MD", Label: "Maryland"},
+					{Value: "MA", Label: "Massachusetts"},
+					{Value: "MI", Label: "Michigan"},
+					{Value: "MN", Label: "Minnesota"},
+					{Value: "MS", Label: "Mississippi"},
+					{Value: "MO", Label: "Missouri"},
+					{Value: "MT", Label: "Montana"},
+					{Value: "NE", Label: "Nebraska"},
+					{Value: "NV", Label: "Nevada"},
+					{Value: "NH", Label: "New Hampshire"},
+					{Value: "NJ", Label: "New Jersey"},
+					{Value: "NM", Label: "New Mexico"},
+					{Value: "NY", Label: "New York"},
+					{Value: "NC", Label: "North Carolina"},
+					{Value: "ND", Label: "North Dakota"},
+					{Value: "OH", Label: "Ohio"},
+					{Value: "OK", Label: "Oklahoma"},
+					{Value: "OR", Label: "Oregon"},
+					{Value: "PA", Label: "Pennsylvania"},
+					{Value: "RI", Label: "Rhode Island"},
+					{Value: "SC", Label: "South Carolina"},
+					{Value: "SD", Label: "South Dakota"},
+					{Value: "TN", Label: "Tennessee"},
+					{Value: "TX", Label: "Texas"},
+					{Value: "UT", Label: "Utah"},
+					{Value: "VT", Label: "Vermont"},
+					{Value: "VA", Label: "Virginia"},
+					{Value: "WA", Label: "Washington"},
+					{Value: "WV", Label: "West Virginia"},
+					{Value: "WI", Label: "Wisconsin"},
+					{Value: "WY", Label: "Wyoming"},
+					{Value: "DC", Label: "District of Columbia"},
+				},
+			},
+			{
+				Name:        "zip_code",
+				Type:        "text",
+				Label:       "ZIP Code",
+				Description: "ZIP code of the property",
+				Required:    false,
+				Validation: FieldValidation{
+					MaxLength: func(i int) *int { return &i }(10),
+				},
+				Placeholder: "90210",
 			},
 			{
 				Name:        "purchase_price",
@@ -414,19 +508,34 @@ func (p *RealEstatePlugin) ProcessManualEntry(data map[string]interface{}) error
 	// Calculate equity
 	equity := currentValue - outstandingMortgage
 
+	// Extract address fields
+	var streetAddress, city, state, zipCode string
+	if sa, exists := data["street_address"]; exists && sa != nil {
+		streetAddress = sa.(string)
+	}
+	if c, exists := data["city"]; exists && c != nil {
+		city = c.(string)
+	}
+	if s, exists := data["state"]; exists && s != nil {
+		state = s.(string)
+	}
+	if zc, exists := data["zip_code"]; exists && zc != nil {
+		zipCode = zc.(string)
+	}
+
 	// Insert real estate property
 	query := `
 		INSERT INTO real_estate_properties (
-			account_id, property_type, property_name, purchase_price, current_value, 
-			outstanding_mortgage, equity, purchase_date, property_size_sqft, 
-			lot_size_acres, rental_income_monthly, property_tax_annual, notes
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			account_id, property_type, property_name, street_address, city, state, zip_code,
+			purchase_price, current_value, outstanding_mortgage, equity, purchase_date, 
+			property_size_sqft, lot_size_acres, rental_income_monthly, property_tax_annual, notes
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`
 
 	_, err := p.db.Exec(query,
-		p.accountID, propertyType, propertyName, purchasePrice, currentValue,
-		outstandingMortgage, equity, purchaseDate, propertySizeSqft,
-		lotSizeAcres, rentalIncomeMonthly, propertyTaxAnnual, notes,
+		p.accountID, propertyType, propertyName, streetAddress, city, state, zipCode,
+		purchasePrice, currentValue, outstandingMortgage, equity, purchaseDate, 
+		propertySizeSqft, lotSizeAcres, rentalIncomeMonthly, propertyTaxAnnual, notes,
 	)
 
 	if err != nil {
@@ -452,32 +561,32 @@ func (p *RealEstatePlugin) UpdateManualEntry(id int, data map[string]interface{}
 	outstandingMortgage := data["outstanding_mortgage"].(float64)
 	equity := currentValue - outstandingMortgage
 
-	purchaseDate := data["purchase_date"].(time.Time)
+	purchaseDate, _ := time.Parse("2006-01-02", data["purchase_date"].(string))
 
 	// Handle optional fields
 	var propertySizeSqft, lotSizeAcres, rentalIncomeMonthly, propertyTaxAnnual *float64
 	var notes *string
 
 	if val, exists := data["property_size_sqft"]; exists && val != nil {
-		if v, ok := val.(float64); ok && v > 0 {
+		if v, ok := val.(float64); ok && v >= 0 {
 			propertySizeSqft = &v
 		}
 	}
 
 	if val, exists := data["lot_size_acres"]; exists && val != nil {
-		if v, ok := val.(float64); ok && v > 0 {
+		if v, ok := val.(float64); ok && v >= 0 {
 			lotSizeAcres = &v
 		}
 	}
 
 	if val, exists := data["rental_income_monthly"]; exists && val != nil {
-		if v, ok := val.(float64); ok && v > 0 {
+		if v, ok := val.(float64); ok && v >= 0 {
 			rentalIncomeMonthly = &v
 		}
 	}
 
 	if val, exists := data["property_tax_annual"]; exists && val != nil {
-		if v, ok := val.(float64); ok && v > 0 {
+		if v, ok := val.(float64); ok && v >= 0 {
 			propertyTaxAnnual = &v
 		}
 	}
@@ -488,20 +597,43 @@ func (p *RealEstatePlugin) UpdateManualEntry(id int, data map[string]interface{}
 		}
 	}
 
+	// Extract address fields
+	var streetAddress, city, state, zipCode *string
+	if val, exists := data["street_address"]; exists && val != nil {
+		if v, ok := val.(string); ok && v != "" {
+			streetAddress = &v
+		}
+	}
+	if val, exists := data["city"]; exists && val != nil {
+		if v, ok := val.(string); ok && v != "" {
+			city = &v
+		}
+	}
+	if val, exists := data["state"]; exists && val != nil {
+		if v, ok := val.(string); ok && v != "" {
+			state = &v
+		}
+	}
+	if val, exists := data["zip_code"]; exists && val != nil {
+		if v, ok := val.(string); ok && v != "" {
+			zipCode = &v
+		}
+	}
+
 	// Update real estate property
 	query := `
 		UPDATE real_estate_properties 
-		SET property_type = $1, property_name = $2, purchase_price = $3, current_value = $4, 
-		    outstanding_mortgage = $5, equity = $6, purchase_date = $7, property_size_sqft = $8, 
-		    lot_size_acres = $9, rental_income_monthly = $10, property_tax_annual = $11, notes = $12,
-		    updated_at = $13
-		WHERE id = $14
+		SET property_type = $1, property_name = $2, street_address = $3, city = $4, state = $5, 
+		    zip_code = $6, purchase_price = $7, current_value = $8, outstanding_mortgage = $9, 
+		    equity = $10, purchase_date = $11, property_size_sqft = $12, lot_size_acres = $13, 
+		    rental_income_monthly = $14, property_tax_annual = $15, notes = $16, last_updated = $17
+		WHERE id = $18
 	`
 
 	result, err := p.db.Exec(query,
-		propertyType, propertyName, purchasePrice, currentValue,
-		outstandingMortgage, equity, purchaseDate, propertySizeSqft,
-		lotSizeAcres, rentalIncomeMonthly, propertyTaxAnnual, notes,
+		propertyType, propertyName, streetAddress, city, state, zipCode,
+		purchasePrice, currentValue, outstandingMortgage, equity, purchaseDate, 
+		propertySizeSqft, lotSizeAcres, rentalIncomeMonthly, propertyTaxAnnual, notes,
 		time.Now(), id,
 	)
 
@@ -548,11 +680,37 @@ func (p *RealEstatePlugin) validateNumberField(data map[string]interface{}, fiel
 		return 0, nil
 	}
 
+	// Handle null values for optional fields
+	if value == nil {
+		if required {
+			return 0, &ValidationError{
+				Field:   field,
+				Message: fmt.Sprintf("%s is required", field),
+				Code:    "required",
+			}
+		}
+		return 0, nil
+	}
+
 	var num float64
 	switch v := value.(type) {
 	case float64:
 		num = v
 	case string:
+		// Handle empty strings for optional fields
+		if v == "" {
+			if required {
+				return 0, &ValidationError{
+					Field:   field,
+					Message: fmt.Sprintf("%s is required", field),
+					Code:    "required",
+				}
+			}
+			// Convert empty string to null in data
+			data[field] = nil
+			return 0, nil
+		}
+		
 		var err error
 		num, err = strconv.ParseFloat(v, 64)
 		if err != nil {
