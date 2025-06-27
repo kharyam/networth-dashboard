@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NetWorth Dashboard API Documentation</title>
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui.css" />
+  <style>
+    html {
+      box-sizing: border-box;
+      overflow: -moz-scrollbars-vertical;
+      overflow-y: scroll;
+    }
+
+    *, *:before, *:after {
+      box-sizing: inherit;
+    }
+
+    body {
+      margin: 0;
+      background: #fafafa;
+      font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+  </style>
+  <!-- Custom theme CSS will be injected here -->
+  <style id="custom-theme-css">
+    /* Theme CSS will be dynamically loaded */
+  </style>
+</head>
+
+<body>
+  <div id="swagger-ui"></div>
+
+  <script src="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui-standalone-preset.js"></script>
+  <script>
+    window.onload = function() {
+      // Begin Swagger UI call region
+      const ui = SwaggerUIBundle({
+        url: '/api/v1/swagger/spec',
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIStandalonePreset
+        ],
+        plugins: [
+          SwaggerUIBundle.plugins.DownloadUrl
+        ],
+        layout: "StandaloneLayout",
+        tryItOutEnabled: true,
+        filter: true,
+        supportedSubmitMethods: ['get', 'post', 'put', 'delete', 'patch'],
+        onComplete: function() {
+          console.log('Swagger UI loaded successfully');
+          // Notify parent window that Swagger UI is ready
+          if (window.parent !== window) {
+            window.parent.postMessage({ type: 'swagger-ui-ready' }, '*');
+          }
+        }
+      });
+      // End Swagger UI call region
+
+      // Listen for theme changes from parent window
+      window.addEventListener('message', function(event) {
+        if (event.data && event.data.type === 'theme-change') {
+          console.log('Received theme change:', event.data.theme);
+          loadThemeCSS(event.data.theme);
+        }
+      });
+
+      // Function to load theme CSS
+      async function loadThemeCSS(theme) {
+        try {
+          const cssFile = theme === 'dark' ? '/swagger-dark.css' : '/swagger-light.css';
+          console.log('Loading theme CSS:', cssFile);
+          
+          const response = await fetch(cssFile);
+          if (!response.ok) {
+            throw new Error(`Failed to load CSS: ${response.status}`);
+          }
+          
+          const cssText = await response.text();
+          const styleElement = document.getElementById('custom-theme-css');
+          if (styleElement) {
+            styleElement.textContent = cssText;
+            console.log('✅ Theme CSS applied successfully');
+          }
+        } catch (error) {
+          console.error('❌ Failed to load theme CSS:', error);
+        }
+      }
+
+      // Load initial theme (default to light)
+      const urlParams = new URLSearchParams(window.location.search);
+      const theme = urlParams.get('theme') || 'light';
+      loadThemeCSS(theme);
+    };
+  </script>
+</body>
+</html>

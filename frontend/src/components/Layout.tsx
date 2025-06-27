@@ -14,7 +14,8 @@ import {
   Moon,
   Key,
   Wallet,
-  Coins
+  Coins,
+  Code
 } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
 
@@ -32,6 +33,7 @@ const navigation = [
   { name: 'Crypto', href: '/crypto-holdings', icon: Coins },
   { name: 'Manual Entries', href: '/manual-entries', icon: Edit3 },
   { name: 'Credentials', href: '/credentials', icon: Key },
+  { name: 'API', href: '/api', icon: Code },
   { name: 'Settings', href: '/settings', icon: Settings },
 ]
 
