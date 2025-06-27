@@ -20,17 +20,48 @@ const api = axios.create({
   },
 })
 
-// Request interceptor for auth
+// Request interceptor for auth and logging
 api.interceptors.request.use((config) => {
+  console.log('🌐 [Axios] REQUEST:', {
+    method: config.method?.toUpperCase(),
+    url: config.url,
+    baseURL: config.baseURL,
+    fullURL: `${config.baseURL}${config.url}`,
+    params: config.params,
+    data: config.data,
+    headers: config.headers
+  })
+  
   // TODO: Add auth token when implemented
   return config
+}, (error) => {
+  console.error('❌ [Axios] REQUEST ERROR:', error)
+  return Promise.reject(error)
 })
 
-// Response interceptor for error handling
+// Response interceptor for error handling and logging
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log('✅ [Axios] RESPONSE:', {
+      status: response.status,
+      statusText: response.statusText,
+      url: response.config.url,
+      method: response.config.method?.toUpperCase(),
+      data: response.data,
+      headers: response.headers
+    })
+    return response
+  },
   (error) => {
-    console.error('API Error:', error)
+    console.error('❌ [Axios] RESPONSE ERROR:', {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      url: error.config?.url,
+      method: error.config?.method?.toUpperCase(),
+      responseData: error.response?.data,
+      requestData: error.config?.data
+    })
     return Promise.reject(error)
   }
 )
@@ -184,11 +215,31 @@ export const manualEntriesApi = {
 
 // Price Management API
 export const pricesApi = {
-  refreshAll: (): Promise<any> =>
-    api.post('/prices/refresh').then(res => res.data),
+  // Smart refresh - respects cache and market hours logic
+  refreshAll: (force: boolean = false): Promise<any> => {
+    const url = `/prices/refresh${force ? '?force=true' : ''}`
+    const context = force ? 'FORCE_REFRESH' : 'SMART_REFRESH'
+    console.log(`🔄 [pricesApi.refreshAll] Making request:`, { context, force, url, method: 'POST' })
+    return api.post(url).then(res => res.data)
+  },
+
+  // Convenience method for auto-refresh (page loads, navigation)
+  autoRefresh: (): Promise<any> => {
+    console.log('🔄 [pricesApi.autoRefresh] Auto-refreshing with smart cache logic')
+    return pricesApi.refreshAll(false)
+  },
+
+  // Convenience method for user-initiated force refresh
+  forceRefresh: (): Promise<any> => {
+    console.log('🔄 [pricesApi.forceRefresh] Force refreshing - bypassing cache')
+    return pricesApi.refreshAll(true)
+  },
   
-  refreshSymbol: (symbol: string): Promise<any> =>
-    api.post(`/prices/refresh/${symbol}`).then(res => res.data),
+  refreshSymbol: (symbol: string, force: boolean = false): Promise<any> => {
+    const url = `/prices/refresh/${symbol}${force ? '?force=true' : ''}`
+    console.log('🔄 [pricesApi.refreshSymbol] Refreshing symbol:', { symbol, force, url })
+    return api.post(url).then(res => res.data)
+  },
   
   getStatus: (): Promise<any> =>
     api.get('/prices/status').then(res => res.data),
@@ -198,6 +249,48 @@ export const pricesApi = {
 export const marketApi = {
   getStatus: (): Promise<any> =>
     api.get('/market/status').then(res => res.data),
+}
+
+// Property Valuation API
+export const propertyValuationApi = {
+  getValuation: (params: {
+    address?: string,
+    city?: string,
+    state?: string,
+    zip_code?: string
+  }): Promise<any> => {
+    const searchParams = new URLSearchParams()
+    if (params.address) searchParams.set('address', params.address)
+    if (params.city) searchParams.set('city', params.city)
+    if (params.state) searchParams.set('state', params.state)
+    if (params.zip_code) searchParams.set('zip_code', params.zip_code)
+    
+    return api.get(`/property-valuation?${searchParams.toString()}`).then(res => res.data)
+  },
+  
+  refreshValuation: (params: {
+    address?: string,
+    city?: string,
+    state?: string,
+    zip_code?: string
+  }): Promise<any> => {
+    const searchParams = new URLSearchParams()
+    if (params.address) searchParams.set('address', params.address)
+    if (params.city) searchParams.set('city', params.city)
+    if (params.state) searchParams.set('state', params.state)
+    if (params.zip_code) searchParams.set('zip_code', params.zip_code)
+    
+    return api.post(`/property-valuation/refresh?${searchParams.toString()}`).then(res => res.data)
+  },
+  
+  getProviders: (): Promise<any> =>
+    api.get('/property-valuation/providers').then(res => res.data),
+    
+  checkFeatureStatus: (): Promise<{ feature_enabled: boolean; message?: string }> =>
+    api.get('/property-valuation/providers').then(res => ({
+      feature_enabled: res.data.feature_enabled !== false,
+      message: res.data.message
+    })),
 }
 
 export default api

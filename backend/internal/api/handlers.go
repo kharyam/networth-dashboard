@@ -165,19 +165,24 @@ func (s *Server) calculateTotalLiabilities() float64 {
 
 // PriceStatus represents the current status of price data
 type PriceStatus struct {
-	LastUpdated  string `json:"last_updated"`
-	StaleCount   int    `json:"stale_count"`
-	TotalCount   int    `json:"total_count"`
-	ProviderName string `json:"provider_name"`
+	LastUpdated       string `json:"last_updated"`
+	StaleCount        int    `json:"stale_count"`
+	TotalCount        int    `json:"total_count"`
+	ProviderName      string `json:"provider_name"`
+	CacheStale        bool   `json:"cache_stale"`
+	ForceRefreshNeeded bool   `json:"force_refresh_needed"`
+	LastCacheUpdate   string `json:"last_cache_update,omitempty"`
+	CacheAgeMinutes   int    `json:"cache_age_minutes"`
+	MarketOpen        bool   `json:"market_open"`
 }
 
 func (s *Server) getPriceStatus() PriceStatus {
 	priceService := s.priceService
+	marketService := s.marketService
+	now := time.Now()
 
-	// Count total symbols and stale prices
+	// Count total symbols and stale prices (null/zero prices)
 	var totalCount, staleCount int
-
-	// Count symbols with stale or missing prices (older than 1 hour or null)
 	staleQuery := `
 		SELECT COUNT(DISTINCT symbol) as stale_count,
 		       (SELECT COUNT(DISTINCT symbol) FROM (
@@ -200,11 +205,60 @@ func (s *Server) getPriceStatus() PriceStatus {
 		totalCount = 0
 	}
 
+	// Get most recent cache update time across all symbols
+	var lastCacheUpdate time.Time
+	cacheQuery := `
+		SELECT COALESCE(MAX(timestamp), '1970-01-01'::timestamp) as last_update
+		FROM stock_prices 
+		WHERE source = 'alphavantage'
+	`
+	
+	err = s.db.QueryRow(cacheQuery).Scan(&lastCacheUpdate)
+	if err != nil {
+		lastCacheUpdate = time.Time{} // Zero time if error
+	}
+
+	// Calculate cache age
+	var cacheAgeMinutes int
+	var lastCacheUpdateStr string
+	if !lastCacheUpdate.IsZero() {
+		cacheAge := now.Sub(lastCacheUpdate)
+		cacheAgeMinutes = int(cacheAge.Minutes())
+		lastCacheUpdateStr = lastCacheUpdate.Format(time.RFC3339)
+	}
+
+	// Determine if cache is stale and force refresh is needed using market service logic
+	isMarketOpen := marketService.IsMarketOpen()
+	cacheStale := false
+	forceRefreshNeeded := false
+	
+	if !lastCacheUpdate.IsZero() {
+		// Use the same logic as the market service for consistency
+		shouldRefresh := marketService.ShouldRefreshPricesWithForce(lastCacheUpdate, s.config.API.CacheRefreshInterval, false)
+		cacheStale = shouldRefresh
+		
+		// Force refresh needed if cache is significantly stale
+		if isMarketOpen && cacheAgeMinutes > 30 { // More than 30 min during market hours
+			forceRefreshNeeded = true
+		} else if !isMarketOpen && cacheAgeMinutes > 720 { // More than 12 hours when market closed
+			forceRefreshNeeded = true
+		}
+	} else {
+		// No cache data at all
+		cacheStale = true
+		forceRefreshNeeded = true
+	}
+
 	return PriceStatus{
-		LastUpdated:  time.Now().Format(time.RFC3339),
-		StaleCount:   staleCount,
-		TotalCount:   totalCount,
-		ProviderName: priceService.GetProviderName(),
+		LastUpdated:       now.Format(time.RFC3339),
+		StaleCount:        staleCount,
+		TotalCount:        totalCount,
+		ProviderName:      priceService.GetProviderName(),
+		CacheStale:        cacheStale,
+		ForceRefreshNeeded: forceRefreshNeeded,
+		LastCacheUpdate:   lastCacheUpdateStr,
+		CacheAgeMinutes:   cacheAgeMinutes,
+		MarketOpen:        isMarketOpen,
 	}
 }
 
@@ -643,9 +697,12 @@ func (s *Server) deleteEquityGrant(c *gin.Context) {
 func (s *Server) getRealEstate(c *gin.Context) {
 	query := `
 		SELECT id, account_id, property_type, property_name, purchase_price, 
-		       current_value, outstanding_mortgage, equity, purchase_date, 
+		       current_value, outstanding_mortgage, equity, 
+		       TO_CHAR(purchase_date, 'YYYY-MM-DD') as purchase_date, 
 		       property_size_sqft, lot_size_acres, rental_income_monthly, 
-		       property_tax_annual, notes, created_at
+		       property_tax_annual, notes, street_address, city, state, zip_code,
+		       latitude, longitude, api_estimated_value, api_estimate_date, 
+		       api_provider, created_at
 		FROM real_estate_properties
 		ORDER BY property_name
 	`
@@ -676,6 +733,15 @@ func (s *Server) getRealEstate(c *gin.Context) {
 			RentalIncomeMonthly *float64 `json:"rental_income_monthly"`
 			PropertyTaxAnnual   *float64 `json:"property_tax_annual"`
 			Notes               *string  `json:"notes"`
+			StreetAddress       *string  `json:"street_address"`
+			City                *string  `json:"city"`
+			State               *string  `json:"state"`
+			ZipCode             *string  `json:"zip_code"`
+			Latitude            *float64 `json:"latitude"`
+			Longitude           *float64 `json:"longitude"`
+			APIEstimatedValue   *float64 `json:"api_estimated_value"`
+			APIEstimateDate     *string  `json:"api_estimate_date"`
+			APIProvider         *string  `json:"api_provider"`
 			CreatedAt           string   `json:"created_at"`
 		}
 
@@ -684,7 +750,10 @@ func (s *Server) getRealEstate(c *gin.Context) {
 			&property.PurchasePrice, &property.CurrentValue, &property.OutstandingMortgage,
 			&property.Equity, &property.PurchaseDate, &property.PropertySizeSqft,
 			&property.LotSizeAcres, &property.RentalIncomeMonthly, &property.PropertyTaxAnnual,
-			&property.Notes, &property.CreatedAt,
+			&property.Notes, &property.StreetAddress, &property.City, &property.State, 
+			&property.ZipCode, &property.Latitude, &property.Longitude, 
+			&property.APIEstimatedValue, &property.APIEstimateDate, &property.APIProvider,
+			&property.CreatedAt,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -708,6 +777,15 @@ func (s *Server) getRealEstate(c *gin.Context) {
 			"rental_income_monthly": property.RentalIncomeMonthly,
 			"property_tax_annual":   property.PropertyTaxAnnual,
 			"notes":                 property.Notes,
+			"street_address":        property.StreetAddress,
+			"city":                  property.City,
+			"state":                 property.State,
+			"zip_code":              property.ZipCode,
+			"latitude":              property.Latitude,
+			"longitude":             property.Longitude,
+			"api_estimated_value":   property.APIEstimatedValue,
+			"api_estimate_date":     property.APIEstimateDate,
+			"api_provider":          property.APIProvider,
 			"created_at":            property.CreatedAt,
 		}
 		properties = append(properties, propertyMap)
@@ -1082,11 +1160,15 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		       json_build_object(
 		           'property_type', re.property_type,
 		           'property_name', re.property_name,
+		           'street_address', re.street_address,
+		           'city', re.city,
+		           'state', re.state,
+		           'zip_code', re.zip_code,
 		           'purchase_price', re.purchase_price,
 		           'current_value', re.current_value,
 		           'outstanding_mortgage', re.outstanding_mortgage,
 		           'equity', re.equity,
-		           'purchase_date', re.purchase_date,
+		           'purchase_date', TO_CHAR(re.purchase_date, 'YYYY-MM-DD'),
 		           'property_size_sqft', re.property_size_sqft,
 		           'lot_size_acres', re.lot_size_acres,
 		           'rental_income_monthly', re.rental_income_monthly,
@@ -1338,6 +1420,14 @@ func (s *Server) getManualEntrySchemas(c *gin.Context) {
 func (s *Server) refreshPrices(c *gin.Context) {
 	startTime := time.Now()
 
+	// Enhanced debugging - log full request details
+	fmt.Printf("DEBUG: refreshPrices called - Method: %s, URL: %s, FullPath: %s\n", c.Request.Method, c.Request.URL.String(), c.FullPath())
+	fmt.Printf("DEBUG: Query parameters: %v\n", c.Request.URL.Query())
+	
+	// Check for force refresh parameter
+	forceRefresh := c.Query("force") == "true"
+	fmt.Printf("DEBUG: force query param: '%s', forceRefresh: %t\n", c.Query("force"), forceRefresh)
+
 	// Get all unique symbols that need price updates
 	symbols := s.getAllActiveSymbols()
 	if len(symbols) == 0 {
@@ -1363,7 +1453,7 @@ func (s *Server) refreshPrices(c *gin.Context) {
 	failedCount := 0
 
 	for _, symbol := range symbols {
-		result := s.updateSymbolPrice(symbol, priceService)
+		result := s.updateSymbolPrice(symbol, priceService, forceRefresh)
 		results = append(results, result)
 
 		if result.Updated {
@@ -1405,8 +1495,11 @@ func (s *Server) refreshSymbolPrice(c *gin.Context) {
 		return
 	}
 
+	// Check for force refresh parameter
+	forceRefresh := c.Query("force") == "true"
+
 	priceService := s.priceService
-	result := s.updateSymbolPrice(symbol, priceService)
+	result := s.updateSymbolPrice(symbol, priceService, forceRefresh)
 
 	status := http.StatusOK
 	if !result.Updated {
@@ -1474,7 +1567,7 @@ func (s *Server) getAllActiveSymbols() []string {
 	return symbols
 }
 
-func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceService) services.PriceUpdateResult {
+func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceService, forceRefresh bool) services.PriceUpdateResult {
 	result := services.PriceUpdateResult{
 		Symbol:    symbol,
 		Updated:   false,
@@ -1482,7 +1575,7 @@ func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceSe
 	}
 
 	// Get current price from service
-	newPrice, err := priceService.GetCurrentPrice(symbol)
+	newPrice, err := priceService.GetCurrentPriceWithForce(symbol, forceRefresh)
 	if err != nil {
 		result.Error = err.Error()
 		return result
@@ -1675,5 +1768,124 @@ func (s *Server) getCryptoPriceHistory(c *gin.Context) {
 		"days_back":     days,
 		"total_symbols": len(history),
 		"disclaimer":    "This data represents cached price snapshots taken during application usage and may not reflect complete or real-time market data.",
+	})
+}
+
+// Property valuation handlers
+func (s *Server) getPropertyValuation(c *gin.Context) {
+	// Check if property valuation feature is enabled
+	if !s.propertyValuationService.IsPropertyValuationEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Property valuation feature is currently disabled",
+			"feature_enabled": false,
+		})
+		return
+	}
+	
+	address := c.Query("address")
+	city := c.Query("city")
+	state := c.Query("state")
+	zipCode := c.Query("zip_code")
+	
+	// At least one parameter is required
+	if address == "" && city == "" && state == "" && zipCode == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "At least one address component is required (address, city, state, or zip_code)",
+		})
+		return
+	}
+	
+	valuation, err := s.propertyValuationService.GetPropertyValuation(address, city, state, zipCode)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to get property valuation: %v", err),
+		})
+		return
+	}
+	
+	c.JSON(http.StatusOK, valuation)
+}
+
+func (s *Server) refreshPropertyValuation(c *gin.Context) {
+	// Check if property valuation feature is enabled
+	if !s.propertyValuationService.IsPropertyValuationEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Property valuation feature is currently disabled",
+			"feature_enabled": false,
+		})
+		return
+	}
+	
+	address := c.Query("address")
+	city := c.Query("city")
+	state := c.Query("state")
+	zipCode := c.Query("zip_code")
+	
+	// At least one parameter is required
+	if address == "" && city == "" && state == "" && zipCode == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "At least one address component is required (address, city, state, or zip_code)",
+		})
+		return
+	}
+	
+	valuation, err := s.propertyValuationService.RefreshPropertyValuation(address, city, state, zipCode)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to refresh property valuation: %v", err),
+		})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Property valuation refreshed successfully",
+		"valuation": valuation,
+	})
+}
+
+func (s *Server) getPropertyValuationProviders(c *gin.Context) {
+	// Check if property valuation feature is enabled
+	if !s.propertyValuationService.IsPropertyValuationEnabled() {
+		c.JSON(http.StatusOK, gin.H{
+			"providers": []gin.H{
+				{
+					"name": "Manual Entry",
+					"available": true,
+					"description": "Manual property value entry (external APIs disabled)",
+				},
+			},
+			"active_provider": "Manual Entry",
+			"feature_enabled": false,
+			"message": "Property valuation feature is disabled",
+		})
+		return
+	}
+	
+	providers := []gin.H{
+		{
+			"name": "Manual Entry",
+			"available": true,
+			"description": "Manual property value entry",
+		},
+	}
+	
+	if s.propertyValuationService.IsAttomDataAvailable() {
+		providers = append(providers, gin.H{
+			"name": "ATTOM Data API",
+			"available": true,
+			"description": "Professional property data and valuation from ATTOM Data",
+		})
+	} else {
+		providers = append(providers, gin.H{
+			"name": "ATTOM Data API",
+			"available": false,
+			"description": "Professional property data and valuation from ATTOM Data (API key required or feature disabled)",
+		})
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"providers": providers,
+		"active_provider": s.propertyValuationService.GetProviderName(),
+		"feature_enabled": true,
 	})
 }

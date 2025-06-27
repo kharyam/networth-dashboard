@@ -108,18 +108,31 @@ type VestingSchedule struct {
 }
 
 type RealEstate struct {
-	ID              int       `json:"id" db:"id"`
-	AccountID       int       `json:"account_id" db:"account_id"`
-	PropertyAddress *string   `json:"property_address" db:"property_address"`
-	PropertyType    *string   `json:"property_type" db:"property_type"`
-	EstimatedValue  float64   `json:"estimated_value" db:"estimated_value"`
-	PurchasePrice   *float64  `json:"purchase_price" db:"purchase_price"`
-	PurchaseDate    *time.Time `json:"purchase_date" db:"purchase_date"`
-	MortgageBalance *float64  `json:"mortgage_balance" db:"mortgage_balance"`
-	EquityValue     *float64  `json:"equity_value" db:"equity_value"`
-	ValueSource     *string   `json:"value_source" db:"value_source"`
-	LastValueUpdate *time.Time `json:"last_value_update" db:"last_value_update"`
-	CreatedAt       time.Time `json:"created_at" db:"created_at"`
+	ID                    int        `json:"id" db:"id"`
+	AccountID             int        `json:"account_id" db:"account_id"`
+	PropertyType          string     `json:"property_type" db:"property_type"`
+	PropertyName          string     `json:"property_name" db:"property_name"`
+	StreetAddress         *string    `json:"street_address" db:"street_address"`
+	City                  *string    `json:"city" db:"city"`
+	State                 *string    `json:"state" db:"state"`
+	ZipCode               *string    `json:"zip_code" db:"zip_code"`
+	Latitude              *float64   `json:"latitude" db:"latitude"`
+	Longitude             *float64   `json:"longitude" db:"longitude"`
+	PurchasePrice         float64    `json:"purchase_price" db:"purchase_price"`
+	CurrentValue          float64    `json:"current_value" db:"current_value"`
+	OutstandingMortgage   float64    `json:"outstanding_mortgage" db:"outstanding_mortgage"`
+	Equity                float64    `json:"equity" db:"equity"`
+	PurchaseDate          time.Time  `json:"purchase_date" db:"purchase_date"`
+	PropertySizeSqft      *float64   `json:"property_size_sqft" db:"property_size_sqft"`
+	LotSizeAcres          *float64   `json:"lot_size_acres" db:"lot_size_acres"`
+	RentalIncomeMonthly   *float64   `json:"rental_income_monthly" db:"rental_income_monthly"`
+	PropertyTaxAnnual     *float64   `json:"property_tax_annual" db:"property_tax_annual"`
+	Notes                 *string    `json:"notes" db:"notes"`
+	APIEstimatedValue     *float64   `json:"api_estimated_value" db:"api_estimated_value"`
+	APIEstimateDate       *time.Time `json:"api_estimate_date" db:"api_estimate_date"`
+	APIProvider           *string    `json:"api_provider" db:"api_provider"`
+	LastUpdated           time.Time  `json:"last_updated" db:"last_updated"`
+	CreatedAt             time.Time  `json:"created_at" db:"created_at"`
 }
 
 type MiscellaneousAsset struct {

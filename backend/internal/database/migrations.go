@@ -228,6 +228,24 @@ const (
 		ALTER TABLE equity_grants ADD COLUMN IF NOT EXISTS data_source VARCHAR(20) DEFAULT 'manual';
 	`
 
+	updateRealEstateAddressFields = `
+		-- Add new address fields to real_estate_properties table
+		ALTER TABLE real_estate_properties ADD COLUMN IF NOT EXISTS street_address VARCHAR(200);
+		ALTER TABLE real_estate_properties ADD COLUMN IF NOT EXISTS city VARCHAR(100);
+		ALTER TABLE real_estate_properties ADD COLUMN IF NOT EXISTS state VARCHAR(2);
+		ALTER TABLE real_estate_properties ADD COLUMN IF NOT EXISTS zip_code VARCHAR(10);
+		ALTER TABLE real_estate_properties ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,8);
+		ALTER TABLE real_estate_properties ADD COLUMN IF NOT EXISTS longitude DECIMAL(11,8);
+		ALTER TABLE real_estate_properties ADD COLUMN IF NOT EXISTS api_estimated_value DECIMAL(15,2);
+		ALTER TABLE real_estate_properties ADD COLUMN IF NOT EXISTS api_estimate_date TIMESTAMP;
+		ALTER TABLE real_estate_properties ADD COLUMN IF NOT EXISTS api_provider VARCHAR(50);
+		
+		-- Add index for location-based queries
+		CREATE INDEX IF NOT EXISTS idx_real_estate_location ON real_estate_properties(city, state);
+		CREATE INDEX IF NOT EXISTS idx_real_estate_zip ON real_estate_properties(zip_code);
+		CREATE INDEX IF NOT EXISTS idx_real_estate_coordinates ON real_estate_properties(latitude, longitude);
+	`
+
 	createIndices = `
 		CREATE INDEX IF NOT EXISTS idx_accounts_data_source ON accounts(data_source_id);
 		CREATE INDEX IF NOT EXISTS idx_account_balances_account ON account_balances(account_id);

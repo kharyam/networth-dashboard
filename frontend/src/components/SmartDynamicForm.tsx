@@ -21,7 +21,19 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
         defaultData[field.name] = field.default_value
       }
     })
-    return { ...defaultData, ...initialData }
+    
+    // Merge with initial data, converting null values to empty strings for form inputs
+    const mergedData = { ...defaultData, ...initialData }
+    
+    // Convert null values to empty strings for form display, but keep track of original null state
+    Object.keys(mergedData).forEach(key => {
+      const field = schema.fields.find(f => f.name === key)
+      if (field && field.type === 'number' && mergedData[key] === null) {
+        mergedData[key] = ''
+      }
+    })
+    
+    return mergedData
   }
   
   const [formData, setFormData] = useState<Record<string, any>>(() => getInitialFormData())
@@ -62,8 +74,16 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
   }, [formData.company_name, handleInputChange, schema.fields])
 
   const validateField = (field: ManualEntryField, value: any): string | null => {
-    if (field.required && (!value || value === '')) {
+    // For optional fields, null and empty string should be treated as valid "no value"
+    const isEmptyValue = value === null || value === '' || value === undefined
+    
+    if (field.required && isEmptyValue) {
       return `${field.label} is required`
+    }
+
+    // Skip validation for empty optional fields
+    if (!field.required && isEmptyValue) {
+      return null
     }
 
     if (field.validation) {
@@ -76,8 +96,11 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
       }
 
       // Handle min/max validation for numbers
-      if (field.type === 'number' && value !== null && value !== '') {
+      if (field.type === 'number' && !isEmptyValue) {
         const numValue = parseFloat(value)
+        if (isNaN(numValue)) {
+          return `${field.label} must be a valid number`
+        }
         if (field.validation.min !== undefined && numValue < field.validation.min) {
           return `${field.label} must be at least ${field.validation.min}`
         }
@@ -87,7 +110,7 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
       }
 
       // Handle string length validation
-      if (typeof value === 'string') {
+      if (typeof value === 'string' && value !== '') {
         if (field.validation.min_length !== undefined && value.length < field.validation.min_length) {
           return `${field.label} must be at least ${field.validation.min_length} characters`
         }
@@ -118,7 +141,17 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
     e.preventDefault()
     
     if (validateForm()) {
-      onSubmit(formData)
+      // Normalize form data before submission
+      const normalizedData = { ...formData }
+      
+      // Convert empty strings to null for optional numeric fields
+      schema.fields.forEach(field => {
+        if (field.type === 'number' && !field.required && normalizedData[field.name] === '') {
+          normalizedData[field.name] = null
+        }
+      })
+      
+      onSubmit(normalizedData)
     }
   }
 

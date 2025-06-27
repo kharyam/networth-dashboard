@@ -17,15 +17,16 @@ import (
 )
 
 type Server struct {
-	config            *config.Config
-	router            *gin.Engine
-	db                *sql.DB
-	pluginManager     *plugins.Manager
-	credentialManager *credentials.Manager
-	cryptoService     *services.CryptoService
-	priceService      *services.PriceService
-	marketService     *services.MarketHoursService
-	httpServer        *http.Server
+	config                   *config.Config
+	router                   *gin.Engine
+	db                       *sql.DB
+	pluginManager            *plugins.Manager
+	credentialManager        *credentials.Manager
+	cryptoService            *services.CryptoService
+	priceService             *services.PriceService
+	marketService            *services.MarketHoursService
+	propertyValuationService *services.PropertyValuationService
+	httpServer               *http.Server
 }
 
 func NewServer(cfg *config.Config, db *sql.DB, pluginManager *plugins.Manager) *Server {
@@ -53,14 +54,19 @@ func NewServer(cfg *config.Config, db *sql.DB, pluginManager *plugins.Manager) *
 	)
 	log.Printf("INFO: Price service initialized with provider: %s", priceService.GetProviderName())
 
+	// Initialize property valuation service
+	propertyValuationService := services.NewPropertyValuationService(&cfg.API)
+	log.Printf("INFO: Property valuation service initialized with provider: %s", propertyValuationService.GetProviderName())
+
 	server := &Server{
-		config:            cfg,
-		db:                db,
-		pluginManager:     pluginManager,
-		credentialManager: credentialManager,
-		cryptoService:     cryptoService,
-		priceService:      priceService,
-		marketService:     marketService,
+		config:                   cfg,
+		db:                       db,
+		pluginManager:            pluginManager,
+		credentialManager:        credentialManager,
+		cryptoService:            cryptoService,
+		priceService:             priceService,
+		marketService:            marketService,
+		propertyValuationService: propertyValuationService,
 	}
 
 	server.setupRouter()
@@ -151,12 +157,18 @@ func (s *Server) setupRouter() {
 		api.GET("/manual-entries/schemas", s.getManualEntrySchemas)
 
 		// Price management endpoints
+		api.GET("/prices/refresh", s.refreshPrices)
 		api.POST("/prices/refresh", s.refreshPrices)
 		api.POST("/prices/refresh/:symbol", s.refreshSymbolPrice)
 		api.GET("/prices/status", s.getPricesStatus)
 		
 		// Market status endpoints
 		api.GET("/market/status", s.getMarketStatus)
+
+		// Property valuation endpoints
+		api.GET("/property-valuation", s.getPropertyValuation)
+		api.POST("/property-valuation/refresh", s.refreshPropertyValuation)
+		api.GET("/property-valuation/providers", s.getPropertyValuationProviders)
 
 		// Credential management endpoints
 		credentialHandler := handlers.NewCredentialHandler(s.credentialManager)

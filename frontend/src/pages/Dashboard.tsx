@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, TrendingDown, DollarSign, Briefcase, Building, PieChart, RefreshCw, Clock, AlertTriangle, Wallet, Coins } from 'lucide-react'
+import { TrendingUp, TrendingDown, DollarSign, Briefcase, Building, PieChart, Wallet, Coins } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell } from 'recharts'
-import { netWorthApi, pricesApi } from '@/services/api'
+import { netWorthApi } from '@/services/api'
 import { useTheme } from '@/contexts/ThemeContext'
 import type { NetWorthSummary } from '@/types'
 import MarketStatus from '@/components/MarketStatus'
+import PriceRefreshControls from '@/components/PriceRefreshControls'
 
 // Generate realistic trend data based on current net worth
 const generateTrendData = (currentNetWorth: number) => {
@@ -176,8 +177,6 @@ function MetricCard({
 function Dashboard() {
   const [netWorth, setNetWorth] = useState<NetWorthSummary | null>(null)
   const [loading, setLoading] = useState(true)
-  const [refreshingPrices, setRefreshingPrices] = useState(false)
-  const [priceStatus, setPriceStatus] = useState<any>(null)
   const { isDarkMode } = useTheme() // Still needed for chart dynamic styling
 
   const fetchNetWorth = async () => {
@@ -202,32 +201,14 @@ function Dashboard() {
     }
   }
 
-  const fetchPriceStatus = async () => {
-    try {
-      const status = await pricesApi.getStatus()
-      setPriceStatus(status)
-    } catch (error) {
-      console.error('Failed to fetch price status:', error)
-    }
-  }
-
-  const handleRefreshPrices = async () => {
-    setRefreshingPrices(true)
-    try {
-      await pricesApi.refreshAll()
-      await fetchNetWorth() // Refresh net worth after price update
-      await fetchPriceStatus() // Update price status
-    } catch (error) {
-      console.error('Failed to refresh prices:', error)
-    } finally {
-      setRefreshingPrices(false)
-    }
+  const handleRefreshComplete = async () => {
+    await fetchNetWorth() // Refresh net worth after price update
   }
 
   useEffect(() => {
     const loadData = async () => {
       setLoading(true)
-      await Promise.all([fetchNetWorth(), fetchPriceStatus()])
+      await fetchNetWorth()
       setLoading(false)
     }
     
@@ -263,38 +244,10 @@ function Dashboard() {
         </div>
         
         {/* Price Status and Refresh */}
-        <div className="flex items-center space-x-4">
-          {priceStatus && (
-            <div className="flex items-center space-x-2 text-sm">
-              <div className="flex items-center space-x-1">
-                {priceStatus.stale_count > 0 ? (
-                  <AlertTriangle className="w-4 h-4 text-yellow-500" />
-                ) : (
-                  <Clock className="w-4 h-4 text-green-500" />
-                )}
-                <span className="text-gray-600 dark:text-gray-400">
-                  {priceStatus.stale_count > 0 
-                    ? `${priceStatus.stale_count} stale prices`
-                    : 'Prices up to date'
-                  }
-                </span>
-              </div>
-              <span className="text-gray-500 dark:text-gray-500">•</span>
-              <span className="text-gray-500 dark:text-gray-500 text-xs">
-                {priceStatus.provider_name}
-              </span>
-            </div>
-          )}
-          
-          <button
-            onClick={handleRefreshPrices}
-            disabled={refreshingPrices}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 ${refreshingPrices ? 'animate-spin' : ''}`} />
-            {refreshingPrices ? 'Refreshing...' : 'Refresh Prices'}
-          </button>
-        </div>
+        <PriceRefreshControls 
+          onRefreshComplete={handleRefreshComplete}
+          showDetails={true}
+        />
       </div>
 
       {/* Net Worth Hero Section */}
