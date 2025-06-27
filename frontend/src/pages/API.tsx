@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Download, Server, Activity, Clock } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -37,10 +37,29 @@ const API: React.FC = () => {
   const [healthError, setHealthError] = useState<string | null>(null);
   const [swaggerLoading, setSwaggerLoading] = useState(true);
   const [swaggerError, setSwaggerError] = useState<string | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     fetchHealthStatus();
   }, []);
+
+
+  // Effect to handle theme changes via postMessage
+  useEffect(() => {
+    if (iframeRef.current?.contentWindow) {
+      const theme = isDarkMode ? 'dark' : 'light';
+      console.log(`🎨 Sending theme change to iframe: ${theme}`);
+      iframeRef.current.contentWindow.postMessage(
+        { type: 'theme-change', theme },
+        '*'
+      );
+    }
+  }, [isDarkMode]);
+
+  const getSwaggerUrl = () => {
+    const theme = isDarkMode ? 'dark' : 'light';
+    return `/swagger-ui.html?theme=${theme}`;
+  };
 
   const fetchHealthStatus = async () => {
     try {
@@ -215,10 +234,9 @@ const API: React.FC = () => {
                 onClick={() => {
                   setSwaggerError(null);
                   setSwaggerLoading(true);
-                  // Reload iframe
-                  const iframe = document.querySelector('iframe[title="API Documentation"]') as HTMLIFrameElement;
-                  if (iframe) {
-                    iframe.src = iframe.src;
+                  // Reload iframe with current theme
+                  if (iframeRef.current) {
+                    iframeRef.current.src = getSwaggerUrl();
                   }
                 }}
                 className="btn-secondary text-sm"
@@ -229,36 +247,36 @@ const API: React.FC = () => {
           ) : (
             <>
               {swaggerLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-800 z-10 rounded-md">
+                <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-800 z-10 rounded-md transition-colors duration-200">
                   <div className="text-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                    <p className="text-gray-600 dark:text-gray-400">Loading API documentation...</p>
+                    <p className="text-gray-600 dark:text-gray-400">
+                      Loading API documentation{isDarkMode ? ' (Dark Theme)' : ' (Light Theme)'}...
+                    </p>
                   </div>
                 </div>
               )}
               <iframe
-                src="/swagger/index.html"
+                ref={iframeRef}
+                src={getSwaggerUrl()}
                 className="w-full h-[800px] border-0"
                 title="API Documentation"
-                onLoad={(e) => {
-                  const iframe = e.target as HTMLIFrameElement;
-                  try {
-                    // Check if iframe content is actually Swagger UI or our React app
-                    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-                    if (iframeDoc) {
-                      const title = iframeDoc.title;
-                      // If title contains our app name, it means React app loaded instead of Swagger
-                      if (title && title.includes('NetWorth Dashboard')) {
-                        setSwaggerError('Swagger UI not accessible. Please check backend configuration.');
-                        setSwaggerLoading(false);
-                        return;
-                      }
-                    }
-                  } catch (e) {
-                    // Cross-origin error is expected and means external content loaded (good)
-                  }
+                onLoad={() => {
+                  console.log('Swagger UI iframe loaded');
                   setSwaggerLoading(false);
                   setSwaggerError(null);
+                  
+                  // Send initial theme to iframe after a short delay
+                  setTimeout(() => {
+                    if (iframeRef.current?.contentWindow) {
+                      const theme = isDarkMode ? 'dark' : 'light';
+                      console.log(`🎨 Sending initial theme to iframe: ${theme}`);
+                      iframeRef.current.contentWindow.postMessage(
+                        { type: 'theme-change', theme },
+                        '*'
+                      );
+                    }
+                  }, 500);
                 }}
                 onError={() => {
                   setSwaggerLoading(false);
@@ -266,7 +284,8 @@ const API: React.FC = () => {
                 }}
                 style={{
                   colorScheme: isDarkMode ? 'dark' : 'light',
-                  backgroundColor: isDarkMode ? '#1f2937' : '#ffffff'
+                  backgroundColor: isDarkMode ? '#1f2937' : '#ffffff',
+                  transition: 'background-color 0.2s ease-in-out'
                 }}
               />
             </>
@@ -295,7 +314,7 @@ const API: React.FC = () => {
           <div>
             <span className="font-medium text-gray-900 dark:text-white">Documentation:</span>{' '}
             <a
-              href="/swagger/index.html"
+              href={getSwaggerUrl()}
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-600 dark:text-blue-400 hover:underline"
