@@ -220,7 +220,7 @@ function Equity() {
   const handleRefreshPrices = async () => {
     setRefreshingPrices(true)
     try {
-      await pricesApi.refreshAll()
+      await pricesApi.refreshAll(true) // Force refresh to bypass cache and market hours
       await fetchEquityGrants() // Refresh grants with new prices
       await fetchPriceStatus() // Update price status
     } catch (error) {

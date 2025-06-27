@@ -55,7 +55,7 @@ function Stocks() {
   const handleRefreshPrices = async () => {
     setRefreshing(true)
     try {
-      await pricesApi.refreshAll()
+      await pricesApi.refreshAll(true) // Force refresh to bypass cache and market hours
       await loadAllData() // Reload all data after price refresh
       await fetchPriceStatus() // Update price status
     } catch (error) {

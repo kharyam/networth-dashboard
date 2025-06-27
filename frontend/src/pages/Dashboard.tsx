@@ -214,7 +214,7 @@ function Dashboard() {
   const handleRefreshPrices = async () => {
     setRefreshingPrices(true)
     try {
-      await pricesApi.refreshAll()
+      await pricesApi.refreshAll(true) // Force refresh to bypass cache and market hours
       await fetchNetWorth() // Refresh net worth after price update
       await fetchPriceStatus() // Update price status
     } catch (error) {

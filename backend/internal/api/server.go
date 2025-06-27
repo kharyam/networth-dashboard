@@ -157,6 +157,7 @@ func (s *Server) setupRouter() {
 		api.GET("/manual-entries/schemas", s.getManualEntrySchemas)
 
 		// Price management endpoints
+		api.GET("/prices/refresh", s.refreshPrices)
 		api.POST("/prices/refresh", s.refreshPrices)
 		api.POST("/prices/refresh/:symbol", s.refreshSymbolPrice)
 		api.GET("/prices/status", s.getPricesStatus)

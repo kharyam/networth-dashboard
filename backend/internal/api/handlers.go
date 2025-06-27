@@ -1366,6 +1366,14 @@ func (s *Server) getManualEntrySchemas(c *gin.Context) {
 func (s *Server) refreshPrices(c *gin.Context) {
 	startTime := time.Now()
 
+	// Enhanced debugging - log full request details
+	fmt.Printf("DEBUG: refreshPrices called - Method: %s, URL: %s, FullPath: %s\n", c.Request.Method, c.Request.URL.String(), c.FullPath())
+	fmt.Printf("DEBUG: Query parameters: %v\n", c.Request.URL.Query())
+	
+	// Check for force refresh parameter
+	forceRefresh := c.Query("force") == "true"
+	fmt.Printf("DEBUG: force query param: '%s', forceRefresh: %t\n", c.Query("force"), forceRefresh)
+
 	// Get all unique symbols that need price updates
 	symbols := s.getAllActiveSymbols()
 	if len(symbols) == 0 {
@@ -1391,7 +1399,7 @@ func (s *Server) refreshPrices(c *gin.Context) {
 	failedCount := 0
 
 	for _, symbol := range symbols {
-		result := s.updateSymbolPrice(symbol, priceService)
+		result := s.updateSymbolPrice(symbol, priceService, forceRefresh)
 		results = append(results, result)
 
 		if result.Updated {
@@ -1433,8 +1441,11 @@ func (s *Server) refreshSymbolPrice(c *gin.Context) {
 		return
 	}
 
+	// Check for force refresh parameter
+	forceRefresh := c.Query("force") == "true"
+
 	priceService := s.priceService
-	result := s.updateSymbolPrice(symbol, priceService)
+	result := s.updateSymbolPrice(symbol, priceService, forceRefresh)
 
 	status := http.StatusOK
 	if !result.Updated {
@@ -1502,7 +1513,7 @@ func (s *Server) getAllActiveSymbols() []string {
 	return symbols
 }
 
-func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceService) services.PriceUpdateResult {
+func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceService, forceRefresh bool) services.PriceUpdateResult {
 	result := services.PriceUpdateResult{
 		Symbol:    symbol,
 		Updated:   false,
@@ -1510,7 +1521,7 @@ func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceSe
 	}
 
 	// Get current price from service
-	newPrice, err := priceService.GetCurrentPrice(symbol)
+	newPrice, err := priceService.GetCurrentPriceWithForce(symbol, forceRefresh)
 	if err != nil {
 		result.Error = err.Error()
 		return result

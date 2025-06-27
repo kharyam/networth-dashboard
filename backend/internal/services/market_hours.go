@@ -103,6 +103,15 @@ func (mhs *MarketHoursService) GetMarketStatus() *MarketStatus {
 
 // ShouldRefreshPrices returns true if prices should be refreshed based on market hours and cache age
 func (mhs *MarketHoursService) ShouldRefreshPrices(lastUpdate time.Time, cacheInterval time.Duration) bool {
+	return mhs.ShouldRefreshPricesWithForce(lastUpdate, cacheInterval, false)
+}
+
+func (mhs *MarketHoursService) ShouldRefreshPricesWithForce(lastUpdate time.Time, cacheInterval time.Duration, forceRefresh bool) bool {
+	// If force refresh is requested, always allow it
+	if forceRefresh {
+		return true
+	}
+	
 	now := time.Now()
 	
 	// If lastUpdate is zero time, it means no cache exists - always refresh

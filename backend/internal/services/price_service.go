@@ -19,6 +19,11 @@ type PriceProvider interface {
 	GetProviderName() string
 }
 
+// ForceRefreshProvider interface for providers that support force refresh
+type ForceRefreshProvider interface {
+	GetCurrentPriceWithForce(symbol string, forceRefresh bool) (float64, error)
+}
+
 // MockPriceProvider provides realistic mock stock prices for development
 type MockPriceProvider struct {
 	mockPrices map[string]float64
@@ -157,25 +162,33 @@ func NewAlphaVantagePriceProvider(apiKey string, db *sql.DB, marketService *Mark
 
 // GetCurrentPrice gets the current price for a symbol with market-aware caching
 func (av *AlphaVantagePriceProvider) GetCurrentPrice(symbol string) (float64, error) {
+	return av.GetCurrentPriceWithForce(symbol, false)
+}
+
+// GetCurrentPriceWithForce gets the current price for a symbol with optional force refresh
+func (av *AlphaVantagePriceProvider) GetCurrentPriceWithForce(symbol string, forceRefresh bool) (float64, error) {
 	symbol = strings.ToUpper(strings.TrimSpace(symbol))
 
 	if symbol == "" {
 		return 0, fmt.Errorf("symbol cannot be empty")
 	}
 
+	fmt.Printf("DEBUG: Alpha Vantage GetCurrentPriceWithForce called for %s, force: %t\n", symbol, forceRefresh)
+
 	// Check cached price first
 	cachedPrice, lastUpdate, err := av.getCachedPrice(symbol)
 	var hasCache = err == nil
 	
-	if hasCache {
-		// Use market-aware caching logic
-		if !av.marketService.ShouldRefreshPrices(lastUpdate, av.config.CacheRefreshInterval) {
+	if hasCache && !forceRefresh {
+		// Use market-aware caching logic (unless forcing refresh)
+		if !av.marketService.ShouldRefreshPricesWithForce(lastUpdate, av.config.CacheRefreshInterval, forceRefresh) {
+			fmt.Printf("DEBUG: Using cached price %.2f for %s (last updated: %v)\n", cachedPrice, symbol, lastUpdate)
 			return cachedPrice, nil
 		}
 	}
 
-	// Check if we can make API call (rate limiting)
-	if !av.canMakeAPICall() {
+	// Check if we can make API call (rate limiting) - but bypass for force refresh
+	if !forceRefresh && !av.canMakeAPICall() {
 		if hasCache {
 			// Return cached price if we hit rate limits but have cache
 			return cachedPrice, nil
@@ -186,6 +199,7 @@ func (av *AlphaVantagePriceProvider) GetCurrentPrice(symbol string) (float64, er
 
 	// Fetch from Alpha Vantage API
 	url := fmt.Sprintf("%s?function=GLOBAL_QUOTE&symbol=%s&apikey=%s", av.baseURL, symbol, av.apiKey)
+	fmt.Printf("DEBUG: Making Alpha Vantage API call for %s (force: %t): %s\n", symbol, forceRefresh, url)
 
 	resp, err := av.client.Get(url)
 	if err != nil {
@@ -213,18 +227,29 @@ func (av *AlphaVantagePriceProvider) GetCurrentPrice(symbol string) (float64, er
 		return 0, fmt.Errorf("failed to read response body for %s and no cached price available: %w", symbol, err)
 	}
 
+	fmt.Printf("DEBUG: Alpha Vantage raw response for %s: %s\n", symbol, string(body))
+
 	var response AlphaVantageResponse
 	if err := json.Unmarshal(body, &response); err != nil {
+		fmt.Printf("DEBUG: Failed to parse Alpha Vantage JSON response for %s: %v\n", symbol, err)
 		if hasCache && cachedPrice > 0 {
 			return cachedPrice, nil
 		}
 		return 0, fmt.Errorf("failed to parse Alpha Vantage response for %s and no cached price available: %w", symbol, err)
 	}
 
+	// Debug log the full response structure
+	fmt.Printf("DEBUG: Alpha Vantage response for %s - Open: %s, High: %s, Low: %s, Price: %s, Volume: %s, LatestTradingDay: %s, PreviousClose: %s, Change: %s, ChangePercent: %s\n",
+		symbol, response.GlobalQuote.Open, response.GlobalQuote.High, response.GlobalQuote.Low, 
+		response.GlobalQuote.Price, response.GlobalQuote.Volume, response.GlobalQuote.LatestTradingDay,
+		response.GlobalQuote.PreviousClose, response.GlobalQuote.Change, response.GlobalQuote.ChangePercent)
+
 	// Extract price from response
 	priceStr := response.GlobalQuote.Price
 	if priceStr == "" {
+		fmt.Printf("DEBUG: No price data found in Alpha Vantage response for %s, trying cached price\n", symbol)
 		if hasCache && cachedPrice > 0 {
+			fmt.Printf("DEBUG: Using cached price %.2f for %s\n", cachedPrice, symbol)
 			return cachedPrice, nil
 		}
 		return 0, fmt.Errorf("no price data found for symbol %s and no cached price available", symbol)
@@ -232,15 +257,20 @@ func (av *AlphaVantagePriceProvider) GetCurrentPrice(symbol string) (float64, er
 
 	price := 0.0
 	if _, err := fmt.Sscanf(priceStr, "%f", &price); err != nil {
+		fmt.Printf("DEBUG: Failed to parse price string '%s' for %s: %v\n", priceStr, symbol, err)
 		if hasCache && cachedPrice > 0 {
 			return cachedPrice, nil
 		}
 		return 0, fmt.Errorf("failed to parse price %s for symbol %s and no cached price available: %w", priceStr, symbol, err)
 	}
 
-	// Cache the result
+	fmt.Printf("DEBUG: Successfully parsed price %.2f for %s from Alpha Vantage (force=%t)\n", price, symbol, forceRefresh)
+
+	// Cache the result with current timestamp
 	if err := av.cachePrice(symbol, price); err != nil {
-		fmt.Printf("Failed to cache price for %s: %v\n", symbol, err)
+		fmt.Printf("ERROR: Failed to cache price for %s: %v\n", symbol, err)
+	} else {
+		fmt.Printf("DEBUG: Successfully cached price %.2f for %s\n", price, symbol)
 	}
 
 	// Record API usage
@@ -406,6 +436,18 @@ func (ps *PriceService) SetProvider(provider PriceProvider) {
 
 // GetCurrentPrice gets the current price for a symbol
 func (ps *PriceService) GetCurrentPrice(symbol string) (float64, error) {
+	return ps.provider.GetCurrentPrice(symbol)
+}
+
+// GetCurrentPriceWithForce gets the current price for a symbol with optional force refresh
+func (ps *PriceService) GetCurrentPriceWithForce(symbol string, forceRefresh bool) (float64, error) {
+	// Check if provider supports force refresh interface
+	if forceRefreshProvider, ok := ps.provider.(ForceRefreshProvider); ok {
+		fmt.Printf("DEBUG: PriceService using ForceRefreshProvider for %s, force: %t\n", symbol, forceRefresh)
+		return forceRefreshProvider.GetCurrentPriceWithForce(symbol, forceRefresh)
+	}
+	// Fallback to regular method for providers that don't support force refresh
+	fmt.Printf("DEBUG: PriceService falling back to regular GetCurrentPrice for %s (provider doesn't support force refresh)\n", symbol)
 	return ps.provider.GetCurrentPrice(symbol)
 }
 
