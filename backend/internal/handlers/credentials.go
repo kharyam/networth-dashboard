@@ -27,6 +27,15 @@ type CreateCredentialRequest struct {
 }
 
 // CreateCredential creates a new credential
+// @Summary Create new credential
+// @Description Create a new API credential for external service integration
+// @Tags credentials
+// @Accept json
+// @Produce json
+// @Success 201 {object} map[string]interface{} "Credential created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /credentials [post]
 func (h *CredentialHandler) CreateCredential(c *gin.Context) {
 	var req CreateCredentialRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -94,6 +103,16 @@ func (h *CredentialHandler) CreateCredential(c *gin.Context) {
 }
 
 // GetCredential retrieves a credential by service type
+// @Summary Get credential by service type
+// @Description Retrieve credential configuration for a specific service
+// @Tags credentials
+// @Accept json
+// @Produce json
+// @Param serviceType path string true "Service Type"
+// @Success 200 {object} map[string]interface{} "Credential data"
+// @Failure 404 {object} map[string]interface{} "Credential not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /credentials/{serviceType} [get]
 func (h *CredentialHandler) GetCredential(c *gin.Context) {
 	serviceTypeStr := c.Param("serviceType")
 	serviceType := credentials.ServiceType(serviceTypeStr)
@@ -118,6 +137,17 @@ type UpdateCredentialRequest struct {
 }
 
 // UpdateCredential updates an existing credential
+// @Summary Update credential
+// @Description Update an existing credential for a service
+// @Tags credentials
+// @Accept json
+// @Produce json
+// @Param serviceType path string true "Service Type"
+// @Success 200 {object} map[string]interface{} "Credential updated successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Credential not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /credentials/{serviceType} [put]
 func (h *CredentialHandler) UpdateCredential(c *gin.Context) {
 	serviceTypeStr := c.Param("serviceType")
 	serviceType := credentials.ServiceType(serviceTypeStr)
@@ -177,6 +207,16 @@ func (h *CredentialHandler) UpdateCredential(c *gin.Context) {
 }
 
 // DeleteCredential removes a credential
+// @Summary Delete credential
+// @Description Delete a credential for a specific service
+// @Tags credentials
+// @Accept json
+// @Produce json
+// @Param serviceType path string true "Service Type"
+// @Success 200 {object} map[string]interface{} "Credential deleted successfully"
+// @Failure 404 {object} map[string]interface{} "Credential not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /credentials/{serviceType} [delete]
 func (h *CredentialHandler) DeleteCredential(c *gin.Context) {
 	serviceTypeStr := c.Param("serviceType")
 	serviceType := credentials.ServiceType(serviceTypeStr)
@@ -191,6 +231,14 @@ func (h *CredentialHandler) DeleteCredential(c *gin.Context) {
 }
 
 // ListCredentials returns all credentials (without sensitive data)
+// @Summary List all credentials
+// @Description Retrieve list of all configured credentials
+// @Tags credentials
+// @Accept json
+// @Produce json
+// @Success 200 {array} map[string]interface{} "List of credentials"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /credentials [get]
 func (h *CredentialHandler) ListCredentials(c *gin.Context) {
 	credentials, err := h.manager.ListCredentials()
 	if err != nil {

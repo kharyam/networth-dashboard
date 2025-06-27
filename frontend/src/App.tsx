@@ -10,6 +10,7 @@ import CashHoldings from '@/pages/CashHoldings'
 import CryptoHoldings from '@/pages/CryptoHoldings'
 import ManualEntries from '@/pages/ManualEntries'
 import Credentials from '@/pages/Credentials'
+import API from '@/pages/API'
 import Settings from '@/pages/Settings'
 
 function App() {
@@ -26,6 +27,7 @@ function App() {
           <Route path="/crypto-holdings" element={<CryptoHoldings />} />
           <Route path="/manual-entries" element={<ManualEntries />} />
           <Route path="/credentials" element={<Credentials />} />
+          <Route path="/api" element={<API />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </Layout>

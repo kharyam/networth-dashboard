@@ -1,9 +1,18 @@
+// @title NetWorth Dashboard API
+// @version 1.0
+// @description This is a comprehensive financial net worth tracking API that supports multiple asset types including stocks, real estate, cryptocurrency, cash holdings, and equity compensation.
+// @contact.name API Support
+// @contact.email support@networth-dashboard.com
+// @host localhost:8080
+// @BasePath /api/v1
+// @schemes http https
 package main
 
 import (
 	"log"
 	"os"
 
+	_ "networth-dashboard/docs" // Import generated swagger docs
 	"networth-dashboard/internal/api"
 	"networth-dashboard/internal/config"
 	"networth-dashboard/internal/database"

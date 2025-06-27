@@ -19,6 +19,16 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      '/swagger': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/health': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
   build: {

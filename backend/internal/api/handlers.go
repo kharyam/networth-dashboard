@@ -15,6 +15,15 @@ import (
 // Placeholder handlers - will be implemented in future phases
 
 // Net worth handlers
+
+// @Summary Get current net worth
+// @Description Calculate and return current net worth including all assets (stocks, equity, real estate, cash, crypto) minus liabilities
+// @Tags net-worth
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Net worth data including breakdown by asset type"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /net-worth [get]
 func (s *Server) getNetWorth(c *gin.Context) {
 	// Calculate stock holdings value
 	stockValue := s.calculateStockHoldingsValue()
@@ -262,6 +271,13 @@ func (s *Server) getPriceStatus() PriceStatus {
 	}
 }
 
+// @Summary Get net worth history
+// @Description Get historical net worth data over time (placeholder - to be implemented)
+// @Tags net-worth
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Net worth history data"
+// @Router /net-worth/history [get]
 func (s *Server) getNetWorthHistory(c *gin.Context) {
 	// TODO: Implement net worth history
 	c.JSON(http.StatusOK, gin.H{
@@ -270,6 +286,14 @@ func (s *Server) getNetWorthHistory(c *gin.Context) {
 }
 
 // Account handlers
+
+// @Summary Get all accounts
+// @Description Retrieve all financial accounts (placeholder - to be implemented)
+// @Tags accounts
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "List of accounts"
+// @Router /accounts [get]
 func (s *Server) getAccounts(c *gin.Context) {
 	// TODO: Implement account retrieval
 	c.JSON(http.StatusOK, gin.H{
@@ -278,6 +302,15 @@ func (s *Server) getAccounts(c *gin.Context) {
 	})
 }
 
+// @Summary Get account by ID
+// @Description Retrieve a specific financial account by ID (placeholder - to be implemented)
+// @Tags accounts
+// @Accept json
+// @Produce json
+// @Param id path string true "Account ID"
+// @Success 200 {object} map[string]interface{} "Account details"
+// @Failure 404 {object} map[string]interface{} "Account not found"
+// @Router /accounts/{id} [get]
 func (s *Server) getAccount(c *gin.Context) {
 	id := c.Param("id")
 	// TODO: Implement single account retrieval
@@ -287,6 +320,14 @@ func (s *Server) getAccount(c *gin.Context) {
 	})
 }
 
+// @Summary Create new account
+// @Description Create a new financial account (placeholder - to be implemented)
+// @Tags accounts
+// @Accept json
+// @Produce json
+// @Success 201 {object} map[string]interface{} "Account created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Router /accounts [post]
 func (s *Server) createAccount(c *gin.Context) {
 	// TODO: Implement account creation
 	c.JSON(http.StatusCreated, gin.H{
@@ -294,6 +335,16 @@ func (s *Server) createAccount(c *gin.Context) {
 	})
 }
 
+// @Summary Update account
+// @Description Update an existing financial account (placeholder - to be implemented)
+// @Tags accounts
+// @Accept json
+// @Produce json
+// @Param id path string true "Account ID"
+// @Success 200 {object} map[string]interface{} "Account updated successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Account not found"
+// @Router /accounts/{id} [put]
 func (s *Server) updateAccount(c *gin.Context) {
 	id := c.Param("id")
 	// TODO: Implement account update
@@ -303,6 +354,15 @@ func (s *Server) updateAccount(c *gin.Context) {
 	})
 }
 
+// @Summary Delete account
+// @Description Delete a financial account (placeholder - to be implemented)
+// @Tags accounts
+// @Accept json
+// @Produce json
+// @Param id path string true "Account ID"
+// @Success 200 {object} map[string]interface{} "Account deleted successfully"
+// @Failure 404 {object} map[string]interface{} "Account not found"
+// @Router /accounts/{id} [delete]
 func (s *Server) deleteAccount(c *gin.Context) {
 	id := c.Param("id")
 	// TODO: Implement account deletion
@@ -313,6 +373,14 @@ func (s *Server) deleteAccount(c *gin.Context) {
 }
 
 // Balance handlers
+
+// @Summary Get all balances
+// @Description Retrieve all account balances (placeholder - to be implemented)
+// @Tags balances
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "List of balances"
+// @Router /balances [get]
 func (s *Server) getBalances(c *gin.Context) {
 	// TODO: Implement balance retrieval
 	c.JSON(http.StatusOK, gin.H{
@@ -321,6 +389,15 @@ func (s *Server) getBalances(c *gin.Context) {
 	})
 }
 
+// @Summary Get account balances
+// @Description Retrieve balances for a specific account (placeholder - to be implemented)
+// @Tags balances
+// @Accept json
+// @Produce json
+// @Param id path string true "Account ID"
+// @Success 200 {object} map[string]interface{} "Account balances"
+// @Failure 404 {object} map[string]interface{} "Account not found"
+// @Router /accounts/{id}/balances [get]
 func (s *Server) getAccountBalances(c *gin.Context) {
 	id := c.Param("id")
 	// TODO: Implement account-specific balance retrieval
@@ -332,6 +409,15 @@ func (s *Server) getAccountBalances(c *gin.Context) {
 }
 
 // Stock holdings handlers
+
+// @Summary Get all stock holdings
+// @Description Retrieve all stock holdings with current prices and market values
+// @Tags stocks
+// @Accept json
+// @Produce json
+// @Success 200 {array} map[string]interface{} "List of stock holdings"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /stocks [get]
 func (s *Server) getStockHoldings(c *gin.Context) {
 	query := `
 		SELECT h.id, h.account_id, h.symbol, h.company_name, h.shares_owned, 
@@ -397,6 +483,14 @@ func (s *Server) getStockHoldings(c *gin.Context) {
 	})
 }
 
+// @Summary Get consolidated stock holdings
+// @Description Retrieve consolidated stock holdings combining direct holdings and vested equity compensation
+// @Tags stocks
+// @Accept json
+// @Produce json
+// @Success 200 {array} map[string]interface{} "Consolidated stock holdings with sources"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /stocks/consolidated [get]
 func (s *Server) getConsolidatedStocks(c *gin.Context) {
 	query := `
 		WITH combined_holdings AS (
@@ -561,6 +655,15 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 	})
 }
 
+// @Summary Create stock holding
+// @Description Create a new stock holding record (placeholder - to be implemented)
+// @Tags stocks
+// @Accept json
+// @Produce json
+// @Success 201 {object} map[string]interface{} "Stock holding created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /stocks [post]
 func (s *Server) createStockHolding(c *gin.Context) {
 	// TODO: Implement stock holding creation
 	c.JSON(http.StatusCreated, gin.H{
@@ -568,6 +671,17 @@ func (s *Server) createStockHolding(c *gin.Context) {
 	})
 }
 
+// @Summary Update stock holding
+// @Description Update an existing stock holding record (placeholder - to be implemented)
+// @Tags stocks
+// @Accept json
+// @Produce json
+// @Param id path string true "Stock Holding ID"
+// @Success 200 {object} map[string]interface{} "Stock holding updated successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Stock holding not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /stocks/{id} [put]
 func (s *Server) updateStockHolding(c *gin.Context) {
 	id := c.Param("id")
 	// TODO: Implement stock holding update
@@ -577,6 +691,16 @@ func (s *Server) updateStockHolding(c *gin.Context) {
 	})
 }
 
+// @Summary Delete stock holding
+// @Description Delete a stock holding record (placeholder - to be implemented)
+// @Tags stocks
+// @Accept json
+// @Produce json
+// @Param id path string true "Stock Holding ID"
+// @Success 200 {object} map[string]interface{} "Stock holding deleted successfully"
+// @Failure 404 {object} map[string]interface{} "Stock holding not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /stocks/{id} [delete]
 func (s *Server) deleteStockHolding(c *gin.Context) {
 	id := c.Param("id")
 	// TODO: Implement stock holding deletion
@@ -587,6 +711,15 @@ func (s *Server) deleteStockHolding(c *gin.Context) {
 }
 
 // Equity compensation handlers
+
+// @Summary Get equity grants
+// @Description Retrieve all equity compensation grants including stock options and RSUs
+// @Tags equity
+// @Accept json
+// @Produce json
+// @Success 200 {array} map[string]interface{} "List of equity grants"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /equity [get]
 func (s *Server) getEquityGrants(c *gin.Context) {
 	query := `
 		SELECT id, account_id, grant_type, company_symbol, total_shares, 
@@ -658,6 +791,16 @@ func (s *Server) getEquityGrants(c *gin.Context) {
 	})
 }
 
+// @Summary Get vesting schedule
+// @Description Retrieve vesting schedule for a specific equity grant (placeholder - to be implemented)
+// @Tags equity
+// @Accept json
+// @Produce json
+// @Param id path string true "Equity Grant ID"
+// @Success 200 {object} map[string]interface{} "Vesting schedule data"
+// @Failure 404 {object} map[string]interface{} "Equity grant not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /equity/{id}/vesting [get]
 func (s *Server) getVestingSchedule(c *gin.Context) {
 	id := c.Param("id")
 	// TODO: Implement vesting schedule retrieval
@@ -668,6 +811,15 @@ func (s *Server) getVestingSchedule(c *gin.Context) {
 	})
 }
 
+// @Summary Create equity grant
+// @Description Create a new equity compensation grant (placeholder - to be implemented)
+// @Tags equity
+// @Accept json
+// @Produce json
+// @Success 201 {object} map[string]interface{} "Equity grant created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /equity [post]
 func (s *Server) createEquityGrant(c *gin.Context) {
 	// TODO: Implement equity grant creation
 	c.JSON(http.StatusCreated, gin.H{
@@ -675,6 +827,17 @@ func (s *Server) createEquityGrant(c *gin.Context) {
 	})
 }
 
+// @Summary Update equity grant
+// @Description Update an existing equity compensation grant (placeholder - to be implemented)
+// @Tags equity
+// @Accept json
+// @Produce json
+// @Param id path string true "Equity Grant ID"
+// @Success 200 {object} map[string]interface{} "Equity grant updated successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Equity grant not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /equity/{id} [put]
 func (s *Server) updateEquityGrant(c *gin.Context) {
 	id := c.Param("id")
 	// TODO: Implement equity grant update
@@ -684,6 +847,16 @@ func (s *Server) updateEquityGrant(c *gin.Context) {
 	})
 }
 
+// @Summary Delete equity grant
+// @Description Delete an equity compensation grant (placeholder - to be implemented)
+// @Tags equity
+// @Accept json
+// @Produce json
+// @Param id path string true "Equity Grant ID"
+// @Success 200 {object} map[string]interface{} "Equity grant deleted successfully"
+// @Failure 404 {object} map[string]interface{} "Equity grant not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /equity/{id} [delete]
 func (s *Server) deleteEquityGrant(c *gin.Context) {
 	id := c.Param("id")
 	// TODO: Implement equity grant deletion
@@ -694,6 +867,15 @@ func (s *Server) deleteEquityGrant(c *gin.Context) {
 }
 
 // Real estate handlers
+
+// @Summary Get real estate properties
+// @Description Retrieve all real estate properties with current values and mortgage information
+// @Tags real-estate
+// @Accept json
+// @Produce json
+// @Success 200 {array} map[string]interface{} "List of real estate properties"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /real-estate [get]
 func (s *Server) getRealEstate(c *gin.Context) {
 	query := `
 		SELECT id, account_id, property_type, property_name, purchase_price, 
@@ -796,6 +978,14 @@ func (s *Server) getRealEstate(c *gin.Context) {
 	})
 }
 
+// @Summary Get cash holdings
+// @Description Retrieve all cash account holdings including savings, checking, and money market accounts
+// @Tags cash
+// @Accept json
+// @Produce json
+// @Success 200 {array} map[string]interface{} "List of cash holdings"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /cash-holdings [get]
 func (s *Server) getCashHoldings(c *gin.Context) {
 	query := `
 		SELECT id, account_id, institution_name, account_name, account_type, 
@@ -868,6 +1058,14 @@ func (s *Server) getCashHoldings(c *gin.Context) {
 	})
 }
 
+// @Summary Get cryptocurrency holdings
+// @Description Retrieve all cryptocurrency holdings with current prices and values
+// @Tags crypto
+// @Accept json
+// @Produce json
+// @Success 200 {array} map[string]interface{} "List of cryptocurrency holdings"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /crypto-holdings [get]
 func (s *Server) getCryptoHoldings(c *gin.Context) {
 	query := `
 		SELECT ch.id, ch.account_id, ch.institution_name, ch.crypto_symbol, 
@@ -959,6 +1157,16 @@ func (s *Server) getCryptoHoldings(c *gin.Context) {
 	})
 }
 
+// @Summary Create new real estate property
+// @Description Create a new real estate property record (placeholder - to be implemented)
+// @Tags real-estate
+// @Accept json
+// @Produce json
+// @Param request body map[string]interface{} true "Property details including address, value, and mortgage info"
+// @Success 201 {object} map[string]interface{} "Property created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid data"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /real-estate [post]
 func (s *Server) createRealEstate(c *gin.Context) {
 	// TODO: Implement real estate creation
 	c.JSON(http.StatusCreated, gin.H{
@@ -966,6 +1174,17 @@ func (s *Server) createRealEstate(c *gin.Context) {
 	})
 }
 
+// @Summary Update real estate property
+// @Description Update an existing real estate property using the real estate plugin system
+// @Tags real-estate
+// @Accept json
+// @Produce json
+// @Param id path int true "Property ID"
+// @Param request body map[string]interface{} true "Updated property details"
+// @Success 200 {object} map[string]interface{} "Property updated successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid data"
+// @Failure 404 {object} map[string]interface{} "Property or plugin not found"
+// @Router /real-estate/{id} [put]
 func (s *Server) updateRealEstate(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -1012,6 +1231,16 @@ func (s *Server) updateRealEstate(c *gin.Context) {
 	})
 }
 
+// @Summary Delete real estate property
+// @Description Delete a real estate property record (placeholder - to be implemented)
+// @Tags real-estate
+// @Accept json
+// @Produce json
+// @Param id path string true "Property ID"
+// @Success 200 {object} map[string]interface{} "Property deleted successfully"
+// @Failure 404 {object} map[string]interface{} "Property not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /real-estate/{id} [delete]
 func (s *Server) deleteRealEstate(c *gin.Context) {
 	id := c.Param("id")
 	// TODO: Implement real estate deletion
@@ -1022,6 +1251,15 @@ func (s *Server) deleteRealEstate(c *gin.Context) {
 }
 
 // Plugin handlers
+
+// @Summary List all available plugins
+// @Description Retrieve list of all available data source plugins with their status and capabilities
+// @Tags plugins
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "List of available plugins with status"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /plugins [get]
 func (s *Server) getPlugins(c *gin.Context) {
 	plugins := s.pluginManager.ListPlugins()
 	c.JSON(http.StatusOK, gin.H{
@@ -1030,6 +1268,16 @@ func (s *Server) getPlugins(c *gin.Context) {
 	})
 }
 
+// @Summary Get plugin schema for manual entry
+// @Description Retrieve the manual entry schema for a specific plugin to understand required fields
+// @Tags plugins
+// @Accept json
+// @Produce json
+// @Param name path string true "Plugin Name"
+// @Success 200 {object} map[string]interface{} "Plugin manual entry schema"
+// @Failure 400 {object} map[string]interface{} "Plugin does not support manual entry"
+// @Failure 404 {object} map[string]interface{} "Plugin not found"
+// @Router /plugins/{name}/schema [get]
 func (s *Server) getPluginSchema(c *gin.Context) {
 	pluginName := c.Param("name")
 
@@ -1052,6 +1300,17 @@ func (s *Server) getPluginSchema(c *gin.Context) {
 	c.JSON(http.StatusOK, schema)
 }
 
+// @Summary Process manual entry through plugin
+// @Description Submit manual data entry to a specific plugin for processing and storage
+// @Tags plugins
+// @Accept json
+// @Produce json
+// @Param name path string true "Plugin Name"
+// @Param request body map[string]interface{} true "Manual entry data matching plugin schema"
+// @Success 200 {object} map[string]interface{} "Manual entry processed successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid data or plugin does not support manual entry"
+// @Failure 404 {object} map[string]interface{} "Plugin not found"
+// @Router /plugins/{name}/manual-entry [post]
 func (s *Server) processManualEntry(c *gin.Context) {
 	pluginName := c.Param("name")
 
@@ -1075,6 +1334,14 @@ func (s *Server) processManualEntry(c *gin.Context) {
 	})
 }
 
+// @Summary Refresh all plugin data
+// @Description Trigger data refresh for all enabled plugins from their external sources
+// @Tags plugins
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "All plugin data refreshed successfully"
+// @Failure 500 {object} map[string]interface{} "Some plugins failed to refresh"
+// @Router /plugins/refresh [post]
 func (s *Server) refreshPluginData(c *gin.Context) {
 	errors := s.pluginManager.RefreshAllData()
 
@@ -1091,6 +1358,14 @@ func (s *Server) refreshPluginData(c *gin.Context) {
 	})
 }
 
+// @Summary Get plugin health status
+// @Description Retrieve health status and diagnostic information for all plugins
+// @Tags plugins
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Plugin health status information"
+// @Failure 503 {object} map[string]interface{} "One or more plugins are unhealthy"
+// @Router /plugins/health [get]
 func (s *Server) getPluginHealth(c *gin.Context) {
 	health := s.pluginManager.GetPluginHealth()
 
@@ -1114,6 +1389,16 @@ func (s *Server) getPluginHealth(c *gin.Context) {
 }
 
 // Manual entry handlers
+
+// @Summary Get all manual entries
+// @Description Retrieve all manual data entries across all asset types with optional filtering by entry type
+// @Tags manual-entries
+// @Accept json
+// @Produce json
+// @Param type query string false "Filter by entry type (computershare, morgan_stanley, real_estate, etc.)"
+// @Success 200 {object} map[string]interface{} "List of manual entries with metadata"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /manual-entries [get]
 func (s *Server) getManualEntries(c *gin.Context) {
 	entryType := c.Query("type") // Optional filter by entry type
 
@@ -1284,6 +1569,16 @@ func (s *Server) getManualEntries(c *gin.Context) {
 	})
 }
 
+// @Summary Create new manual entry
+// @Description Create a new manual data entry using the appropriate plugin system
+// @Tags manual-entries
+// @Accept json
+// @Produce json
+// @Param request body map[string]interface{} true "Manual entry data with entry type and values"
+// @Success 201 {object} map[string]interface{} "Manual entry created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid data"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /manual-entries [post]
 func (s *Server) createManualEntry(c *gin.Context) {
 	// TODO: Implement manual entry creation
 	c.JSON(http.StatusCreated, gin.H{
@@ -1291,6 +1586,19 @@ func (s *Server) createManualEntry(c *gin.Context) {
 	})
 }
 
+// @Summary Update manual entry
+// @Description Update an existing manual data entry by ID using the appropriate plugin
+// @Tags manual-entries
+// @Accept json
+// @Produce json
+// @Param id path int true "Manual Entry ID"
+// @Param type query string true "Entry type for plugin selection"
+// @Param request body map[string]interface{} true "Updated manual entry data"
+// @Success 200 {object} map[string]interface{} "Manual entry updated successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid data"
+// @Failure 404 {object} map[string]interface{} "Manual entry or plugin not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /manual-entries/{id} [put]
 func (s *Server) updateManualEntry(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -1345,6 +1653,18 @@ func (s *Server) updateManualEntry(c *gin.Context) {
 	})
 }
 
+// @Summary Delete manual entry
+// @Description Delete a manual data entry by ID and type from the appropriate data store
+// @Tags manual-entries
+// @Accept json
+// @Produce json
+// @Param id path int true "Manual Entry ID"
+// @Param type query string true "Entry type (computershare, morgan_stanley, real_estate, cash_holdings, crypto_holdings)"
+// @Success 200 {object} map[string]interface{} "Manual entry deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid entry type"
+// @Failure 404 {object} map[string]interface{} "Manual entry not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /manual-entries/{id} [delete]
 func (s *Server) deleteManualEntry(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -1409,6 +1729,14 @@ func (s *Server) deleteManualEntry(c *gin.Context) {
 	})
 }
 
+// @Summary Get all manual entry schemas
+// @Description Retrieve schemas for all plugins that support manual data entry
+// @Tags manual-entries
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Manual entry schemas for all supported plugins"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /manual-entries/schemas [get]
 func (s *Server) getManualEntrySchemas(c *gin.Context) {
 	schemas := s.pluginManager.GetManualEntrySchemas()
 	c.JSON(http.StatusOK, gin.H{
@@ -1417,6 +1745,16 @@ func (s *Server) getManualEntrySchemas(c *gin.Context) {
 }
 
 // Price refresh handlers
+
+// @Summary Refresh all stock prices
+// @Description Trigger price refresh for all stock symbols from configured price provider
+// @Tags prices
+// @Accept json
+// @Produce json
+// @Param force query boolean false "Force refresh even if cache is recent"
+// @Success 200 {object} map[string]interface{} "Price refresh completed successfully"
+// @Failure 500 {object} map[string]interface{} "Internal server error during refresh"
+// @Router /prices/refresh [post]
 func (s *Server) refreshPrices(c *gin.Context) {
 	startTime := time.Now()
 
@@ -1486,6 +1824,17 @@ func (s *Server) refreshPrices(c *gin.Context) {
 	})
 }
 
+// @Summary Refresh specific symbol price
+// @Description Trigger price refresh for a specific stock symbol from configured provider
+// @Tags prices
+// @Accept json
+// @Produce json
+// @Param symbol path string true "Stock Symbol (e.g., AAPL, MSFT)"
+// @Param force query boolean false "Force refresh even if cache is recent"
+// @Success 200 {object} map[string]interface{} "Symbol price refreshed successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid symbol or bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error during refresh"
+// @Router /prices/refresh/{symbol} [post]
 func (s *Server) refreshSymbolPrice(c *gin.Context) {
 	symbol := strings.ToUpper(strings.TrimSpace(c.Param("symbol")))
 	if symbol == "" {
@@ -1512,12 +1861,27 @@ func (s *Server) refreshSymbolPrice(c *gin.Context) {
 	})
 }
 
+// @Summary Get current price status
+// @Description Retrieve current price cache status including stale count, last update time, and refresh recommendations
+// @Tags prices
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Current price status and cache information"
+// @Router /prices/status [get]
 func (s *Server) getPricesStatus(c *gin.Context) {
 	status := s.getPriceStatus()
 	c.JSON(http.StatusOK, status)
 }
 
 // Market status endpoint
+
+// @Summary Get current market status
+// @Description Retrieve current stock market status (open/closed) and trading hours information
+// @Tags market
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Current market status and trading hours"
+// @Router /market/status [get]
 func (s *Server) getMarketStatus(c *gin.Context) {
 	status := s.marketService.GetMarketStatus()
 	c.JSON(http.StatusOK, status)
@@ -1626,6 +1990,17 @@ func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceSe
 }
 
 // Crypto price handlers
+
+// @Summary Get current crypto price
+// @Description Retrieve current price information for a specific cryptocurrency symbol
+// @Tags crypto
+// @Accept json
+// @Produce json
+// @Param symbol path string true "Cryptocurrency Symbol (e.g., BTC, ETH, ADA)"
+// @Success 200 {object} map[string]interface{} "Current cryptocurrency price data"
+// @Failure 400 {object} map[string]interface{} "Bad request - symbol required"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /crypto/prices/{symbol} [get]
 func (s *Server) getCryptoPrice(c *gin.Context) {
 	symbol := c.Param("symbol")
 	if symbol == "" {
@@ -1654,6 +2029,14 @@ func (s *Server) getCryptoPrice(c *gin.Context) {
 	})
 }
 
+// @Summary Refresh all crypto prices
+// @Description Trigger price refresh for all cryptocurrency holdings from external price provider
+// @Tags crypto
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "All crypto prices refreshed successfully"
+// @Failure 500 {object} map[string]interface{} "Internal server error during refresh"
+// @Router /crypto/prices/refresh [post]
 func (s *Server) refreshCryptoPrices(c *gin.Context) {
 	err := s.cryptoService.RefreshAllCryptoPrices()
 	if err != nil {
@@ -1668,6 +2051,16 @@ func (s *Server) refreshCryptoPrices(c *gin.Context) {
 	})
 }
 
+// @Summary Refresh specific crypto price
+// @Description Trigger price refresh for a specific cryptocurrency symbol
+// @Tags crypto
+// @Accept json
+// @Produce json
+// @Param symbol path string true "Cryptocurrency Symbol (e.g., BTC, ETH, ADA)"
+// @Success 200 {object} map[string]interface{} "Crypto price refreshed successfully with updated data"
+// @Failure 400 {object} map[string]interface{} "Bad request - symbol required"
+// @Failure 500 {object} map[string]interface{} "Internal server error during refresh"
+// @Router /crypto/prices/refresh/{symbol} [post]
 func (s *Server) refreshCryptoPrice(c *gin.Context) {
 	symbol := c.Param("symbol")
 	if symbol == "" {
@@ -1697,6 +2090,15 @@ func (s *Server) refreshCryptoPrice(c *gin.Context) {
 	})
 }
 
+// @Summary Get crypto price history
+// @Description Retrieve historical price data for all cryptocurrencies with optional date range filtering
+// @Tags crypto
+// @Accept json
+// @Produce json
+// @Param days query int false "Number of days of history to retrieve (default: 30, max: 365)"
+// @Success 200 {object} map[string]interface{} "Historical cryptocurrency price data grouped by symbol"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /crypto/prices/history [get]
 func (s *Server) getCryptoPriceHistory(c *gin.Context) {
 	// Optional query parameters for filtering
 	daysBack := c.DefaultQuery("days", "30") // Default to last 30 days
@@ -1772,6 +2174,21 @@ func (s *Server) getCryptoPriceHistory(c *gin.Context) {
 }
 
 // Property valuation handlers
+
+// @Summary Get property valuation
+// @Description Retrieve current property valuation estimate by address components
+// @Tags property-valuation
+// @Accept json
+// @Produce json
+// @Param address query string false "Street address"
+// @Param city query string false "City name"
+// @Param state query string false "State abbreviation"
+// @Param zip_code query string false "ZIP/postal code"
+// @Success 200 {object} map[string]interface{} "Property valuation data including estimated value and details"
+// @Failure 400 {object} map[string]interface{} "Bad request - at least one address component required"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Failure 503 {object} map[string]interface{} "Property valuation feature disabled"
+// @Router /property-valuation [get]
 func (s *Server) getPropertyValuation(c *gin.Context) {
 	// Check if property valuation feature is enabled
 	if !s.propertyValuationService.IsPropertyValuationEnabled() {
@@ -1806,6 +2223,20 @@ func (s *Server) getPropertyValuation(c *gin.Context) {
 	c.JSON(http.StatusOK, valuation)
 }
 
+// @Summary Refresh property valuation
+// @Description Force refresh property valuation from external data sources
+// @Tags property-valuation
+// @Accept json
+// @Produce json
+// @Param address query string false "Street address"
+// @Param city query string false "City name"
+// @Param state query string false "State abbreviation"
+// @Param zip_code query string false "ZIP/postal code"
+// @Success 200 {object} map[string]interface{} "Property valuation refreshed successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request - at least one address component required"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Failure 503 {object} map[string]interface{} "Property valuation feature disabled"
+// @Router /property-valuation/refresh [post]
 func (s *Server) refreshPropertyValuation(c *gin.Context) {
 	// Check if property valuation feature is enabled
 	if !s.propertyValuationService.IsPropertyValuationEnabled() {
@@ -1843,6 +2274,13 @@ func (s *Server) refreshPropertyValuation(c *gin.Context) {
 	})
 }
 
+// @Summary Get property valuation providers
+// @Description Retrieve list of available property valuation providers and their status
+// @Tags property-valuation
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "List of available valuation providers with availability status"
+// @Router /property-valuation/providers [get]
 func (s *Server) getPropertyValuationProviders(c *gin.Context) {
 	// Check if property valuation feature is enabled
 	if !s.propertyValuationService.IsPropertyValuationEnabled() {

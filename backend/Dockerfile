@@ -1,5 +1,5 @@
 # Build stage
-FROM docker.io/golang:1.21-alpine AS builder
+FROM docker.io/golang:1.23-alpine AS builder
 
 # Install git and ca-certificates
 RUN apk add --no-cache git ca-certificates
@@ -12,6 +12,12 @@ COPY . .
 
 # Download dependencies and generate go.sum
 RUN go mod download && go mod tidy
+
+# Install swag CLI tool for generating Swagger documentation
+RUN go install github.com/swaggo/swag/cmd/swag@latest
+
+# Generate Swagger documentation
+RUN swag init
 
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
@@ -31,8 +37,11 @@ WORKDIR /home/appuser
 # Copy binary from builder stage
 COPY --from=builder /app/main .
 
+# Copy generated Swagger documentation
+COPY --from=builder /app/docs ./docs
+
 # Change ownership and make executable
-RUN chown appuser:appuser main && chmod +x main
+RUN chown -R appuser:appuser main docs && chmod +x main
 
 # Switch to non-root user
 USER appuser

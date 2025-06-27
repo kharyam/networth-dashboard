@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"time"
 
 	"networth-dashboard/internal/config"
 	"networth-dashboard/internal/credentials"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 type Server struct {
@@ -91,6 +94,9 @@ func (s *Server) setupRouter() {
 
 	// Health check endpoint
 	s.router.GET("/health", s.healthCheck)
+
+	// Swagger documentation
+	s.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// API routes
 	api := s.router.Group("/api/v1")
@@ -173,6 +179,18 @@ func (s *Server) setupRouter() {
 		// Credential management endpoints
 		credentialHandler := handlers.NewCredentialHandler(s.credentialManager)
 		handlers.RegisterCredentialRoutes(api, credentialHandler)
+		
+		// OpenAPI spec download
+		// @Summary Download OpenAPI specification
+		// @Description Download the complete OpenAPI specification in JSON format
+		// @Tags system
+		// @Produce json
+		// @Success 200 {object} object "OpenAPI specification"
+		// @Router /swagger/spec [get]
+		api.GET("/swagger/spec", func(c *gin.Context) {
+			c.Header("Content-Type", "application/json")
+			c.File("docs/swagger.json")
+		})
 	}
 }
 
@@ -194,8 +212,17 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 // Health check endpoint
+// @Summary Health check
+// @Description Get comprehensive system health status including database, plugins, and services
+// @Tags system
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "System health status"
+// @Failure 503 {object} map[string]interface{} "Service unavailable"
+// @Router /health [get]
 func (s *Server) healthCheck(c *gin.Context) {
 	// Check database connection
+	dbStatus := "connected"
 	if err := s.db.Ping(); err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status":   "unhealthy",
@@ -205,9 +232,49 @@ func (s *Server) healthCheck(c *gin.Context) {
 		return
 	}
 
+	// Get plugin health status
+	pluginList := s.pluginManager.ListPlugins()
+	pluginCount := len(pluginList)
+
+	// Get price service status
+	priceStatus := s.getPriceStatus()
+	
+	// Get market status
+	marketOpen := s.marketService.IsMarketOpen()
+	
+	// Get crypto service status
+	var cryptoSymbolCount int
+	query := "SELECT COUNT(DISTINCT crypto_symbol) FROM crypto_holdings"
+	s.db.QueryRow(query).Scan(&cryptoSymbolCount)
+
+	// Get property valuation service status
+	propertyProvider := s.propertyValuationService.GetProviderName()
+
 	c.JSON(http.StatusOK, gin.H{
-		"status":   "healthy",
-		"database": "connected",
-		"plugins":  len(s.pluginManager.ListPlugins()),
+		"status":     "healthy",
+		"timestamp":  time.Now().Format(time.RFC3339),
+		"database":   dbStatus,
+		"plugins": gin.H{
+			"total_count": pluginCount,
+			"available":   pluginList,
+		},
+		"price_service": gin.H{
+			"provider":            priceStatus.ProviderName,
+			"last_updated":        priceStatus.LastUpdated,
+			"stale_prices":        priceStatus.StaleCount,
+			"total_symbols":       priceStatus.TotalCount,
+			"cache_age_minutes":   priceStatus.CacheAgeMinutes,
+			"force_refresh_needed": priceStatus.ForceRefreshNeeded,
+		},
+		"market_status": gin.H{
+			"is_open": marketOpen,
+		},
+		"crypto_service": gin.H{
+			"symbols_tracked": cryptoSymbolCount,
+		},
+		"property_service": gin.H{
+			"provider": propertyProvider,
+		},
+		"version": "1.0",
 	})
 }
