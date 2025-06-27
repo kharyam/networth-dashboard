@@ -165,19 +165,24 @@ func (s *Server) calculateTotalLiabilities() float64 {
 
 // PriceStatus represents the current status of price data
 type PriceStatus struct {
-	LastUpdated  string `json:"last_updated"`
-	StaleCount   int    `json:"stale_count"`
-	TotalCount   int    `json:"total_count"`
-	ProviderName string `json:"provider_name"`
+	LastUpdated       string `json:"last_updated"`
+	StaleCount        int    `json:"stale_count"`
+	TotalCount        int    `json:"total_count"`
+	ProviderName      string `json:"provider_name"`
+	CacheStale        bool   `json:"cache_stale"`
+	ForceRefreshNeeded bool   `json:"force_refresh_needed"`
+	LastCacheUpdate   string `json:"last_cache_update,omitempty"`
+	CacheAgeMinutes   int    `json:"cache_age_minutes"`
+	MarketOpen        bool   `json:"market_open"`
 }
 
 func (s *Server) getPriceStatus() PriceStatus {
 	priceService := s.priceService
+	marketService := s.marketService
+	now := time.Now()
 
-	// Count total symbols and stale prices
+	// Count total symbols and stale prices (null/zero prices)
 	var totalCount, staleCount int
-
-	// Count symbols with stale or missing prices (older than 1 hour or null)
 	staleQuery := `
 		SELECT COUNT(DISTINCT symbol) as stale_count,
 		       (SELECT COUNT(DISTINCT symbol) FROM (
@@ -200,11 +205,60 @@ func (s *Server) getPriceStatus() PriceStatus {
 		totalCount = 0
 	}
 
+	// Get most recent cache update time across all symbols
+	var lastCacheUpdate time.Time
+	cacheQuery := `
+		SELECT COALESCE(MAX(timestamp), '1970-01-01'::timestamp) as last_update
+		FROM stock_prices 
+		WHERE source = 'alphavantage'
+	`
+	
+	err = s.db.QueryRow(cacheQuery).Scan(&lastCacheUpdate)
+	if err != nil {
+		lastCacheUpdate = time.Time{} // Zero time if error
+	}
+
+	// Calculate cache age
+	var cacheAgeMinutes int
+	var lastCacheUpdateStr string
+	if !lastCacheUpdate.IsZero() {
+		cacheAge := now.Sub(lastCacheUpdate)
+		cacheAgeMinutes = int(cacheAge.Minutes())
+		lastCacheUpdateStr = lastCacheUpdate.Format(time.RFC3339)
+	}
+
+	// Determine if cache is stale and force refresh is needed using market service logic
+	isMarketOpen := marketService.IsMarketOpen()
+	cacheStale := false
+	forceRefreshNeeded := false
+	
+	if !lastCacheUpdate.IsZero() {
+		// Use the same logic as the market service for consistency
+		shouldRefresh := marketService.ShouldRefreshPricesWithForce(lastCacheUpdate, s.config.API.CacheRefreshInterval, false)
+		cacheStale = shouldRefresh
+		
+		// Force refresh needed if cache is significantly stale
+		if isMarketOpen && cacheAgeMinutes > 30 { // More than 30 min during market hours
+			forceRefreshNeeded = true
+		} else if !isMarketOpen && cacheAgeMinutes > 720 { // More than 12 hours when market closed
+			forceRefreshNeeded = true
+		}
+	} else {
+		// No cache data at all
+		cacheStale = true
+		forceRefreshNeeded = true
+	}
+
 	return PriceStatus{
-		LastUpdated:  time.Now().Format(time.RFC3339),
-		StaleCount:   staleCount,
-		TotalCount:   totalCount,
-		ProviderName: priceService.GetProviderName(),
+		LastUpdated:       now.Format(time.RFC3339),
+		StaleCount:        staleCount,
+		TotalCount:        totalCount,
+		ProviderName:      priceService.GetProviderName(),
+		CacheStale:        cacheStale,
+		ForceRefreshNeeded: forceRefreshNeeded,
+		LastCacheUpdate:   lastCacheUpdateStr,
+		CacheAgeMinutes:   cacheAgeMinutes,
+		MarketOpen:        isMarketOpen,
 	}
 }
 

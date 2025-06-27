@@ -215,14 +215,31 @@ export const manualEntriesApi = {
 
 // Price Management API
 export const pricesApi = {
+  // Smart refresh - respects cache and market hours logic
   refreshAll: (force: boolean = false): Promise<any> => {
     const url = `/prices/refresh${force ? '?force=true' : ''}`
-    console.log('🔄 [pricesApi.refreshAll] Making request:', { force, url, method: 'POST' })
+    const context = force ? 'FORCE_REFRESH' : 'SMART_REFRESH'
+    console.log(`🔄 [pricesApi.refreshAll] Making request:`, { context, force, url, method: 'POST' })
     return api.post(url).then(res => res.data)
   },
+
+  // Convenience method for auto-refresh (page loads, navigation)
+  autoRefresh: (): Promise<any> => {
+    console.log('🔄 [pricesApi.autoRefresh] Auto-refreshing with smart cache logic')
+    return pricesApi.refreshAll(false)
+  },
+
+  // Convenience method for user-initiated force refresh
+  forceRefresh: (): Promise<any> => {
+    console.log('🔄 [pricesApi.forceRefresh] Force refreshing - bypassing cache')
+    return pricesApi.refreshAll(true)
+  },
   
-  refreshSymbol: (symbol: string, force: boolean = false): Promise<any> =>
-    api.post(`/prices/refresh/${symbol}${force ? '?force=true' : ''}`).then(res => res.data),
+  refreshSymbol: (symbol: string, force: boolean = false): Promise<any> => {
+    const url = `/prices/refresh/${symbol}${force ? '?force=true' : ''}`
+    console.log('🔄 [pricesApi.refreshSymbol] Refreshing symbol:', { symbol, force, url })
+    return api.post(url).then(res => res.data)
+  },
   
   getStatus: (): Promise<any> =>
     api.get('/prices/status').then(res => res.data),

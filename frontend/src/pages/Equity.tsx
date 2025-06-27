@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, TrendingDown, DollarSign, Calendar, Award, RefreshCw, AlertCircle, Clock, AlertTriangle } from 'lucide-react'
-import { equityApi, pricesApi } from '@/services/api'
+import { TrendingUp, TrendingDown, DollarSign, Calendar, Award, AlertCircle } from 'lucide-react'
+import { equityApi } from '@/services/api'
 import type { EquityGrant } from '@/types'
 import MarketStatus from '@/components/MarketStatus'
+import PriceRefreshControls from '@/components/PriceRefreshControls'
 
 interface EquityGrantWithValue extends EquityGrant {
   current_price?: number
@@ -162,9 +163,7 @@ function EquityGrantCard({ grant }: { grant: EquityGrantWithValue }) {
 function Equity() {
   const [grants, setGrants] = useState<EquityGrantWithValue[]>([])
   const [loading, setLoading] = useState(true)
-  const [refreshingPrices, setRefreshingPrices] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [priceStatus, setPriceStatus] = useState<any>(null)
 
   const fetchEquityGrants = async () => {
     try {
@@ -208,32 +207,14 @@ function Equity() {
     }
   }
 
-  const fetchPriceStatus = async () => {
-    try {
-      const status = await pricesApi.getStatus()
-      setPriceStatus(status)
-    } catch (error) {
-      console.error('Failed to fetch price status:', error)
-    }
-  }
-
-  const handleRefreshPrices = async () => {
-    setRefreshingPrices(true)
-    try {
-      await pricesApi.refreshAll(true) // Force refresh to bypass cache and market hours
-      await fetchEquityGrants() // Refresh grants with new prices
-      await fetchPriceStatus() // Update price status
-    } catch (error) {
-      console.error('Failed to refresh prices:', error)
-    } finally {
-      setRefreshingPrices(false)
-    }
+  const handleRefreshComplete = async () => {
+    await fetchEquityGrants() // Refresh grants with new prices
   }
 
   useEffect(() => {
     const loadData = async () => {
       setLoading(true)
-      await Promise.all([fetchEquityGrants(), fetchPriceStatus()])
+      await fetchEquityGrants()
       setLoading(false)
     }
     
@@ -270,38 +251,7 @@ function Equity() {
         </div>
         
         {/* Price Status and Refresh */}
-        <div className="flex items-center space-x-4">
-          {priceStatus && (
-            <div className="flex items-center space-x-2 text-sm">
-              <div className="flex items-center space-x-1">
-                {priceStatus.stale_count > 0 ? (
-                  <AlertTriangle className="w-4 h-4 text-yellow-500" />
-                ) : (
-                  <Clock className="w-4 h-4 text-green-500" />
-                )}
-                <span className="text-gray-600 dark:text-gray-400">
-                  {priceStatus.stale_count > 0 
-                    ? `${priceStatus.stale_count} stale prices`
-                    : 'Prices up to date'
-                  }
-                </span>
-              </div>
-              <span className="text-gray-500 dark:text-gray-500">•</span>
-              <span className="text-gray-500 dark:text-gray-500 text-xs">
-                {priceStatus.provider_name}
-              </span>
-            </div>
-          )}
-          
-          <button
-            onClick={handleRefreshPrices}
-            disabled={refreshingPrices}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 ${refreshingPrices ? 'animate-spin' : ''}`} />
-            {refreshingPrices ? 'Refreshing...' : 'Refresh Prices'}
-          </button>
-        </div>
+        <PriceRefreshControls onRefreshComplete={handleRefreshComplete} />
       </div>
 
       {error && (
