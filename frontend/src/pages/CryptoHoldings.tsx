@@ -78,6 +78,215 @@ class ChartErrorBoundary extends Component<
   }
 }
 
+// Institution Card Component
+interface InstitutionCardProps {
+  institutionName: string
+  holdings: CryptoHolding[]
+  totalValue: number
+  pieData: Array<{ name: string; value: number; valueBTC: number }>
+  priceMode: PriceMode
+  formatCurrency: (amount: number, currency?: string) => string
+  formatCrypto: (amount: number, symbol: string) => string
+  convertToBTC: (usdAmount: number) => number
+  colors: string[]
+}
+
+function InstitutionCard({
+  institutionName,
+  holdings,
+  totalValue,
+  pieData,
+  priceMode,
+  formatCurrency,
+  formatCrypto,
+  convertToBTC,
+  colors
+}: InstitutionCardProps) {
+  const [institutionPriceMode, setInstitutionPriceMode] = useState<PriceMode>(priceMode)
+
+  // Update institution price mode when global price mode changes
+  useEffect(() => {
+    setInstitutionPriceMode(priceMode)
+  }, [priceMode])
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      {/* Institution Header */}
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-3">
+          {/* Mini Pie Chart next to title */}
+          <div className="flex-shrink-0">
+            {pieData.length > 0 && (
+              <ChartErrorBoundary>
+                <div style={{ width: '60px', height: '60px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={12}
+                        outerRadius={25}
+                        paddingAngle={1}
+                        dataKey="value"
+                      >
+                        {pieData.map((_, index) => (
+                          <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        formatter={(value: number, _name: string, props: any) => {
+                          if (institutionPriceMode === 'btc') {
+                            return [formatCurrency(props.payload.valueBTC, 'BTC'), 'Value']
+                          }
+                          return [formatCurrency(value), 'Value']
+                        }}
+                        labelFormatter={(label) => `${label}`}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </ChartErrorBoundary>
+            )}
+          </div>
+          
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              {institutionName}
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {holdings.length} holding{holdings.length !== 1 ? 's' : ''}
+            </p>
+          </div>
+        </div>
+        
+        {/* Institution Price Mode Toggle */}
+        <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+          <button
+            onClick={() => setInstitutionPriceMode('usd')}
+            className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+              institutionPriceMode === 'usd'
+                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            USD
+          </button>
+          <button
+            onClick={() => setInstitutionPriceMode('btc')}
+            className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+              institutionPriceMode === 'btc'
+                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            BTC
+          </button>
+        </div>
+      </div>
+
+      {/* Total Value */}
+      <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-md">
+        <div className="flex justify-between items-center">
+          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Value:</span>
+          <span className="text-lg font-bold text-gray-900 dark:text-white">
+            {institutionPriceMode === 'btc' 
+              ? formatCurrency(convertToBTC(totalValue), 'BTC')
+              : formatCurrency(totalValue)
+            }
+          </span>
+        </div>
+      </div>
+
+      {/* Holdings List - Full width */}
+      <div className="space-y-3">
+        {holdings.map((holding) => (
+          <div key={holding.id} className="border-l-4 border-blue-500 pl-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-medium text-gray-900 dark:text-white">
+                {holding.crypto_symbol}
+              </span>
+              {holding.price_change_24h && (
+                <span className={`text-xs font-medium ${
+                  holding.price_change_24h >= 0 ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {holding.price_change_24h >= 0 ? '+' : ''}{holding.price_change_24h.toFixed(2)}%
+                </span>
+              )}
+            </div>
+            
+            <div className="text-xs text-gray-600 dark:text-gray-400">
+              {formatCrypto(holding.balance_tokens, holding.crypto_symbol)}
+            </div>
+            
+            {holding.current_value_usd && (
+              <div className="text-xs font-medium text-gray-900 dark:text-white">
+                {institutionPriceMode === 'btc' 
+                  ? formatCurrency(convertToBTC(holding.current_value_usd), 'BTC')
+                  : formatCurrency(holding.current_value_usd)
+                }
+              </div>
+            )}
+            
+            {holding.wallet_address && (
+              <div className="text-xs text-gray-500 dark:text-gray-400 font-mono mt-1">
+                {holding.wallet_address.slice(0, 8)}...{holding.wallet_address.slice(-8)}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* External links for price charts */}
+      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+        <div className="flex flex-wrap gap-2">
+          {[...new Set(holdings.map(h => h.crypto_symbol))].map(symbol => {
+            // Convert symbol to CoinGecko coin ID format
+            const getCoinGeckoId = (symbol: string) => {
+              const symbolMap: Record<string, string> = {
+                'BTC': 'bitcoin',
+                'ETH': 'ethereum',
+                'ADA': 'cardano',
+                'DOT': 'polkadot',
+                'LINK': 'chainlink',
+                'UNI': 'uniswap',
+                'LTC': 'litecoin',
+                'BCH': 'bitcoin-cash',
+                'XRP': 'ripple',
+                'SOL': 'solana',
+                'AVAX': 'avalanche-2',
+                'MATIC': 'matic-network',
+                'ATOM': 'cosmos',
+                'ALGO': 'algorand',
+                'DOGE': 'dogecoin',
+                'SHIB': 'shiba-inu'
+              }
+              return symbolMap[symbol.toUpperCase()] || symbol.toLowerCase()
+            }
+            
+            const coinId = getCoinGeckoId(symbol)
+            
+            return (
+              <div key={symbol} className="flex items-center space-x-2 text-xs">
+                <span className="text-gray-600 dark:text-gray-400">{symbol}:</span>
+                <a
+                  href={`https://www.coingecko.com/en/coins/${coinId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center space-x-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                >
+                  <span>Chart</span>
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CryptoHoldings() {
   const [cryptoHoldings, setCryptoHoldings] = useState<CryptoHolding[]>([])
   const [loading, setLoading] = useState(true)
@@ -250,13 +459,25 @@ function CryptoHoldings() {
 
   // Data for charts
   const portfolioDistributionData = useMemo(() => {
-    const data = cryptoHoldings
+    // Aggregate by crypto symbol across all institutions
+    const symbolMap = new Map<string, { value: number, tokens: number }>()
+    
+    cryptoHoldings
       .filter(holding => holding.current_value_usd && holding.current_value_usd > 0)
-      .map(holding => ({
-        name: holding.crypto_symbol,
-        value: holding.current_value_usd!,
-        valueBTC: convertToBTC(holding.current_value_usd!),
-        tokens: holding.balance_tokens,
+      .forEach(holding => {
+        const existing = symbolMap.get(holding.crypto_symbol) || { value: 0, tokens: 0 }
+        symbolMap.set(holding.crypto_symbol, {
+          value: existing.value + holding.current_value_usd!,
+          tokens: existing.tokens + holding.balance_tokens
+        })
+      })
+
+    const data = Array.from(symbolMap.entries())
+      .map(([symbol, { value, tokens }]) => ({
+        name: symbol,
+        value,
+        valueBTC: convertToBTC(value),
+        tokens,
       }))
       .sort((a, b) => b.value - a.value)
     
@@ -657,7 +878,7 @@ function CryptoHoldings() {
 
       {/* Grid/List View */}
       {(viewMode === 'grid' || viewMode === 'list') && (
-        <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-4'}>
+        <div className={viewMode === 'grid' ? 'grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6' : 'space-y-4'}>
           {cryptoHoldings.length === 0 ? (
             <div className={`${viewMode === 'grid' ? 'col-span-full' : ''} text-center py-12`}>
               <Coins className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -672,97 +893,43 @@ function CryptoHoldings() {
               </button>
             </div>
           ) : (
-            cryptoHoldings.map((holding) => (
-              <div key={holding.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                      {holding.crypto_symbol}
-                    </h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{holding.institution_name}</p>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    {holding.price_change_24h && (
-                      <span className={`text-sm font-medium ${
-                        holding.price_change_24h >= 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {holding.price_change_24h >= 0 ? '+' : ''}{holding.price_change_24h.toFixed(2)}%
-                      </span>
-                    )}
-                  </div>
-                </div>
-                
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Balance:</span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">
-                      {formatCrypto(holding.balance_tokens, holding.crypto_symbol)}
-                    </span>
-                  </div>
-                  
-                  {holding.current_price_usd && (
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">
-                        Price ({priceMode.toUpperCase()}):
-                      </span>
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {priceMode === 'usd' 
-                          ? formatCurrency(holding.current_price_usd)
-                          : holding.current_price_btc 
-                            ? formatCurrency(holding.current_price_btc, 'BTC')
-                            : 'N/A'
-                        }
-                      </span>
-                    </div>
-                  )}
-                  
-                  {holding.current_value_usd && (
-                    <div className="flex justify-between border-t border-gray-200 dark:border-gray-700 pt-3">
-                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Current Value:</span>
-                      <span className="text-lg font-bold text-gray-900 dark:text-white">
-                        {formatCurrency(holding.current_value_usd)}
-                      </span>
-                    </div>
-                  )}
-                  
-                  {holding.wallet_address && (
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Wallet:</span>
-                      <span className="text-sm font-mono text-gray-900 dark:text-white">
-                        {holding.wallet_address}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* External links for price charts */}
-                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600 dark:text-gray-400">Price Charts:</span>
-                    <div className="flex space-x-3">
-                      <a
-                        href={`https://www.coingecko.com/en/coins/${holding.crypto_symbol.toLowerCase()}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center space-x-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                      >
-                        <span>USD</span>
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                      <a
-                        href={`https://www.coingecko.com/en/coins/${holding.crypto_symbol.toLowerCase()}/btc`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center space-x-1 text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300"
-                      >
-                        <span>BTC</span>
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))
+            // Group holdings by institution
+            Object.entries(
+              cryptoHoldings.reduce((acc, holding) => {
+                if (!acc[holding.institution_name]) {
+                  acc[holding.institution_name] = []
+                }
+                acc[holding.institution_name].push(holding)
+                return acc
+              }, {} as Record<string, CryptoHolding[]>)
+            ).map(([institutionName, holdings]) => {
+              // Calculate total value for this institution
+              const institutionTotalValue = holdings.reduce((sum, h) => sum + (h.current_value_usd || 0), 0)
+              
+              // Create mini pie chart data for this institution
+              const institutionPieData = holdings
+                .filter(h => h.current_value_usd && h.current_value_usd > 0)
+                .map(h => ({
+                  name: h.crypto_symbol,
+                  value: h.current_value_usd!,
+                  valueBTC: convertToBTC(h.current_value_usd!),
+                }))
+              
+              return (
+                <InstitutionCard
+                  key={institutionName}
+                  institutionName={institutionName}
+                  holdings={holdings}
+                  totalValue={institutionTotalValue}
+                  pieData={institutionPieData}
+                  priceMode={priceMode}
+                  formatCurrency={formatCurrency}
+                  formatCrypto={formatCrypto}
+                  convertToBTC={convertToBTC}
+                  colors={COLORS}
+                />
+              )
+            })
           )}
         </div>
       )}
