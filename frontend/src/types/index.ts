@@ -28,6 +28,7 @@ export interface StockHolding {
   cost_basis?: number
   current_price?: number
   market_value?: number
+  institution_name: string
   data_source: string
   last_price_update?: string
   last_manual_update?: string

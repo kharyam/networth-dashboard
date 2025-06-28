@@ -1,15 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { stocksApi, equityApi } from '../services/api'
 import { StockHolding, StockConsolidation, EquityGrant } from '../types'
 import MarketStatus from '../components/MarketStatus'
 import PriceRefreshControls from '../components/PriceRefreshControls'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts'
 
 function Stocks() {
   const [stockHoldings, setStockHoldings] = useState<StockHolding[]>([])
   const [consolidatedStocks, setConsolidatedStocks] = useState<StockConsolidation[]>([])
   const [equityGrants, setEquityGrants] = useState<EquityGrant[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'individual' | 'consolidated' | 'equity'>('consolidated')
+  const [activeTab, setActiveTab] = useState<'individual' | 'consolidated' | 'equity' | 'institutions'>('consolidated')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -72,6 +73,70 @@ function Stocks() {
     return stockValue + equityValue
   }
 
+  // Calculate institution-based data for pie chart
+  const institutionData = useMemo(() => {
+    const institutionMap = new Map<string, number>()
+    
+    // Add stock holdings by institution
+    stockHoldings.forEach(holding => {
+      const value = holding.market_value || 0
+      let institution = holding.institution_name
+      
+      // Handle missing/empty institution names
+      if (!institution || institution.trim() === '') {
+        institution = 'Unknown Institution'
+      }
+      
+      institutionMap.set(institution, (institutionMap.get(institution) || 0) + value)
+    })
+    
+    // Add vested equity as a separate "institution"
+    const equityValue = equityGrants.reduce((sum, grant) => {
+      const currentPrice = 100 // Placeholder - would come from market data
+      return sum + (grant.vested_shares * currentPrice)
+    }, 0)
+    
+    if (equityValue > 0) {
+      institutionMap.set('Vested Equity', equityValue)
+    }
+    
+    // Convert to array for chart
+    return Array.from(institutionMap.entries())
+      .map(([name, value]) => ({ name, value }))
+      .filter(item => item.value > 0)
+      .sort((a, b) => b.value - a.value)
+  }, [stockHoldings, equityGrants])
+
+  // Group stock holdings by institution
+  const stocksByInstitution = useMemo(() => {
+    const groups = new Map<string, StockHolding[]>()
+    
+    stockHoldings.forEach(holding => {
+      let institution = holding.institution_name
+      
+      // Handle missing/empty institution names
+      if (!institution || institution.trim() === '') {
+        institution = 'Unknown Institution'
+      }
+      
+      if (!groups.has(institution)) {
+        groups.set(institution, [])
+      }
+      groups.get(institution)!.push(holding)
+    })
+    
+    return Array.from(groups.entries())
+      .map(([institution, holdings]) => ({
+        institution,
+        holdings,
+        totalValue: holdings.reduce((sum, h) => sum + (h.market_value || 0), 0)
+      }))
+      .sort((a, b) => b.totalValue - a.totalValue)
+  }, [stockHoldings])
+
+  // Colors for pie chart
+  const COLORS = ['#2563eb', '#16a34a', '#dc2626', '#d97706', '#7c3aed', '#0891b2', '#be123c', '#059669']
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -113,26 +178,68 @@ function Stocks() {
       )}
 
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Portfolio Summary</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-            <div className="text-sm text-blue-600 dark:text-blue-400">Total Portfolio Value</div>
-            <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
-              {formatCurrency(getTotalValue())}
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Portfolio Summary</h3>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+              <div className="text-sm text-blue-600 dark:text-blue-400">Total Portfolio Value</div>
+              <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
+                {formatCurrency(getTotalValue())}
+              </div>
+            </div>
+            <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+              <div className="text-sm text-green-600 dark:text-green-400">Total Positions</div>
+              <div className="text-2xl font-bold text-green-900 dark:text-green-100">
+                {consolidatedStocks.length + equityGrants.length}
+              </div>
+            </div>
+            <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
+              <div className="text-sm text-purple-600 dark:text-purple-400">Institutions</div>
+              <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">
+                {institutionData.length}
+              </div>
             </div>
           </div>
-          <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
-            <div className="text-sm text-green-600 dark:text-green-400">Total Positions</div>
-            <div className="text-2xl font-bold text-green-900 dark:text-green-100">
-              {consolidatedStocks.length + equityGrants.length}
+
+          {/* Institution Pie Chart */}
+          {institutionData.length > 0 && (
+            <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg">
+              <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3">Holdings by Institution</h4>
+              <div style={{ width: '100%', height: '200px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={institutionData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={40}
+                      outerRadius={80}
+                      paddingAngle={2}
+                      dataKey="value"
+                    >
+                      {institutionData.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value: number) => [formatCurrency(value), 'Value']}
+                      labelStyle={{ color: '#374151' }}
+                      contentStyle={{
+                        backgroundColor: '#f9fafb',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '6px'
+                      }}
+                    />
+                    <Legend 
+                      wrapperStyle={{ fontSize: '12px' }}
+                      formatter={(value) => value}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          </div>
-          <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
-            <div className="text-sm text-purple-600 dark:text-purple-400">Data Sources</div>
-            <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">
-              {stockHoldings.length > 0 ? new Set(stockHoldings.map(s => s.data_source)).size : 0}
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -168,6 +275,16 @@ function Stocks() {
               }`}
             >
               Equity Compensation ({equityGrants.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('institutions')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'institutions'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+              }`}
+            >
+              By Institution ({stocksByInstitution.length})
             </button>
           </nav>
         </div>
@@ -237,6 +354,7 @@ function Stocks() {
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Symbol</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Company</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Institution</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Shares</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Cost Basis</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Current Price</th>
@@ -252,6 +370,9 @@ function Stocks() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
                             {stock.company_name || 'N/A'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                            {stock.institution_name || 'Unknown'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                             {formatNumber(stock.shares_owned)}
@@ -340,6 +461,76 @@ function Stocks() {
                     </tbody>
                   </table>
                 </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'institutions' && (
+            <div className="space-y-6">
+              {stocksByInstitution.length === 0 ? (
+                <p className="text-gray-600 dark:text-gray-400">No stock holdings found grouped by institution.</p>
+              ) : (
+                stocksByInstitution.map((group) => (
+                  <div key={group.institution} className="border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <div className="bg-gray-50 dark:bg-gray-900/50 px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
+                          {group.institution}
+                        </h4>
+                        <div className="text-right">
+                          <div className="text-sm text-gray-500 dark:text-gray-400">Total Value</div>
+                          <div className="text-lg font-bold text-gray-900 dark:text-white">
+                            {formatCurrency(group.totalValue)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-6">
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                          <thead className="bg-gray-50 dark:bg-gray-700">
+                            <tr>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Symbol</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Company</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Shares</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Cost Basis</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Current Price</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Market Value</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Last Updated</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                            {group.holdings.map((holding) => (
+                              <tr key={holding.id}>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                                  {holding.symbol}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                                  {holding.company_name || 'N/A'}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                  {formatNumber(holding.shares_owned)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                  {formatCurrency(holding.cost_basis)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                  {formatCurrency(holding.current_price)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                  {formatCurrency(holding.market_value)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+                                  {formatDate(holding.last_manual_update)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           )}

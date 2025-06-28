@@ -174,7 +174,7 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
   const getEntryType = (): string => {
     // Try to determine from schema name first
     if (schema.name) {
-      if (schema.name.toLowerCase().includes('computershare')) return 'computershare'
+      if (schema.name.toLowerCase().includes('stock')) return 'stock_holding'
       if (schema.name.toLowerCase().includes('morgan')) return 'morgan_stanley'
       if (schema.name.toLowerCase().includes('real')) return 'real_estate'
     }
@@ -184,7 +184,7 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
     const hasGrantType = schema.fields.some(f => f.name === 'grant_type')
     const hasPropertyType = schema.fields.some(f => f.name === 'property_type')
     
-    if (hasSymbol) return 'computershare'
+    if (hasSymbol) return 'stock_holding'
     if (hasGrantType) return 'morgan_stanley'
     if (hasPropertyType) return 'real_estate'
     

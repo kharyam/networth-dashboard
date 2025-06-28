@@ -90,7 +90,7 @@ class SmartDataService {
     const suggestions: SmartSuggestion[] = []
     const lowerValue = value.toLowerCase()
 
-    if (fieldName === 'symbol' && entryType === 'computershare') {
+    if (fieldName === 'symbol' && entryType === 'stock_holding') {
       // Stock symbol suggestions
       Array.from(this.stockSymbols)
         .filter(symbol => symbol.toLowerCase().includes(lowerValue))
@@ -147,10 +147,10 @@ class SmartDataService {
     const suggestions: string[] = []
 
     // Check for duplicates
-    if (entryType === 'computershare' && formData.symbol) {
+    if (entryType === 'stock_holding' && formData.symbol) {
       const symbol = formData.symbol.toUpperCase()
       const existingStock = this.existingEntries.find(entry => {
-        if (entry.entry_type !== 'computershare') return false
+        if (entry.entry_type !== 'stock_holding') return false
         try {
           const data = JSON.parse(entry.data_json)
           return data.symbol?.toUpperCase() === symbol
@@ -165,7 +165,7 @@ class SmartDataService {
     }
 
     // Mathematical validation for stocks
-    if (entryType === 'computershare') {
+    if (entryType === 'stock_holding') {
       const { shares_owned, current_price, cost_basis } = formData
       
       if (shares_owned && current_price) {

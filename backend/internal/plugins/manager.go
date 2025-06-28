@@ -28,10 +28,10 @@ func NewManager(db *sql.DB) *Manager {
 
 // registerBuiltinPlugins registers the built-in plugins
 func (m *Manager) registerBuiltinPlugins() {
-	// Register Computershare plugin
-	computersharePlugin := NewComputersharePlugin(m.db)
-	if err := m.registry.Register(computersharePlugin); err != nil {
-		fmt.Printf("Failed to register Computershare plugin: %v\n", err)
+	// Register Stock Holding plugin
+	stockHoldingPlugin := NewStockHoldingPlugin(m.db)
+	if err := m.registry.Register(stockHoldingPlugin); err != nil {
+		fmt.Printf("Failed to register Stock Holding plugin: %v\n", err)
 	}
 
 	// Register Morgan Stanley plugin
@@ -69,7 +69,7 @@ func (m *Manager) initializeDefaultConfigs() {
 		Settings: make(map[string]interface{}),
 	}
 
-	plugins := []string{"computershare", "morgan_stanley", "real_estate", "cash_holdings", "crypto_holdings"}
+	plugins := []string{"stock_holding", "morgan_stanley", "real_estate", "cash_holdings", "crypto_holdings"}
 	for _, pluginName := range plugins {
 		if err := m.registry.Configure(pluginName, defaultConfig); err != nil {
 			fmt.Printf("Failed to configure plugin %s: %v\n", pluginName, err)

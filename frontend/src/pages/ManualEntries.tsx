@@ -33,6 +33,7 @@ function ManualEntries() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<string>('')
+  const [isLoadingEntries, setIsLoadingEntries] = useState(false)
   const [selectedEntry, setSelectedEntry] = useState<ManualEntry | null>(null)
   const [viewModalOpen, setViewModalOpen] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
@@ -42,10 +43,6 @@ function ManualEntries() {
     loadPlugins()
     loadEntries()
   }, [])
-
-  useEffect(() => {
-    loadEntries()
-  }, [filter])
 
   // Add Entry functions
   const loadPlugins = async () => {
@@ -108,16 +105,70 @@ function ManualEntries() {
 
   // View Entries functions
   const loadEntries = async () => {
+    // Prevent multiple simultaneous calls
+    if (isLoadingEntries) {
+      console.log('Already loading entries, skipping...')
+      return
+    }
+    
     try {
+      setIsLoadingEntries(true)
       setLoading(true)
       setError(null)
+      
+      console.log('Loading entries from API...')
       const response = await manualEntriesApi.getAll()
-      setEntries(response)
+      console.log('Raw API response:', response)
+      console.log('Response is array:', Array.isArray(response))
+      console.log('Response length:', response?.length || 'no length')
+      
+      // Ensure response is an array
+      const entriesArray = Array.isArray(response) ? response : []
+      console.log('Entries array length:', entriesArray.length)
+      
+      // Log first few entries to see their structure
+      if (entriesArray.length > 0) {
+        console.log('Sample entries:', entriesArray.slice(0, 3))
+        console.log('All entry IDs and types:', entriesArray.map(e => ({ id: e.id, type: e.entry_type })))
+      }
+      
+      // Enhanced duplicate removal with more robust uniqueness check
+      const uniqueEntries = entriesArray.filter((entry, index, arr) => {
+        if (!entry || !entry.id || !entry.entry_type) {
+          console.warn('Invalid entry found:', entry)
+          return false
+        }
+        
+        // Create a unique key combining multiple fields for better deduplication
+        const entryKey = `${entry.entry_type}-${entry.id}-${entry.account_id}-${entry.created_at}`
+        const firstOccurrenceIndex = arr.findIndex(e => {
+          const otherKey = `${e.entry_type}-${e.id}-${e.account_id}-${e.created_at}`
+          return otherKey === entryKey
+        })
+        
+        const isUnique = firstOccurrenceIndex === index
+        if (!isUnique) {
+          console.log('Removing duplicate:', { entry, index, firstOccurrenceIndex })
+        }
+        
+        return isUnique
+      })
+      
+      console.log('Unique entries after filtering:', uniqueEntries.length)
+      console.log('Final unique entries:', uniqueEntries.map(e => ({ 
+        id: e.id, 
+        type: e.entry_type, 
+        account_id: e.account_id,
+        created_at: e.created_at 
+      })))
+      
+      setEntries(uniqueEntries)
     } catch (err) {
       console.error('Failed to load manual entries:', err)
       setError('Failed to load manual entries. Please try again.')
     } finally {
       setLoading(false)
+      setIsLoadingEntries(false)
     }
   }
 
@@ -143,8 +194,8 @@ function ManualEntries() {
     const data = parseDataJson(entry.data_json)
     
     switch (entry.entry_type) {
-      case 'computershare':
-        return `${data.symbol || 'Stock'} - ${data.shares_owned || 0} shares`
+      case 'stock_holding':
+        return `${data.symbol || 'Stock'} at ${data.institution_name || 'Institution'} - ${data.shares_owned || 0} shares`
       case 'morgan_stanley':
         return `${data.company_symbol || 'Equity'} ${data.grant_type || 'Grant'}`
       case 'real_estate':
@@ -162,7 +213,7 @@ function ManualEntries() {
     const data = parseDataJson(entry.data_json)
     
     switch (entry.entry_type) {
-      case 'computershare':
+      case 'stock_holding':
         if (data.shares_owned && data.current_price) {
           return `$${(data.shares_owned * data.current_price).toLocaleString()}`
         }
@@ -208,12 +259,57 @@ function ManualEntries() {
     }
   }
 
-  const filteredEntries = entries.filter(entry => {
-    if (!filter) return true
-    const data = parseDataJson(entry.data_json)
-    const searchString = `${entry.entry_type} ${JSON.stringify(data)}`.toLowerCase()
-    return searchString.includes(filter.toLowerCase())
-  })
+  // Get filtered entries - simple and reliable approach with debugging
+  const getFilteredEntries = () => {
+    console.log('getFilteredEntries called with filter:', filter)
+    console.log('Total entries to filter:', entries.length)
+    
+    if (!filter || filter.trim() === '') {
+      console.log('No filter applied, returning all entries:', entries.length)
+      return entries
+    }
+    
+    const filterLower = filter.toLowerCase().trim()
+    console.log('Applying filter:', filterLower)
+    
+    const filtered = entries.filter(entry => {
+      try {
+        const data = parseDataJson(entry.data_json)
+        
+        // Simple search in common fields
+        const searchableText = [
+          entry.entry_type || '',
+          data.institution_name || '',
+          data.symbol || '',
+          data.company_symbol || '',
+          data.crypto_symbol || '',
+          data.property_name || '',
+          data.account_name || '',
+          data.grant_type || ''
+        ].join(' ').toLowerCase()
+        
+        const matches = searchableText.includes(filterLower)
+        if (matches) {
+          console.log('Entry matches filter:', {
+            id: entry.id,
+            type: entry.entry_type,
+            searchableText,
+            filter: filterLower
+          })
+        }
+        
+        return matches
+      } catch (e) {
+        console.error('Error filtering entry:', entry, e)
+        return false
+      }
+    })
+    
+    console.log('Filtered results:', filtered.length, 'entries')
+    return filtered
+  }
+  
+  const filteredEntries = getFilteredEntries()
 
   const closeModals = () => {
     setViewModalOpen(false)
@@ -359,8 +455,11 @@ function ManualEntries() {
             </div>
           ) : (
             <div className="grid gap-4">
-              {filteredEntries.map((entry) => (
-                <div key={entry.id} className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+              {(() => {
+                console.log('Rendering entries - Total:', entries.length, 'Filtered:', filteredEntries.length)
+                console.log('Entries being rendered:', filteredEntries.map(e => ({ id: e.id, type: e.entry_type })))
+                return filteredEntries.map((entry) => (
+                <div key={`${entry.entry_type}-${entry.id}`} className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
@@ -414,7 +513,8 @@ function ManualEntries() {
                     </div>
                   </div>
                 </div>
-              ))}
+                ))
+              })()}
             </div>
           )}
         </div>

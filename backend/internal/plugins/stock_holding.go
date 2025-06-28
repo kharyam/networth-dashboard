@@ -10,64 +10,64 @@ import (
 	"networth-dashboard/internal/services"
 )
 
-// ComputersharePlugin handles manual entry for Computershare stock holdings
-type ComputersharePlugin struct {
+// StockHoldingPlugin handles manual entry for stock holdings from any institution
+type StockHoldingPlugin struct {
 	db          *sql.DB
 	name        string
 	accountID   int
 	lastUpdated time.Time
 }
 
-// NewComputersharePlugin creates a new Computershare plugin
-func NewComputersharePlugin(db *sql.DB) *ComputersharePlugin {
-	return &ComputersharePlugin{
+// NewStockHoldingPlugin creates a new generic stock holding plugin
+func NewStockHoldingPlugin(db *sql.DB) *StockHoldingPlugin {
+	return &StockHoldingPlugin{
 		db:   db,
-		name: "computershare",
+		name: "stock_holding",
 	}
 }
 
 // GetName returns the plugin name
-func (p *ComputersharePlugin) GetName() string {
+func (p *StockHoldingPlugin) GetName() string {
 	return p.name
 }
 
 // GetFriendlyName returns the user-friendly plugin name
-func (p *ComputersharePlugin) GetFriendlyName() string {
-	return "Computershare Stock"
+func (p *StockHoldingPlugin) GetFriendlyName() string {
+	return "Stock Holding"
 }
 
 // GetType returns the plugin type
-func (p *ComputersharePlugin) GetType() PluginType {
+func (p *StockHoldingPlugin) GetType() PluginType {
 	return PluginTypeManual
 }
 
 // GetDataSource returns the data source type
-func (p *ComputersharePlugin) GetDataSource() DataSourceType {
+func (p *StockHoldingPlugin) GetDataSource() DataSourceType {
 	return DataSourceManual
 }
 
 // GetVersion returns the plugin version
-func (p *ComputersharePlugin) GetVersion() string {
+func (p *StockHoldingPlugin) GetVersion() string {
 	return "1.0.0"
 }
 
 // GetDescription returns the plugin description
-func (p *ComputersharePlugin) GetDescription() string {
-	return "Manual entry for Computershare stock holdings with automatic price lookup"
+func (p *StockHoldingPlugin) GetDescription() string {
+	return "Manual entry for stock holdings from any institution with automatic price lookup"
 }
 
 // Initialize initializes the plugin with configuration
-func (p *ComputersharePlugin) Initialize(config PluginConfig) error {
+func (p *StockHoldingPlugin) Initialize(config PluginConfig) error {
 	// Get or create the plugin account
 	accountID, err := GetOrCreatePluginAccount(
 		p.db,
-		"Computershare Holdings",
+		"Stock Holdings",
 		"investment",
-		"Computershare",
+		"Manual Entry",
 		"manual",
 	)
 	if err != nil {
-		return fmt.Errorf("failed to initialize Computershare account: %w", err)
+		return fmt.Errorf("failed to initialize stock holdings account: %w", err)
 	}
 
 	p.accountID = accountID
@@ -75,17 +75,17 @@ func (p *ComputersharePlugin) Initialize(config PluginConfig) error {
 }
 
 // Authenticate performs authentication (not needed for manual entry)
-func (p *ComputersharePlugin) Authenticate() error {
+func (p *StockHoldingPlugin) Authenticate() error {
 	return nil
 }
 
 // Disconnect disconnects from the service (not needed for manual entry)
-func (p *ComputersharePlugin) Disconnect() error {
+func (p *StockHoldingPlugin) Disconnect() error {
 	return nil
 }
 
 // IsHealthy returns the health status of the plugin
-func (p *ComputersharePlugin) IsHealthy() PluginHealth {
+func (p *StockHoldingPlugin) IsHealthy() PluginHealth {
 	return PluginHealth{
 		Status:      PluginStatusActive,
 		LastChecked: time.Now(),
@@ -96,13 +96,13 @@ func (p *ComputersharePlugin) IsHealthy() PluginHealth {
 }
 
 // GetAccounts returns accounts for this plugin
-func (p *ComputersharePlugin) GetAccounts() ([]Account, error) {
+func (p *StockHoldingPlugin) GetAccounts() ([]Account, error) {
 	return []Account{
 		{
 			ID:          fmt.Sprintf("%d", p.accountID),
-			Name:        "Computershare Holdings",
+			Name:        "Stock Holdings",
 			Type:        "investment",
-			Institution: "Computershare",
+			Institution: "Manual Entry",
 			DataSource:  "manual",
 			LastUpdated: p.lastUpdated,
 		},
@@ -110,7 +110,7 @@ func (p *ComputersharePlugin) GetAccounts() ([]Account, error) {
 }
 
 // GetBalances returns balances for this plugin
-func (p *ComputersharePlugin) GetBalances() ([]Balance, error) {
+func (p *StockHoldingPlugin) GetBalances() ([]Balance, error) {
 	// Calculate total value from all stock holdings
 	query := `
 		SELECT COALESCE(SUM(shares_owned * current_price), 0) as total_value
@@ -136,24 +136,32 @@ func (p *ComputersharePlugin) GetBalances() ([]Balance, error) {
 }
 
 // GetTransactions returns transactions for this plugin
-func (p *ComputersharePlugin) GetTransactions(dateRange DateRange) ([]Transaction, error) {
+func (p *StockHoldingPlugin) GetTransactions(dateRange DateRange) ([]Transaction, error) {
 	// For stock holdings, we don't typically track individual transactions
 	// This could be enhanced to track buy/sell transactions if needed
 	return []Transaction{}, nil
 }
 
 // SupportsManualEntry returns true as this is a manual entry plugin
-func (p *ComputersharePlugin) SupportsManualEntry() bool {
+func (p *StockHoldingPlugin) SupportsManualEntry() bool {
 	return true
 }
 
 // GetManualEntrySchema returns the schema for manual data entry
-func (p *ComputersharePlugin) GetManualEntrySchema() ManualEntrySchema {
+func (p *StockHoldingPlugin) GetManualEntrySchema() ManualEntrySchema {
 	return ManualEntrySchema{
-		Name:        "Computershare Stock Holding",
-		Description: "Add or update stock holdings in your Computershare account",
+		Name:        "Stock Holding",
+		Description: "Add or update stock holdings from any institution",
 		Version:     "1.0.0",
 		Fields: []FieldSpec{
+			{
+				Name:        "institution_name",
+				Type:        "text",
+				Label:       "Institution Name",
+				Description: "The financial institution where you hold these shares (e.g., Computershare, Fidelity, Charles Schwab)",
+				Required:    true,
+				Placeholder: "Computershare",
+			},
 			{
 				Name:        "symbol",
 				Type:        "text",
@@ -221,7 +229,7 @@ func (p *ComputersharePlugin) GetManualEntrySchema() ManualEntrySchema {
 }
 
 // ValidateManualEntry validates manual entry data
-func (p *ComputersharePlugin) ValidateManualEntry(data map[string]interface{}) ValidationResult {
+func (p *StockHoldingPlugin) ValidateManualEntry(data map[string]interface{}) ValidationResult {
 	result := ValidationResult{Valid: true}
 
 	// Validate required fields
@@ -245,6 +253,19 @@ func (p *ComputersharePlugin) ValidateManualEntry(data map[string]interface{}) V
 			})
 		}
 		data["symbol"] = symbol
+	}
+
+	// Validate institution name
+	institutionName, ok := data["institution_name"].(string)
+	if !ok || strings.TrimSpace(institutionName) == "" {
+		result.Valid = false
+		result.Errors = append(result.Errors, ValidationError{
+			Field:   "institution_name",
+			Message: "Institution name is required",
+			Code:    "required",
+		})
+	} else {
+		data["institution_name"] = strings.TrimSpace(institutionName)
 	}
 
 	// Validate shares owned
@@ -328,8 +349,9 @@ func (p *ComputersharePlugin) ValidateManualEntry(data map[string]interface{}) V
 }
 
 // ProcessManualEntry processes the manual entry data
-func (p *ComputersharePlugin) ProcessManualEntry(data map[string]interface{}) error {
+func (p *StockHoldingPlugin) ProcessManualEntry(data map[string]interface{}) error {
 	symbol := data["symbol"].(string)
+	institutionName := data["institution_name"].(string)
 	shares := data["shares_owned"].(float64)
 
 	var costBasis float64
@@ -351,17 +373,31 @@ func (p *ComputersharePlugin) ProcessManualEntry(data map[string]interface{}) er
 		currentPrice = 0
 	}
 
+	// Create unique account for this stock holding
+	uniqueIdentifier := fmt.Sprintf("%s at %s", symbol, institutionName)
+	uniqueAccountID, err := GetOrCreateUniquePluginAccount(
+		p.db,
+		"Stock Holdings",
+		uniqueIdentifier,
+		"stock",
+		institutionName,
+		"manual",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create unique account for stock holding: %w", err)
+	}
+
 	// Insert stock holding
 	query := `
 		INSERT INTO stock_holdings (
 			account_id, symbol, company_name, shares_owned, cost_basis, 
-			current_price, data_source
-		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+			current_price, institution_name, data_source
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
 	_, execErr := p.db.Exec(query,
-		p.accountID, symbol, companyName, shares, costBasis,
-		currentPrice, "computershare",
+		uniqueAccountID, symbol, companyName, shares, costBasis,
+		currentPrice, institutionName, "stock_holding",
 	)
 
 	if execErr != nil {
@@ -373,7 +409,7 @@ func (p *ComputersharePlugin) ProcessManualEntry(data map[string]interface{}) er
 }
 
 // UpdateManualEntry updates an existing manual entry
-func (p *ComputersharePlugin) UpdateManualEntry(id int, data map[string]interface{}) error {
+func (p *StockHoldingPlugin) UpdateManualEntry(id int, data map[string]interface{}) error {
 	// Validate the data first
 	validation := p.ValidateManualEntry(data)
 	if !validation.Valid {
@@ -381,6 +417,7 @@ func (p *ComputersharePlugin) UpdateManualEntry(id int, data map[string]interfac
 	}
 
 	symbol := data["symbol"].(string)
+	institutionName := data["institution_name"].(string)
 	shares := data["shares_owned"].(float64)
 
 	var costBasis float64
@@ -410,13 +447,13 @@ func (p *ComputersharePlugin) UpdateManualEntry(id int, data map[string]interfac
 	query := `
 		UPDATE stock_holdings 
 		SET symbol = $1, company_name = $2, shares_owned = $3, cost_basis = $4, 
-		    current_price = $5, last_updated = $6
-		WHERE id = $7 AND data_source = 'computershare'
+		    current_price = $5, institution_name = $6, last_updated = $7
+		WHERE id = $8 AND data_source = 'stock_holding'
 	`
 
 	result, err := p.db.Exec(query,
 		symbol, companyName, shares, costBasis,
-		currentPrice, time.Now(), id,
+		currentPrice, institutionName, time.Now(), id,
 	)
 
 	if err != nil {
@@ -437,7 +474,7 @@ func (p *ComputersharePlugin) UpdateManualEntry(id int, data map[string]interfac
 }
 
 // RefreshData refreshes data for this plugin
-func (p *ComputersharePlugin) RefreshData() error {
+func (p *StockHoldingPlugin) RefreshData() error {
 	// For manual entry, we could refresh market prices
 	// This is a placeholder for market data integration
 	p.lastUpdated = time.Now()
@@ -445,6 +482,6 @@ func (p *ComputersharePlugin) RefreshData() error {
 }
 
 // GetLastUpdate returns the last update time
-func (p *ComputersharePlugin) GetLastUpdate() time.Time {
+func (p *StockHoldingPlugin) GetLastUpdate() time.Time {
 	return p.lastUpdated
 }

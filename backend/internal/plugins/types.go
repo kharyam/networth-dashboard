@@ -214,3 +214,11 @@ func GetOrCreatePluginAccount(db *sql.DB, accountName, accountType, institution,
 
 	return accountID, nil
 }
+
+// Helper function to get or create a unique account for each manual entry
+func GetOrCreateUniquePluginAccount(db *sql.DB, baseAccountName, uniqueIdentifier, accountType, institution, dataSourceType string) (int, error) {
+	// Create unique account name by combining base name with identifier
+	accountName := fmt.Sprintf("%s - %s", baseAccountName, uniqueIdentifier)
+	
+	return GetOrCreatePluginAccount(db, accountName, accountType, institution, dataSourceType)
+}
