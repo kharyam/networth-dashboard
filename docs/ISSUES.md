@@ -17,16 +17,32 @@ DONE on the crypto holdings portfolio distribution pie chart, if a token is held
 
 DONE On the Crypto holdings page, instead of having a card for each holding, have a card for each unique institution.  On each card, show the cryptos for that organization with the same info as before and ability to toggle between usd and btc.  The toggle should affect all balances on the card at once, so only one togle on the card. A small pie chart on each card as well that shows the amount of each crypto type in the institution.
 
-Revisit Manual Stock
-Right now the manual entry for stock is from Computer Share.  In reality, this type of manual entry should support any institution.  Accomplish this by renaming this type of entry with a generic name like "Stock Holding" and add a field with the institution name.   The stock page should have a pie chart that shows stock holdings (in dollars) by institution.  The vested equity stock holdings should be a slice in that pie chart as well. Do a deep investigation of the code to see all places that need to be updated for this change.
+DONE IN PROGRESS Revisit Manual Stock
+Right now the manual entry for stock is from Computer Share.  In reality, this type of manual entry should support any institution.  Accomplish this by renaming this type of entry with a generic name like "Stock Holding" and add a field with the institution name.   The stock page should have a pie chart that shows stock holdings (in dollars) by institution.  The vested equity stock holdings should be a slice in that pie chart as well. Do a deep investigation of the code to see all places that need to be updat
+
+
+DONE When editing morgan stanley on manual entries, I can't set vested shares to 0.  Also I get an error if I do set it to a value greater than 0, and it does not save. 
+
+
+
+IN PROGRESS When I type something in the filter under manual entries, the list does not filter down as it should, it shows all entries even though it indicates fewer entries match (e.g., "5 of 14 entries") 
+
+- The asset allocation pie chart on the dashboard is showing 0 for Equity comp.  Is the equity comp being added to direct stocks instead?
+
+- When I force refresh the stock price, it is not updating and looks like it is still pulling price from the cache.
+
+- These tables are currently empty - are there any plans for these or should they be deleted? manual_entries manual_entries_id_seq manual_entry_log manual_entry_log_id_seq 
+
+- Other Assets
+* Add another page for "other assets" for things like cars, jewelry, etc. where you can have fields for estimated value and amount owed and purchase price? Is that the point of the miscellaneous_assets table? The type of asset should be in a dropdown.  There should be a way to update the possible asset types (categories) of assets, store this in a database table. Can you create a simple / elegant way such that each asset type could potentially have custom features?  For example, for a "Car", we might want to allow additional fields like make, model, mileage and condition so we can reach out to an API to get estimated value.  This extended ability should be an option for all asset types, so we need a good, maintainable framework to enable this extensibility. Each asset should have the option of having its own visualization page to support its custom features - again, this should be implemented in a modular / pluggable way for simplified extensibility. Make sure the swagger documentation is updated for the newly added API endpoints.
 
 - Look at the quick actions on the dashboard that are not implemented. Implement the ones that you can now. Make sure these still make sense.  For future ones, create a popup to let the user know the feature isn't implemented yet.
 
-- Other Assets
-* Another page for "other assets" for things like cars, jewelry, etc. where you can have fields for estimated value and amount owed and purchase price? Is that the point of the miscellaneous_assets table? The type of asset should be in a dropdown.  There should be a way to update the possible asset types (categories) of assets, store this in a database table. Can you create a simple / elegant way such that each asset type could potentially have custom features?  For example, for a "Car", we might want to allow additional fields like make, model, mileage and condition so we can reach out to an API to get estimated value.  This extended ability should be an option for all asset types, so we need a good, maintainable framework to enable this extensibility. Each asset should have the option of having its own visualization page to support its custom features - again, this should be implemented in a modular / pluggable way for simplified extensibility. Make sure the swagger documentation is updated for the newly added API endpoints.
-
 - Refactor exercise
 * Analyze the entire application, identify areas that could be made more efficient and maintainable.  Check if there is redundant code that can be consolidated.  Make sure things are modular and can be understood by a developer or AI taking ownership of the project.  Make a list of recommended updates and changes to address any of these shortcomings.  The preference should be to lessen the overall amount of code and make it more readable and understandable overall - more maintainable and extendable to allow new features to be easily added.
+
+- Unit Tests
+...
 
 - Helm Chart
 Create a helm chart that can deploy the application (frontend, backend and postgres database) to OpenShift.  It should create ingress objects for exposing the frontend and backend. The frontend should be configured to use the hostname of the backend ingress for its api calls.  Implement any CORS configuration that may be needed so that the frontend and backend can talk properly. Don't create any openshift specific features, it should work in kubernetes as well. Create the appropriate configuration items in the values.yml, including the items from the env file as parameters.  Sensitive things, like API keys, should be added to a secret. There should be a separate values file for secret information, document that this should never be added to version control. Define the helm chart under a "helm" directory, organize it as you see fit, make it highly maintainable and easy to understand. If you can use an existing helm chart as a dependency to deploy postgres, do that. Make sure a persistent volume claim is created for postgres storage, and we have the ability to specify storage size in the values (with a reasonable default in values.yaml)

@@ -454,6 +454,23 @@ func (p *CryptoHoldingsPlugin) ProcessManualEntry(data map[string]interface{}) e
 		return fmt.Errorf("validation failed: %v", validation.Errors)
 	}
 
+	// Create unique account for this crypto holding
+	institutionName := validation.Data["institution_name"].(string)
+	cryptoSymbol := validation.Data["crypto_symbol"].(string)
+	uniqueIdentifier := fmt.Sprintf("%s %s", institutionName, cryptoSymbol)
+	
+	uniqueAccountID, err := GetOrCreateUniquePluginAccount(
+		p.db,
+		"Crypto Holdings",
+		uniqueIdentifier,
+		"crypto",
+		institutionName,
+		"manual",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create unique account for crypto holding: %w", err)
+	}
+
 	// Insert the crypto holding record
 	query := `
 		INSERT INTO crypto_holdings (
@@ -464,9 +481,9 @@ func (p *CryptoHoldingsPlugin) ProcessManualEntry(data map[string]interface{}) e
 	`
 
 	now := time.Now()
-	_, err := p.db.Exec(
+	_, err = p.db.Exec(
 		query,
-		p.accountID,
+		uniqueAccountID,
 		validation.Data["institution_name"],
 		validation.Data["crypto_symbol"],
 		validation.Data["balance_tokens"],

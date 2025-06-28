@@ -421,10 +421,10 @@ func (s *Server) getAccountBalances(c *gin.Context) {
 func (s *Server) getStockHoldings(c *gin.Context) {
 	query := `
 		SELECT h.id, h.account_id, h.symbol, h.company_name, h.shares_owned, 
-		       h.cost_basis, h.current_price, h.data_source, h.created_at,
+		       h.cost_basis, h.current_price, h.institution_name, h.data_source, h.created_at,
 		       COALESCE(h.shares_owned * h.current_price, 0) as market_value
 		FROM stock_holdings h
-		ORDER BY h.symbol
+		ORDER BY h.institution_name, h.symbol
 	`
 
 	rows, err := s.db.Query(query)
@@ -439,22 +439,23 @@ func (s *Server) getStockHoldings(c *gin.Context) {
 	holdings := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var holding struct {
-			ID           int      `json:"id"`
-			AccountID    int      `json:"account_id"`
-			Symbol       string   `json:"symbol"`
-			CompanyName  *string  `json:"company_name"`
-			SharesOwned  float64  `json:"shares_owned"`
-			CostBasis    *float64 `json:"cost_basis"`
-			CurrentPrice *float64 `json:"current_price"`
-			MarketValue  float64  `json:"market_value"`
-			DataSource   string   `json:"data_source"`
-			CreatedAt    string   `json:"created_at"`
+			ID              int      `json:"id"`
+			AccountID       int      `json:"account_id"`
+			Symbol          string   `json:"symbol"`
+			CompanyName     *string  `json:"company_name"`
+			SharesOwned     float64  `json:"shares_owned"`
+			CostBasis       *float64 `json:"cost_basis"`
+			CurrentPrice    *float64 `json:"current_price"`
+			InstitutionName string   `json:"institution_name"`
+			MarketValue     float64  `json:"market_value"`
+			DataSource      string   `json:"data_source"`
+			CreatedAt       string   `json:"created_at"`
 		}
 
 		err := rows.Scan(
 			&holding.ID, &holding.AccountID, &holding.Symbol, &holding.CompanyName,
 			&holding.SharesOwned, &holding.CostBasis, &holding.CurrentPrice,
-			&holding.DataSource, &holding.CreatedAt, &holding.MarketValue,
+			&holding.InstitutionName, &holding.DataSource, &holding.CreatedAt, &holding.MarketValue,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -464,16 +465,17 @@ func (s *Server) getStockHoldings(c *gin.Context) {
 		}
 
 		holdingMap := map[string]interface{}{
-			"id":            holding.ID,
-			"account_id":    holding.AccountID,
-			"symbol":        holding.Symbol,
-			"company_name":  holding.CompanyName,
-			"shares_owned":  holding.SharesOwned,
-			"cost_basis":    holding.CostBasis,
-			"current_price": holding.CurrentPrice,
-			"market_value":  holding.MarketValue,
-			"data_source":   holding.DataSource,
-			"created_at":    holding.CreatedAt,
+			"id":               holding.ID,
+			"account_id":       holding.AccountID,
+			"symbol":           holding.Symbol,
+			"company_name":     holding.CompanyName,
+			"shares_owned":     holding.SharesOwned,
+			"cost_basis":       holding.CostBasis,
+			"current_price":    holding.CurrentPrice,
+			"institution_name": holding.InstitutionName,
+			"market_value":     holding.MarketValue,
+			"data_source":      holding.DataSource,
+			"created_at":       holding.CreatedAt,
 		}
 		holdings = append(holdings, holdingMap)
 	}
@@ -1395,7 +1397,7 @@ func (s *Server) getPluginHealth(c *gin.Context) {
 // @Tags manual-entries
 // @Accept json
 // @Produce json
-// @Param type query string false "Filter by entry type (computershare, morgan_stanley, real_estate, etc.)"
+// @Param type query string false "Filter by entry type (stock_holding, morgan_stanley, real_estate, etc.)"
 // @Success 200 {object} map[string]interface{} "List of manual entries with metadata"
 // @Failure 500 {object} map[string]interface{} "Internal server error"
 // @Router /manual-entries [get]
@@ -1417,6 +1419,23 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		FROM stock_holdings sh
 		LEFT JOIN accounts a ON sh.account_id = a.id
 		WHERE sh.data_source = 'computershare'
+		
+		UNION ALL
+		
+		SELECT 'stock_holding' as entry_type, 
+		       sh.id, sh.account_id, sh.created_at, sh.created_at as updated_at,
+		       json_build_object(
+		           'symbol', sh.symbol,
+		           'company_name', sh.company_name,
+		           'shares_owned', sh.shares_owned,
+		           'cost_basis', sh.cost_basis,
+		           'current_price', sh.current_price,
+		           'institution_name', sh.institution_name
+		       ) as data_json,
+		       a.account_name, a.institution
+		FROM stock_holdings sh
+		LEFT JOIN accounts a ON sh.account_id = a.id
+		WHERE sh.data_source IN ('manual', 'stock_holding') OR (sh.data_source IS NULL AND sh.created_at IS NOT NULL)
 		
 		UNION ALL
 		
@@ -1518,8 +1537,30 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		query += " ORDER BY created_at DESC"
 	}
 
+	// Debug: Check what's actually in the individual tables
+	var stockCount, equityCount, realEstateCount, cashCount, cryptoCount int
+	s.db.QueryRow("SELECT COUNT(*) FROM stock_holdings").Scan(&stockCount)
+	s.db.QueryRow("SELECT COUNT(*) FROM equity_grants").Scan(&equityCount)
+	s.db.QueryRow("SELECT COUNT(*) FROM real_estate_properties").Scan(&realEstateCount)
+	s.db.QueryRow("SELECT COUNT(*) FROM cash_holdings").Scan(&cashCount)
+	s.db.QueryRow("SELECT COUNT(*) FROM crypto_holdings").Scan(&cryptoCount)
+	fmt.Printf("DEBUG: Table counts - stock: %d, equity: %d, real_estate: %d, cash: %d, crypto: %d\n", 
+		stockCount, equityCount, realEstateCount, cashCount, cryptoCount)
+	
+	// Debug: Check accounts that exist
+	accountRows, _ := s.db.Query("SELECT id, account_name, institution FROM accounts ORDER BY created_at DESC LIMIT 10")
+	fmt.Printf("DEBUG: Recent accounts:\n")
+	for accountRows.Next() {
+		var id int
+		var name, institution string
+		accountRows.Scan(&id, &name, &institution)
+		fmt.Printf("  Account %d: %s at %s\n", id, name, institution)
+	}
+	accountRows.Close()
+
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
+		fmt.Printf("Query Error: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to fetch manual entries",
 		})
@@ -1545,11 +1586,15 @@ func (s *Server) getManualEntries(c *gin.Context) {
 			&entry.DataJSON, &entry.AccountName, &entry.Institution,
 		)
 		if err != nil {
+			fmt.Printf("Scan Error: %v\n", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": "Failed to scan manual entry",
 			})
 			return
 		}
+
+		fmt.Printf("DEBUG: Found entry - Type: %s, ID: %d, AccountID: %d, AccountName: %v\n", 
+			entry.EntryType, entry.ID, entry.AccountID, entry.AccountName)
 
 		entryMap := map[string]interface{}{
 			"id":           entry.ID,
@@ -1563,6 +1608,8 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		}
 		entries = append(entries, entryMap)
 	}
+
+	fmt.Printf("DEBUG: Total entries found: %d\n", len(entries))
 
 	c.JSON(http.StatusOK, gin.H{
 		"manual_entries": entries,
@@ -1659,7 +1706,7 @@ func (s *Server) updateManualEntry(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path int true "Manual Entry ID"
-// @Param type query string true "Entry type (computershare, morgan_stanley, real_estate, cash_holdings, crypto_holdings)"
+// @Param type query string true "Entry type (stock_holding, morgan_stanley, real_estate, cash_holdings, crypto_holdings)"
 // @Success 200 {object} map[string]interface{} "Manual entry deleted successfully"
 // @Failure 400 {object} map[string]interface{} "Bad request or invalid entry type"
 // @Failure 404 {object} map[string]interface{} "Manual entry not found"
@@ -1684,8 +1731,8 @@ func (s *Server) deleteManualEntry(c *gin.Context) {
 
 	var query string
 	switch entryType {
-	case "computershare":
-		query = "DELETE FROM stock_holdings WHERE id = $1 AND data_source = 'computershare'"
+	case "stock_holding":
+		query = "DELETE FROM stock_holdings WHERE id = $1 AND data_source = 'stock_holding'"
 	case "morgan_stanley":
 		query = "DELETE FROM equity_grants WHERE id = $1"
 	case "real_estate":

@@ -246,12 +246,56 @@ const (
 		CREATE INDEX IF NOT EXISTS idx_real_estate_coordinates ON real_estate_properties(latitude, longitude);
 	`
 
+	// Schema update to add institution_name to stock_holdings
+	updateStockHoldingsInstitution = `
+		-- Add institution_name field to stock_holdings table
+		ALTER TABLE stock_holdings ADD COLUMN IF NOT EXISTS institution_name VARCHAR(100);
+		
+		-- Update existing records only if they have NULL institution_name
+		UPDATE stock_holdings SET institution_name = 'Computer Share' 
+		WHERE institution_name IS NULL;
+		
+		-- Update data_source from old 'computershare' to new 'stock_holding'
+		UPDATE stock_holdings SET data_source = 'stock_holding'
+		WHERE data_source = 'computershare';
+		
+		-- Make institution_name NOT NULL only if column exists and has no nulls
+		DO $$
+		BEGIN
+		    IF EXISTS (
+		        SELECT 1 FROM information_schema.columns 
+		        WHERE table_name='stock_holdings' AND column_name='institution_name'
+		    ) AND NOT EXISTS (
+		        SELECT 1 FROM stock_holdings WHERE institution_name IS NULL
+		    ) THEN
+		        ALTER TABLE stock_holdings ALTER COLUMN institution_name SET NOT NULL;
+		    END IF;
+		END $$;
+		
+		-- Drop the old unique constraint if it exists
+		ALTER TABLE stock_holdings DROP CONSTRAINT IF EXISTS stock_holdings_account_id_symbol_key;
+		
+		-- Add new unique constraint only if it doesn't exist
+		DO $$
+		BEGIN
+		    IF NOT EXISTS (
+		        SELECT 1 FROM information_schema.table_constraints 
+		        WHERE constraint_name = 'stock_holdings_account_id_symbol_institution_key'
+		        AND table_name = 'stock_holdings'
+		    ) THEN
+		        ALTER TABLE stock_holdings ADD CONSTRAINT stock_holdings_account_id_symbol_institution_key 
+		        UNIQUE(account_id, symbol, institution_name);
+		    END IF;
+		END $$;
+	`
+
 	createIndices = `
 		CREATE INDEX IF NOT EXISTS idx_accounts_data_source ON accounts(data_source_id);
 		CREATE INDEX IF NOT EXISTS idx_account_balances_account ON account_balances(account_id);
 		CREATE INDEX IF NOT EXISTS idx_account_balances_timestamp ON account_balances(timestamp);
 		CREATE INDEX IF NOT EXISTS idx_stock_holdings_symbol ON stock_holdings(symbol);
 		CREATE INDEX IF NOT EXISTS idx_stock_holdings_account ON stock_holdings(account_id);
+		CREATE INDEX IF NOT EXISTS idx_stock_holdings_institution ON stock_holdings(institution_name);
 		CREATE INDEX IF NOT EXISTS idx_stock_prices_symbol ON stock_prices(symbol);
 		CREATE INDEX IF NOT EXISTS idx_equity_grants_account ON equity_grants(account_id);
 		CREATE INDEX IF NOT EXISTS idx_equity_grants_symbol ON equity_grants(company_symbol);

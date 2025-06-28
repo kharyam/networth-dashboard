@@ -192,8 +192,8 @@ func (p *MorganStanleyPlugin) GetManualEntrySchema() ManualEntrySchema {
 				Name:        "vested_shares",
 				Type:        "number",
 				Label:       "Vested Shares",
-				Description: "Number of shares currently vested",
-				Required:    true,
+				Description: "Number of shares currently vested (leave blank for 0)",
+				Required:    false,
 				Validation: FieldValidation{
 					Min: func(f float64) *float64 { return &f }(0),
 				},
@@ -299,7 +299,7 @@ func (p *MorganStanleyPlugin) ValidateManualEntry(data map[string]interface{}) V
 	}
 
 	// Validate vested shares
-	vestedShares, err := p.validateNumberField(data, "vested_shares", true)
+	vestedShares, err := p.validateNumberField(data, "vested_shares", false)
 	if err != nil {
 		result.Valid = false
 		result.Errors = append(result.Errors, *err)
@@ -412,7 +412,7 @@ func (p *MorganStanleyPlugin) ProcessManualEntry(data map[string]interface{}) er
 		return fmt.Errorf("total_shares validation failed: %s", err.Message)
 	}
 
-	vestedShares, err := p.validateNumberField(data, "vested_shares", true)
+	vestedShares, err := p.validateNumberField(data, "vested_shares", false)
 	if err != nil {
 		return fmt.Errorf("vested_shares validation failed: %s", err.Message)
 	}
@@ -441,6 +441,20 @@ func (p *MorganStanleyPlugin) ProcessManualEntry(data map[string]interface{}) er
 		currentPrice = 0
 	}
 
+	// Create unique account for this grant
+	uniqueIdentifier := fmt.Sprintf("%s %s", symbol, grantType)
+	uniqueAccountID, accountErr := GetOrCreateUniquePluginAccount(
+		p.db,
+		"Morgan Stanley",
+		uniqueIdentifier,
+		"equity",
+		"Morgan Stanley",
+		"manual",
+	)
+	if accountErr != nil {
+		return fmt.Errorf("failed to create unique account for equity grant: %w", accountErr)
+	}
+
 	// Insert equity grant with current price
 	query := `
 		INSERT INTO equity_grants (
@@ -451,7 +465,7 @@ func (p *MorganStanleyPlugin) ProcessManualEntry(data map[string]interface{}) er
 
 	unvestedShares := totalShares - vestedShares
 	_, execErr := p.db.Exec(query,
-		p.accountID, grantType, symbol, totalShares, vestedShares,
+		uniqueAccountID, grantType, symbol, totalShares, vestedShares,
 		unvestedShares, strikePrice, currentPrice, grantDate, vestStartDate,
 	)
 
@@ -471,26 +485,51 @@ func (p *MorganStanleyPlugin) UpdateManualEntry(id int, data map[string]interfac
 		return fmt.Errorf("validation failed: %v", validation.Errors)
 	}
 
-	grantType := data["grant_type"].(string)
-	companySymbol := data["company_symbol"].(string)
-	totalShares := data["total_shares"].(float64)
-	vestedShares := data["vested_shares"].(float64)
-	unvestedShares := data["unvested_shares"].(float64)
-
-	var strikePrice float64
-	if sp, exists := data["strike_price"]; exists && sp != nil {
-		strikePrice = sp.(float64)
+	// Extract and validate all fields using helper methods with proper error handling
+	grantType, exists := data["grant_type"].(string)
+	if !exists || grantType == "" {
+		return fmt.Errorf("grant_type is required and must be a string")
 	}
 
-	grantDate := data["grant_date"].(time.Time)
-	vestStartDate := data["vest_start_date"].(time.Time)
+	companySymbol, exists := data["company_symbol"].(string)
+	if !exists || companySymbol == "" {
+		return fmt.Errorf("company_symbol is required and must be a string")
+	}
+
+	totalShares, validationErr := p.validateNumberField(data, "total_shares", true)
+	if validationErr != nil {
+		return fmt.Errorf("total_shares validation failed: %s", validationErr.Message)
+	}
+
+	vestedShares, validationErr := p.validateNumberField(data, "vested_shares", false)
+	if validationErr != nil {
+		return fmt.Errorf("vested_shares validation failed: %s", validationErr.Message)
+	}
+
+	strikePrice, validationErr := p.validateNumberField(data, "strike_price", false)
+	if validationErr != nil {
+		return fmt.Errorf("strike_price validation failed: %s", validationErr.Message)
+	}
+
+	grantDate, validationErr := p.validateDateField(data, "grant_date", true)
+	if validationErr != nil {
+		return fmt.Errorf("grant_date validation failed: %s", validationErr.Message)
+	}
+
+	vestStartDate, validationErr := p.validateDateField(data, "vest_start_date", true)
+	if validationErr != nil {
+		return fmt.Errorf("vest_start_date validation failed: %s", validationErr.Message)
+	}
+
+	// Calculate unvested shares
+	unvestedShares := totalShares - vestedShares
 
 	// Get current market price from price service
 	priceService := services.NewPriceService()
-	currentPrice, err := priceService.GetCurrentPrice(companySymbol)
-	if err != nil {
+	currentPrice, priceErr := priceService.GetCurrentPrice(companySymbol)
+	if priceErr != nil {
 		// Log error but continue with existing price
-		fmt.Printf("Warning: Could not fetch price for %s: %v\n", companySymbol, err)
+		fmt.Printf("Warning: Could not fetch price for %s: %v\n", companySymbol, priceErr)
 		// Get existing price from database
 		var existingPrice float64
 		priceQuery := "SELECT COALESCE(current_price, 0) FROM equity_grants WHERE id = $1"

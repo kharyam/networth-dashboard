@@ -543,6 +543,23 @@ func (p *CashHoldingsPlugin) ProcessManualEntry(data map[string]interface{}) err
 		return fmt.Errorf("validation failed: %v", validation.Errors)
 	}
 
+	// Create unique account for this cash holding
+	institutionName := validation.Data["institution_name"].(string)
+	accountName := validation.Data["account_name"].(string)
+	uniqueIdentifier := fmt.Sprintf("%s %s", institutionName, accountName)
+	
+	uniqueAccountID, err := GetOrCreateUniquePluginAccount(
+		p.db,
+		"Cash Holdings",
+		uniqueIdentifier,
+		"cash",
+		institutionName,
+		"manual",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create unique account for cash holding: %w", err)
+	}
+
 	// Insert the cash holding record
 	query := `
 		INSERT INTO cash_holdings (
@@ -553,9 +570,9 @@ func (p *CashHoldingsPlugin) ProcessManualEntry(data map[string]interface{}) err
 	`
 
 	now := time.Now()
-	_, err := p.db.Exec(
+	_, err = p.db.Exec(
 		query,
-		p.accountID,
+		uniqueAccountID,
 		validation.Data["institution_name"],
 		validation.Data["account_name"],
 		validation.Data["account_type"],

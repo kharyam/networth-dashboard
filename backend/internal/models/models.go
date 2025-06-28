@@ -66,6 +66,7 @@ type StockHolding struct {
 	CostBasis         *float64  `json:"cost_basis" db:"cost_basis"`
 	CurrentPrice      *float64  `json:"current_price" db:"current_price"`
 	MarketValue       *float64  `json:"market_value" db:"market_value"`
+	InstitutionName   string    `json:"institution_name" db:"institution_name"`
 	DataSource        string    `json:"data_source" db:"data_source"`
 	LastPriceUpdate   *time.Time `json:"last_price_update" db:"last_price_update"`
 	LastManualUpdate  *time.Time `json:"last_manual_update" db:"last_manual_update"`

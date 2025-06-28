@@ -523,6 +523,19 @@ func (p *RealEstatePlugin) ProcessManualEntry(data map[string]interface{}) error
 		zipCode = zc.(string)
 	}
 
+	// Create unique account for this property
+	uniqueAccountID, err := GetOrCreateUniquePluginAccount(
+		p.db,
+		"Real Estate",
+		propertyName,
+		"real_estate",
+		"Manual Entry",
+		"manual",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create unique account for property: %w", err)
+	}
+
 	// Insert real estate property
 	query := `
 		INSERT INTO real_estate_properties (
@@ -532,8 +545,8 @@ func (p *RealEstatePlugin) ProcessManualEntry(data map[string]interface{}) error
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`
 
-	_, err := p.db.Exec(query,
-		p.accountID, propertyType, propertyName, streetAddress, city, state, zipCode,
+	_, err = p.db.Exec(query,
+		uniqueAccountID, propertyType, propertyName, streetAddress, city, state, zipCode,
 		purchasePrice, currentValue, outstandingMortgage, equity, purchaseDate, 
 		propertySizeSqft, lotSizeAcres, rentalIncomeMonthly, propertyTaxAnnual, notes,
 	)
