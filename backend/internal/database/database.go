@@ -55,6 +55,7 @@ func (db *DB) runMigrations() error {
 		createVestingScheduleTable,
 		createRealEstatePropertiesTable,
 		createCashHoldingsTable,
+		createAssetCategoriesTable,
 		createMiscellaneousAssetsTable,
 		createNetWorthSnapshotsTable,
 		createCryptoHoldingsTable,
@@ -62,7 +63,9 @@ func (db *DB) runMigrations() error {
 		updateEquityGrantsTable,
 		updateRealEstateAddressFields,
 		updateStockHoldingsInstitution,
+		updateMiscellaneousAssetsTable,
 		createIndices,
+		seedAssetCategories,
 	}
 
 	for _, migration := range migrations {

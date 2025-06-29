@@ -10,11 +10,24 @@ interface SmartDynamicFormProps {
   loading?: boolean
   initialData?: Record<string, any>
   submitText?: string
+  onChange?: (fieldName: string, value: any, formData: Record<string, any>) => void
 }
 
-export function SmartDynamicForm({ schema, onSubmit, loading = false, initialData = {}, submitText = 'Submit' }: SmartDynamicFormProps) {
-  // Initialize form data with default values from schema
-  const getInitialFormData = () => {
+export function SmartDynamicForm({ schema, onSubmit, loading = false, initialData = {}, submitText = 'Submit', onChange }: SmartDynamicFormProps) {
+  const [formData, setFormData] = useState<Record<string, any>>({})
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Initialize smart data service
+  useEffect(() => {
+    smartDataService.initialize()
+  }, [])
+
+  // Initialize and reset form data when schema or initialData changes
+  useEffect(() => {
+    if (!schema || !schema.fields) {
+      return
+    }
+    
     const defaultData: Record<string, any> = {}
     schema.fields.forEach(field => {
       if (field.default_value !== undefined) {
@@ -33,22 +46,16 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
       }
     })
     
-    return mergedData
-  }
-  
-  const [formData, setFormData] = useState<Record<string, any>>(() => getInitialFormData())
-  const [errors, setErrors] = useState<Record<string, string>>({})
-
-  // Initialize smart data service
-  useEffect(() => {
-    smartDataService.initialize()
-  }, [])
+    setFormData(mergedData)
+  }, [initialData, schema])
 
   const handleInputChange = useCallback((fieldName: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
+    const newFormData = {
+      ...formData,
       [fieldName]: value
-    }))
+    }
+    
+    setFormData(newFormData)
     
     // Clear error when user starts typing
     if (errors[fieldName]) {
@@ -63,7 +70,12 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
     if (typeof value === 'string' && value.length > 0) {
       smartDataService.addRecentValue(fieldName, value)
     }
-  }, [errors])
+    
+    // Call onChange callback if provided
+    if (onChange) {
+      onChange(fieldName, value, newFormData)
+    }
+  }, [errors, formData, onChange])
 
   const handleCompanyNameSuggestion = useCallback((companyName: string) => {
     // Auto-fill company_name field when symbol is selected
@@ -193,7 +205,7 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
 
   const renderField = (field: ManualEntryField) => {
     const fieldId = `field-${field.name}`
-    const value = formData[field.name] || ''
+    const value = formData[field.name] !== undefined ? formData[field.name] : ''
     const error = errors[field.name]
     const entryType = getEntryType()
 

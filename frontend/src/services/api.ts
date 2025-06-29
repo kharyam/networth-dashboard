@@ -157,12 +157,30 @@ export const realEstateApi = {
 export const cashHoldingsApi = {
   getAll: (): Promise<any[]> =>
     api.get('/cash-holdings').then(res => res.data.cash_holdings || []),
+  
+  create: (holding: any): Promise<any> =>
+    api.post('/cash-holdings', holding).then(res => res.data),
+  
+  update: (id: number, holding: any): Promise<any> =>
+    api.put(`/cash-holdings/${id}`, holding).then(res => res.data),
+  
+  delete: (id: number): Promise<void> =>
+    api.delete(`/cash-holdings/${id}`).then(() => undefined),
 }
 
 // Crypto Holdings API
 export const cryptoHoldingsApi = {
   getAll: (): Promise<any[]> =>
     api.get('/crypto-holdings').then(res => res.data.crypto_holdings || []),
+  
+  create: (holding: any): Promise<any> =>
+    api.post('/crypto-holdings', holding).then(res => res.data),
+  
+  update: (id: number, holding: any): Promise<any> =>
+    api.put(`/crypto-holdings/${id}`, holding).then(res => res.data),
+  
+  delete: (id: number): Promise<void> =>
+    api.delete(`/crypto-holdings/${id}`).then(() => undefined),
   
   getPrice: (symbol: string): Promise<any> =>
     api.get(`/crypto/prices/${symbol}`).then(res => res.data),
@@ -184,6 +202,9 @@ export const pluginsApi = {
   
   getSchema: (pluginName: string): Promise<ManualEntrySchema> =>
     api.get(`/plugins/${pluginName}/schema`).then(res => res.data),
+  
+  getSchemaForCategory: (pluginName: string, categoryId: number): Promise<ManualEntrySchema> =>
+    api.get(`/plugins/${pluginName}/schema/${categoryId}`).then(res => res.data),
   
   processManualEntry: (pluginName: string, data: any): Promise<ApiResponse<any>> =>
     api.post(`/plugins/${pluginName}/manual-entry`, data).then(res => res.data),
@@ -211,6 +232,27 @@ export const manualEntriesApi = {
   
   delete: (id: number, entryType: string): Promise<void> =>
     api.delete(`/manual-entries/${id}?type=${entryType}`).then(() => undefined),
+}
+
+// Asset Categories API
+export const assetCategoriesApi = {
+  getAll: (): Promise<any[]> =>
+    api.get('/asset-categories').then(res => res.data.asset_categories || []),
+  
+  getById: (id: number): Promise<any> =>
+    api.get(`/asset-categories/${id}`).then(res => res.data),
+  
+  create: (category: any): Promise<any> =>
+    api.post('/asset-categories', category).then(res => res.data),
+  
+  update: (id: number, category: any): Promise<any> =>
+    api.put(`/asset-categories/${id}`, category).then(res => res.data),
+  
+  delete: (id: number): Promise<void> =>
+    api.delete(`/asset-categories/${id}`).then(() => undefined),
+  
+  getSchema: (id: number): Promise<any> =>
+    api.get(`/asset-categories/${id}/schema`).then(res => res.data),
 }
 
 // Price Management API

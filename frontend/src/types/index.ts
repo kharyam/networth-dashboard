@@ -100,6 +100,7 @@ export interface NetWorthSummary {
   real_estate_equity: number
   cash_holdings_value: number
   crypto_holdings_value: number
+  other_assets_value?: number
   last_updated: string
 }
 

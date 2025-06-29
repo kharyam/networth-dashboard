@@ -3,6 +3,7 @@ import { Plus, List, X, Eye, Edit2, Trash2, Filter } from 'lucide-react'
 import { pluginsApi, manualEntriesApi } from '../services/api'
 import { Plugin, ManualEntrySchema } from '../types'
 import SmartDynamicForm from '../components/SmartDynamicForm'
+import EditEntryModal from '../components/EditEntryModal'
 
 interface ManualEntry {
   id: number
@@ -204,6 +205,8 @@ function ManualEntries() {
         return `${data.institution_name || 'Bank'} - ${data.account_name || 'Account'} (${data.account_type || 'Cash'})`
       case 'crypto_holdings':
         return `${data.institution_name || 'Exchange'} - ${data.crypto_symbol || 'Crypto'} (${data.balance_tokens || 0} tokens)`
+      case 'other_assets':
+        return data.asset_name || `${data.category_name || 'Other'} Asset`
       default:
         return `${entry.entry_type} Entry`
     }
@@ -254,23 +257,45 @@ function ManualEntries() {
           return `$${value.toLocaleString()}`
         }
         return `${data.balance_tokens || 0} ${data.crypto_symbol || 'tokens'}`
+      case 'other_assets':
+        if (data.current_value) {
+          const netValue = data.current_value - (data.amount_owed || 0)
+          return `$${netValue.toLocaleString()}`
+        }
+        return 'N/A'
       default:
         return 'N/A'
     }
   }
 
+  // Enhanced filtering debug function
+  const debugFilterEntries = () => {
+    console.group('🔍 Manual Entries Filter Debug')
+    console.log('Filter state:', { filter, filterLength: filter.length })
+    console.log('Entries data:', {
+      totalEntries: entries.length,
+      entryTypes: [...new Set(entries.map(e => e.entry_type))],
+      sampleEntry: entries[0] ? {
+        id: entries[0].id,
+        type: entries[0].entry_type,
+        dataKeys: Object.keys(parseDataJson(entries[0].data_json))
+      } : null
+    })
+    console.groupEnd()
+  }
+
   // Get filtered entries - simple and reliable approach with debugging
   const getFilteredEntries = () => {
-    console.log('getFilteredEntries called with filter:', filter)
-    console.log('Total entries to filter:', entries.length)
+    console.log('🔍 getFilteredEntries called with filter:', filter)
+    console.log('📊 Total entries to filter:', entries.length)
     
     if (!filter || filter.trim() === '') {
-      console.log('No filter applied, returning all entries:', entries.length)
+      console.log('✅ No filter applied, returning all entries:', entries.length)
       return entries
     }
     
     const filterLower = filter.toLowerCase().trim()
-    console.log('Applying filter:', filterLower)
+    console.log('🎯 Applying filter:', filterLower)
     
     const filtered = entries.filter(entry => {
       try {
@@ -411,12 +436,21 @@ function ManualEntries() {
                 )}
               </div>
               
-              <button
-                onClick={loadEntries}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Refresh
-              </button>
+              <div className="flex space-x-2">
+                <button
+                  onClick={debugFilterEntries}
+                  className="px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm"
+                  title="Debug filter functionality (check console)"
+                >
+                  🐛 Debug
+                </button>
+                <button
+                  onClick={loadEntries}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Refresh
+                </button>
+              </div>
             </div>
           </div>
 
@@ -612,14 +646,15 @@ function ManualEntries() {
       )}
 
       {/* Edit Modal */}
-      {editModalOpen && selectedEntry && (
-        <EditEntryModal
-          entry={selectedEntry}
-          onClose={closeModals}
-          onUpdate={handleEntryUpdate}
-          plugins={plugins}
-        />
-      )}
+      <EditEntryModal
+        entryType={selectedEntry?.entry_type || ''}
+        entryData={selectedEntry?.data_json || '{}'}
+        title="Edit Entry"
+        isOpen={editModalOpen && !!selectedEntry}
+        onClose={closeModals}
+        onUpdate={handleEntryUpdate}
+        submitText="Update Entry"
+      />
 
       {/* Delete Modal */}
       {deleteModalOpen && selectedEntry && (
@@ -662,121 +697,5 @@ function ManualEntries() {
   )
 }
 
-// EditEntryModal component
-interface EditEntryModalProps {
-  entry: ManualEntry
-  onClose: () => void
-  onUpdate: (data: Record<string, any>) => Promise<void>
-  plugins: Plugin[]
-}
-
-function EditEntryModal({ entry, onClose, onUpdate }: EditEntryModalProps) {
-  const [schema, setSchema] = useState<ManualEntrySchema | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    loadSchema()
-  }, [entry.entry_type])
-
-  const loadSchema = async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      const pluginSchema = await pluginsApi.getSchema(entry.entry_type)
-      setSchema(pluginSchema)
-    } catch (err) {
-      console.error('Failed to load schema:', err)
-      setError('Failed to load entry form. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const parseEntryData = () => {
-    try {
-      return JSON.parse(entry.data_json)
-    } catch {
-      return {}
-    }
-  }
-
-  const handleSubmit = async (formData: Record<string, any>) => {
-    setSubmitting(true)
-    setError(null)
-
-    try {
-      await onUpdate(formData)
-    } catch (err: any) {
-      console.error('Failed to update entry:', err)
-      const errorMessage = err.response?.data?.error || 'Failed to update entry. Please try again.'
-      setError(errorMessage)
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-            Edit Entry
-          </h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-        
-        <div className="p-6">
-          {error && (
-            <div className="mb-4 card border-l-4 bg-red-50 dark:bg-red-900/20 border-red-400 dark:border-red-600">
-              <p className="text-red-700 dark:text-red-300">{error}</p>
-            </div>
-          )}
-
-          {loading ? (
-            <div className="flex justify-center items-center h-32">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-            </div>
-          ) : schema ? (
-            <div>
-              <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                {schema.name}
-              </h4>
-              <p className="text-gray-600 dark:text-gray-400 mb-6">
-                {schema.description}
-              </p>
-              
-              <SmartDynamicForm
-                schema={schema}
-                initialData={parseEntryData()}
-                onSubmit={handleSubmit}
-                loading={submitting}
-                submitText="Update Entry"
-              />
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Failed to load the entry form.
-              </p>
-              <button
-                onClick={loadSchema}
-                className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-              >
-                Try Again
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 export default ManualEntries

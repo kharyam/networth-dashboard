@@ -14,3 +14,7 @@ When updating or creating code, Claude should always:
 
 ## Safety Constraints
 - 
+
+## Debugging
+- When asked to fix an issue, always look very carefully at all related code and try to find the root cause.  Do not implement quick fixes, find the root cause of the issue and fix that as elegantly and maintainably as possible.  This should prevent muliple iterations that do not fix the issure or make things worse.
+

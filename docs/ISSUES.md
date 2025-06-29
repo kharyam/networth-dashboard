@@ -25,7 +25,10 @@ DONE When editing morgan stanley on manual entries, I can't set vested shares to
 
 
 
-IN PROGRESS When I type something in the filter under manual entries, the list does not filter down as it should, it shows all entries even though it indicates fewer entries match (e.g., "5 of 14 entries") 
+DONE When I type something in the filter under manual entries, the list does not filter down as it should, it shows all entries even though it indicates fewer entries match (e.g., "5 of 14 entries") 
+
+DONE Other Assets
+* Add another page for "other assets" for things like cars, jewelry, etc. where you can have fields for estimated value and amount owed and purchase price. Is that the point of the miscellaneous_assets table? The type of asset should be in a dropdown.  There should be a way to update the possible asset types (categories) of assets, store this in a database table. Can you create a simple / elegant way such that each asset type could potentially have custom features?  For example, for a "Car", we might want to allow additional fields like make, model, mileage and condition so we can reach out to an API to get estimated value.  This extended ability should be an option for all asset types, so we need a good, maintainable framework to enable this extensibility. Each asset should have the option of having its own visualization page to support its custom features - again, this should be implemented in a modular / pluggable way for simplified extensibility. Make sure the swagger documentation is updated for the newly added API endpoints. This doesn't need to be integrated with manual entries, it can be fully managed from the other assets page. Give me other potential ideas for this page as well as you see fit.
 
 - The asset allocation pie chart on the dashboard is showing 0 for Equity comp.  Is the equity comp being added to direct stocks instead?
 
@@ -33,8 +36,7 @@ IN PROGRESS When I type something in the filter under manual entries, the list d
 
 - These tables are currently empty - are there any plans for these or should they be deleted? manual_entries manual_entries_id_seq manual_entry_log manual_entry_log_id_seq 
 
-- Other Assets
-* Add another page for "other assets" for things like cars, jewelry, etc. where you can have fields for estimated value and amount owed and purchase price? Is that the point of the miscellaneous_assets table? The type of asset should be in a dropdown.  There should be a way to update the possible asset types (categories) of assets, store this in a database table. Can you create a simple / elegant way such that each asset type could potentially have custom features?  For example, for a "Car", we might want to allow additional fields like make, model, mileage and condition so we can reach out to an API to get estimated value.  This extended ability should be an option for all asset types, so we need a good, maintainable framework to enable this extensibility. Each asset should have the option of having its own visualization page to support its custom features - again, this should be implemented in a modular / pluggable way for simplified extensibility. Make sure the swagger documentation is updated for the newly added API endpoints.
+
 
 - Look at the quick actions on the dashboard that are not implemented. Implement the ones that you can now. Make sure these still make sense.  For future ones, create a popup to let the user know the feature isn't implemented yet.
 

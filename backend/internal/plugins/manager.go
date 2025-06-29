@@ -58,6 +58,12 @@ func (m *Manager) registerBuiltinPlugins() {
 		fmt.Printf("Failed to register Crypto Holdings plugin: %v\n", err)
 	}
 
+	// Register Other Assets plugin
+	otherAssetsPlugin := NewOtherAssetsPlugin(m.db)
+	if err := m.registry.Register(otherAssetsPlugin); err != nil {
+		fmt.Printf("Failed to register Other Assets plugin: %v\n", err)
+	}
+
 	// Initialize with default configurations
 	m.initializeDefaultConfigs()
 }
@@ -69,7 +75,7 @@ func (m *Manager) initializeDefaultConfigs() {
 		Settings: make(map[string]interface{}),
 	}
 
-	plugins := []string{"stock_holding", "morgan_stanley", "real_estate", "cash_holdings", "crypto_holdings"}
+	plugins := []string{"stock_holding", "morgan_stanley", "real_estate", "cash_holdings", "crypto_holdings", "other_assets"}
 	for _, pluginName := range plugins {
 		if err := m.registry.Configure(pluginName, defaultConfig); err != nil {
 			fmt.Printf("Failed to configure plugin %s: %v\n", pluginName, err)

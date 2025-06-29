@@ -10,6 +10,9 @@ import {
   X,
   Building,
   TrendingUp,
+  Edit2,
+  Eye,
+  Trash2,
 } from 'lucide-react'
 import { 
   PieChart, Pie, Cell, LineChart, Line, 
@@ -19,6 +22,7 @@ import {
 import { pluginsApi, cashHoldingsApi } from '../services/api'
 import { ManualEntrySchema } from '../types'
 import SmartDynamicForm from '../components/SmartDynamicForm'
+import EditEntryModal from '../components/EditEntryModal'
 
 interface CashHolding {
   id: number
@@ -83,6 +87,10 @@ function CashHoldings() {
   
   // Modal states
   const [addModalOpen, setAddModalOpen] = useState(false)
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [viewModalOpen, setViewModalOpen] = useState(false)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [selectedHolding, setSelectedHolding] = useState<CashHolding | null>(null)
   
   // Form states
   const [schema, setSchema] = useState<ManualEntrySchema | null>(null)
@@ -171,6 +179,59 @@ function CashHoldings() {
       setSchema(cashHoldingsSchema)
     } catch (error) {
       console.error('Failed to load cash holdings schema:', error)
+    }
+  }
+
+  const closeModals = () => {
+    setAddModalOpen(false)
+    setEditModalOpen(false)
+    setViewModalOpen(false)
+    setDeleteModalOpen(false)
+    setSelectedHolding(null)
+  }
+
+  const handleEdit = (holding: CashHolding) => {
+    setSelectedHolding(holding)
+    setEditModalOpen(true)
+  }
+
+  const handleView = (holding: CashHolding) => {
+    setSelectedHolding(holding)
+    setViewModalOpen(true)
+  }
+
+  const handleDelete = (holding: CashHolding) => {
+    setSelectedHolding(holding)
+    setDeleteModalOpen(true)
+  }
+
+  const handleUpdate = async (formData: Record<string, any>) => {
+    if (!selectedHolding) return
+
+    try {
+      await cashHoldingsApi.update(selectedHolding.id, formData)
+      setMessage({ type: 'success', text: 'Cash holding updated successfully!' })
+      closeModals()
+      await loadCashHoldings()
+      setTimeout(() => setMessage(null), 3000)
+    } catch (err: any) {
+      console.error('Failed to update cash holding:', err)
+      setError(err.message || 'Failed to update cash holding. Please try again.')
+    }
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedHolding) return
+
+    try {
+      await cashHoldingsApi.delete(selectedHolding.id)
+      setMessage({ type: 'success', text: 'Cash holding deleted successfully!' })
+      closeModals()
+      await loadCashHoldings()
+      setTimeout(() => setMessage(null), 3000)
+    } catch (err: any) {
+      console.error('Failed to delete cash holding:', err)
+      setError(err.message || 'Failed to delete cash holding. Please try again.')
     }
   }
 
@@ -1035,9 +1096,34 @@ function CashHoldings() {
                       </p>
                     </div>
                   </div>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getAccountTypeColor(holding.account_type)}`}>
-                    {getAccountTypeName(holding.account_type)}
-                  </span>
+                  <div className="flex items-center space-x-2">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getAccountTypeColor(holding.account_type)}`}>
+                      {getAccountTypeName(holding.account_type)}
+                    </span>
+                    <div className="flex items-center space-x-1">
+                      <button
+                        onClick={() => handleView(holding)}
+                        className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+                        title="View Details"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleEdit(holding)}
+                        className="p-1 text-gray-400 hover:text-green-600 dark:hover:text-green-400"
+                        title="Edit"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(holding)}
+                        className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 
                 <div className="mt-4">
@@ -1092,6 +1178,79 @@ function CashHoldings() {
                   loading={submitting}
                   submitText="Add Cash Account"
                 />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      <EditEntryModal
+        entryType="cash_holdings"
+        entryData={selectedHolding || {}}
+        title="Edit Cash Holding"
+        isOpen={editModalOpen && !!selectedHolding}
+        onClose={closeModals}
+        onUpdate={handleUpdate}
+        submitText="Update Cash Holding"
+      />
+
+      {/* View Modal */}
+      {viewModalOpen && selectedHolding && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Cash Holding Details
+              </h3>
+              <button
+                onClick={closeModals}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <pre className="text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-lg overflow-x-auto">
+                {JSON.stringify(selectedHolding, null, 2)}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Modal */}
+      {deleteModalOpen && selectedHolding && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Delete Cash Holding
+              </h3>
+              <button
+                onClick={closeModals}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Are you sure you want to delete "{selectedHolding.account_name}" at {selectedHolding.institution_name}? This action cannot be undone.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={closeModals}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteConfirm}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  Delete
+                </button>
               </div>
             </div>
           </div>

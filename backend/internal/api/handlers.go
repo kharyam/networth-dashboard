@@ -1,12 +1,15 @@
 package api
 
 import (
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"networth-dashboard/internal/plugins"
 	"networth-dashboard/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -17,7 +20,7 @@ import (
 // Net worth handlers
 
 // @Summary Get current net worth
-// @Description Calculate and return current net worth including all assets (stocks, equity, real estate, cash, crypto) minus liabilities
+// @Description Calculate and return current net worth including all assets (stocks, equity, real estate, cash, crypto, other assets) minus liabilities
 // @Tags net-worth
 // @Accept json
 // @Produce json
@@ -43,11 +46,14 @@ func (s *Server) getNetWorth(c *gin.Context) {
 	// Calculate crypto holdings value
 	cryptoHoldingsValue := s.calculateCryptoHoldingsValue()
 
+	// Calculate other assets value (equity = value - amount owed)
+	otherAssetsValue := s.calculateOtherAssetsValue()
+
 	// Calculate liabilities
 	totalLiabilities := s.calculateTotalLiabilities()
 
 	// Net worth = only vested/liquid assets - liabilities
-	totalAssets := stockValue + vestedEquityValue + realEstateEquity + cashHoldingsValue + cryptoHoldingsValue
+	totalAssets := stockValue + vestedEquityValue + realEstateEquity + cashHoldingsValue + cryptoHoldingsValue + otherAssetsValue
 	netWorth := totalAssets - totalLiabilities
 
 	// Get price status information
@@ -63,6 +69,7 @@ func (s *Server) getNetWorth(c *gin.Context) {
 		"real_estate_equity":     realEstateEquity,
 		"cash_holdings_value":    cashHoldingsValue,
 		"crypto_holdings_value":  cryptoHoldingsValue,
+		"other_assets_value":     otherAssetsValue,
 		"price_last_updated":     priceStatus.LastUpdated,
 		"stale_price_count":      priceStatus.StaleCount,
 		"provider_name":          priceStatus.ProviderName,
@@ -159,17 +166,34 @@ func (s *Server) calculateCryptoHoldingsValue() float64 {
 	return value
 }
 
-func (s *Server) calculateTotalLiabilities() float64 {
+func (s *Server) calculateOtherAssetsValue() float64 {
 	var value float64
 	query := `
-		SELECT COALESCE(SUM(outstanding_mortgage), 0) 
-		FROM real_estate_properties
+		SELECT COALESCE(SUM(current_value - COALESCE(amount_owed, 0)), 0)
+		FROM miscellaneous_assets
 	`
 	err := s.db.QueryRow(query).Scan(&value)
 	if err != nil {
 		return 0.0
 	}
 	return value
+}
+
+func (s *Server) calculateTotalLiabilities() float64 {
+	// Note: Real estate mortgages are NOT included here because 
+	// real estate equity is already calculated net of mortgages
+	// (equity = current_value - outstanding_mortgage)
+	// 
+	// This function should include other types of liabilities like:
+	// - Credit card debt
+	// - Personal loans  
+	// - Student loans
+	// - Other debts not secured by assets already counted as equity
+	//
+	// For now, returning 0 since we don't have other liability types implemented
+	// and real estate mortgages are already accounted for in the equity calculation
+	
+	return 0.0
 }
 
 // PriceStatus represents the current status of price data
@@ -1302,6 +1326,66 @@ func (s *Server) getPluginSchema(c *gin.Context) {
 	c.JSON(http.StatusOK, schema)
 }
 
+// @Summary Get plugin schema for manual entry with category
+// @Description Retrieve the manual entry schema for a specific plugin and category to understand required fields including custom fields
+// @Tags plugins
+// @Accept json
+// @Produce json
+// @Param name path string true "Plugin Name"
+// @Param category_id path int true "Category ID"
+// @Success 200 {object} map[string]interface{} "Plugin manual entry schema with custom fields"
+// @Failure 400 {object} map[string]interface{} "Plugin does not support manual entry or invalid category"
+// @Failure 404 {object} map[string]interface{} "Plugin not found"
+// @Router /plugins/{name}/schema/{category_id} [get]
+func (s *Server) getPluginSchemaForCategory(c *gin.Context) {
+	pluginName := c.Param("name")
+	categoryIDStr := c.Param("category_id")
+
+	// Parse category ID
+	categoryID, err := strconv.Atoi(categoryIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid category ID",
+		})
+		return
+	}
+
+	plugin, err := s.pluginManager.GetPlugin(pluginName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Plugin not found",
+		})
+		return
+	}
+
+	if !plugin.SupportsManualEntry() {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Plugin does not support manual entry",
+		})
+		return
+	}
+
+	// Check if this is the other_assets plugin and supports category-specific schemas
+	if pluginName == "other_assets" {
+		// Type assert to access the GetManualEntrySchemaForCategory method
+		if otherAssetsPlugin, ok := plugin.(*plugins.OtherAssetsPlugin); ok {
+			schema, err := otherAssetsPlugin.GetManualEntrySchemaForCategory(categoryID)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": fmt.Sprintf("Failed to get category schema: %v", err),
+				})
+				return
+			}
+			c.JSON(http.StatusOK, schema)
+			return
+		}
+	}
+
+	// Fallback to regular schema for other plugins
+	schema := plugin.GetManualEntrySchema()
+	c.JSON(http.StatusOK, schema)
+}
+
 // @Summary Process manual entry through plugin
 // @Description Submit manual data entry to a specific plugin for processing and storage
 // @Tags plugins
@@ -1521,6 +1605,33 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		FROM crypto_holdings cry
 		LEFT JOIN accounts a ON cry.account_id = a.id
 		WHERE cry.created_at IS NOT NULL
+		
+		UNION ALL
+		
+		SELECT 'other_assets' as entry_type,
+		       ma.id, ma.account_id, ma.created_at, ma.last_updated as updated_at,
+		       json_build_object(
+		           'asset_category_id', ma.asset_category_id,
+		           'asset_name', ma.asset_name,
+		           'current_value', ma.current_value,
+		           'purchase_price', ma.purchase_price,
+		           'amount_owed', ma.amount_owed,
+		           'purchase_date', ma.purchase_date,
+		           'description', ma.description,
+		           'custom_fields', ma.custom_fields,
+		           'valuation_method', ma.valuation_method,
+		           'last_valuation_date', ma.last_valuation_date,
+		           'notes', ma.notes,
+		           'category_name', ac.name,
+		           'category_description', ac.description,
+		           'category_icon', ac.icon,
+		           'category_color', ac.color
+		       ) as data_json,
+		       a.account_name, a.institution
+		FROM miscellaneous_assets ma
+		LEFT JOIN accounts a ON ma.account_id = a.id
+		LEFT JOIN asset_categories ac ON ma.asset_category_id = ac.id
+		WHERE ma.created_at IS NOT NULL
 	`
 
 	args := []interface{}{}
@@ -2373,4 +2484,766 @@ func (s *Server) getPropertyValuationProviders(c *gin.Context) {
 		"active_provider": s.propertyValuationService.GetProviderName(),
 		"feature_enabled": true,
 	})
+}
+
+// Other Assets handlers
+
+// @Summary Get all other assets
+// @Description Retrieve all miscellaneous assets with category information
+// @Tags other-assets
+// @Accept json
+// @Produce json
+// @Param category query int false "Filter by asset category ID"
+// @Success 200 {object} map[string]interface{} "List of other assets"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /other-assets [get]
+func (s *Server) getOtherAssets(c *gin.Context) {
+	categoryFilter := c.Query("category")
+	
+	query := `
+		SELECT ma.id, ma.asset_name, ma.current_value, ma.purchase_price, 
+		       ma.amount_owed, ma.purchase_date, ma.description, ma.custom_fields,
+		       ma.valuation_method, ma.last_valuation_date, ma.api_provider,
+		       ma.notes, ma.created_at, ma.last_updated,
+		       ac.name as category_name, ac.description as category_description,
+		       ac.icon as category_icon, ac.color as category_color,
+		       ma.asset_category_id
+		FROM miscellaneous_assets ma
+		LEFT JOIN asset_categories ac ON ma.asset_category_id = ac.id
+	`
+	
+	args := []interface{}{}
+	if categoryFilter != "" {
+		query += " WHERE ma.asset_category_id = $1"
+		categoryID, err := strconv.Atoi(categoryFilter)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Invalid category ID",
+			})
+			return
+		}
+		args = append(args, categoryID)
+	}
+	
+	query += " ORDER BY ma.last_updated DESC"
+	
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch other assets",
+		})
+		return
+	}
+	defer rows.Close()
+	
+	var assets []map[string]interface{}
+	for rows.Next() {
+		var asset struct {
+			ID                    int             `json:"id"`
+			AssetName            string          `json:"asset_name"`
+			CurrentValue         float64         `json:"current_value"`
+			PurchasePrice        sql.NullFloat64 `json:"purchase_price"`
+			AmountOwed           sql.NullFloat64 `json:"amount_owed"`
+			PurchaseDate         sql.NullTime    `json:"purchase_date"`
+			Description          sql.NullString  `json:"description"`
+			CustomFields         sql.NullString  `json:"custom_fields"`
+			ValuationMethod      string          `json:"valuation_method"`
+			LastValuationDate    sql.NullTime    `json:"last_valuation_date"`
+			APIProvider          sql.NullString  `json:"api_provider"`
+			Notes                sql.NullString  `json:"notes"`
+			CreatedAt            time.Time       `json:"created_at"`
+			LastUpdated          time.Time       `json:"last_updated"`
+			CategoryName         sql.NullString  `json:"category_name"`
+			CategoryDescription  sql.NullString  `json:"category_description"`
+			CategoryIcon         sql.NullString  `json:"category_icon"`
+			CategoryColor        sql.NullString  `json:"category_color"`
+			AssetCategoryID      sql.NullInt64   `json:"asset_category_id"`
+		}
+		
+		err := rows.Scan(
+			&asset.ID, &asset.AssetName, &asset.CurrentValue, &asset.PurchasePrice,
+			&asset.AmountOwed, &asset.PurchaseDate, &asset.Description, &asset.CustomFields,
+			&asset.ValuationMethod, &asset.LastValuationDate, &asset.APIProvider,
+			&asset.Notes, &asset.CreatedAt, &asset.LastUpdated,
+			&asset.CategoryName, &asset.CategoryDescription, &asset.CategoryIcon,
+			&asset.CategoryColor, &asset.AssetCategoryID,
+		)
+		if err != nil {
+			continue
+		}
+		
+		// Calculate equity (value - amount owed)
+		var equity float64
+		if asset.AmountOwed.Valid {
+			equity = asset.CurrentValue - asset.AmountOwed.Float64
+		} else {
+			equity = asset.CurrentValue
+		}
+		
+		// Parse custom fields JSON
+		var customFields map[string]interface{}
+		if asset.CustomFields.Valid && asset.CustomFields.String != "" {
+			json.Unmarshal([]byte(asset.CustomFields.String), &customFields)
+		}
+		
+		assetMap := map[string]interface{}{
+			"id":                     asset.ID,
+			"asset_name":            asset.AssetName,
+			"current_value":         asset.CurrentValue,
+			"equity":                equity,
+			"valuation_method":      asset.ValuationMethod,
+			"created_at":            asset.CreatedAt,
+			"last_updated":          asset.LastUpdated,
+			"asset_category_id":     asset.AssetCategoryID.Int64,
+		}
+		
+		// Add optional fields
+		if asset.PurchasePrice.Valid {
+			assetMap["purchase_price"] = asset.PurchasePrice.Float64
+		}
+		if asset.AmountOwed.Valid {
+			assetMap["amount_owed"] = asset.AmountOwed.Float64
+		}
+		if asset.PurchaseDate.Valid {
+			assetMap["purchase_date"] = asset.PurchaseDate.Time.Format("2006-01-02")
+		}
+		if asset.Description.Valid {
+			assetMap["description"] = asset.Description.String
+		}
+		if asset.Notes.Valid {
+			assetMap["notes"] = asset.Notes.String
+		}
+		if asset.LastValuationDate.Valid {
+			assetMap["last_valuation_date"] = asset.LastValuationDate.Time
+		}
+		if asset.APIProvider.Valid {
+			assetMap["api_provider"] = asset.APIProvider.String
+		}
+		if customFields != nil {
+			assetMap["custom_fields"] = customFields
+		}
+		
+		// Add category information
+		if asset.CategoryName.Valid {
+			assetMap["category"] = map[string]interface{}{
+				"name":        asset.CategoryName.String,
+				"description": asset.CategoryDescription.String,
+				"icon":        asset.CategoryIcon.String,
+				"color":       asset.CategoryColor.String,
+			}
+		}
+		
+		assets = append(assets, assetMap)
+	}
+	
+	// Calculate total value and equity
+	var totalValue, totalEquity float64
+	for _, asset := range assets {
+		totalValue += asset["current_value"].(float64)
+		totalEquity += asset["equity"].(float64)
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"other_assets": assets,
+		"summary": gin.H{
+			"total_count": len(assets),
+			"total_value": totalValue,
+			"total_equity": totalEquity,
+		},
+	})
+}
+
+// @Summary Create new other asset
+// @Description Create a new miscellaneous asset entry
+// @Tags other-assets
+// @Accept json
+// @Produce json
+// @Param request body map[string]interface{} true "Other asset data"
+// @Success 201 {object} map[string]interface{} "Other asset created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or validation error"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /other-assets [post]
+func (s *Server) createOtherAsset(c *gin.Context) {
+	var data map[string]interface{}
+	if err := c.ShouldBindJSON(&data); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid JSON data",
+		})
+		return
+	}
+	
+	// Use the other_assets plugin to process the entry
+	err := s.pluginManager.ProcessManualEntry("other_assets", data)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+	
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Other asset created successfully",
+	})
+}
+
+// @Summary Update other asset
+// @Description Update an existing miscellaneous asset entry
+// @Tags other-assets
+// @Accept json
+// @Produce json
+// @Param id path int true "Asset ID"
+// @Param request body map[string]interface{} true "Updated asset data"
+// @Success 200 {object} map[string]interface{} "Other asset updated successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or validation error"
+// @Failure 404 {object} map[string]interface{} "Asset not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /other-assets/{id} [put]
+func (s *Server) updateOtherAsset(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid asset ID",
+		})
+		return
+	}
+	
+	var data map[string]interface{}
+	if err := c.ShouldBindJSON(&data); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid JSON data",
+		})
+		return
+	}
+	
+	// Get the other_assets plugin
+	plugin, err := s.pluginManager.GetPlugin("other_assets")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Plugin not found",
+		})
+		return
+	}
+	
+	// Update the entry
+	err = plugin.UpdateManualEntry(id, data)
+	if err != nil {
+		if err.Error() == "other asset not found" {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Asset not found",
+			})
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+		}
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Other asset updated successfully",
+	})
+}
+
+// @Summary Delete other asset
+// @Description Delete a miscellaneous asset entry
+// @Tags other-assets
+// @Accept json
+// @Produce json
+// @Param id path int true "Asset ID"
+// @Success 200 {object} map[string]interface{} "Other asset deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Asset not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /other-assets/{id} [delete]
+func (s *Server) deleteOtherAsset(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid asset ID",
+		})
+		return
+	}
+	
+	query := "DELETE FROM miscellaneous_assets WHERE id = $1"
+	result, err := s.db.Exec(query, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to delete asset",
+		})
+		return
+	}
+	
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check deletion result",
+		})
+		return
+	}
+	
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Asset not found",
+		})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Other asset deleted successfully",
+	})
+}
+
+// Asset Categories handlers
+
+// @Summary Get all asset categories
+// @Description Retrieve all asset categories with their custom schemas
+// @Tags asset-categories
+// @Accept json
+// @Produce json
+// @Param active query boolean false "Filter by active status"
+// @Success 200 {object} map[string]interface{} "List of asset categories"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /asset-categories [get]
+func (s *Server) getAssetCategories(c *gin.Context) {
+	activeFilter := c.Query("active")
+	
+	query := `
+		SELECT id, name, description, icon, color, custom_schema, 
+		       valuation_api_config, is_active, sort_order, 
+		       created_at, updated_at
+		FROM asset_categories
+	`
+	
+	args := []interface{}{}
+	if activeFilter == "true" {
+		query += " WHERE is_active = true"
+	}
+	
+	query += " ORDER BY sort_order, name"
+	
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch asset categories",
+		})
+		return
+	}
+	defer rows.Close()
+	
+	var categories []map[string]interface{}
+	for rows.Next() {
+		var category struct {
+			ID                   int            `json:"id"`
+			Name                 string         `json:"name"`
+			Description          sql.NullString `json:"description"`
+			Icon                 sql.NullString `json:"icon"`
+			Color                sql.NullString `json:"color"`
+			CustomSchema         sql.NullString `json:"custom_schema"`
+			ValuationAPIConfig   sql.NullString `json:"valuation_api_config"`
+			IsActive             bool           `json:"is_active"`
+			SortOrder            int            `json:"sort_order"`
+			CreatedAt            time.Time      `json:"created_at"`
+			UpdatedAt            time.Time      `json:"updated_at"`
+		}
+		
+		err := rows.Scan(
+			&category.ID, &category.Name, &category.Description, &category.Icon,
+			&category.Color, &category.CustomSchema, &category.ValuationAPIConfig,
+			&category.IsActive, &category.SortOrder, &category.CreatedAt, &category.UpdatedAt,
+		)
+		if err != nil {
+			continue
+		}
+		
+		categoryMap := map[string]interface{}{
+			"id":         category.ID,
+			"name":       category.Name,
+			"is_active":  category.IsActive,
+			"sort_order": category.SortOrder,
+			"created_at": category.CreatedAt,
+			"updated_at": category.UpdatedAt,
+		}
+		
+		// Add optional fields
+		if category.Description.Valid {
+			categoryMap["description"] = category.Description.String
+		}
+		if category.Icon.Valid {
+			categoryMap["icon"] = category.Icon.String
+		}
+		if category.Color.Valid {
+			categoryMap["color"] = category.Color.String
+		}
+		
+		// Parse custom schema
+		if category.CustomSchema.Valid && category.CustomSchema.String != "" {
+			var schema map[string]interface{}
+			if err := json.Unmarshal([]byte(category.CustomSchema.String), &schema); err == nil {
+				categoryMap["custom_schema"] = schema
+			}
+		}
+		
+		// Parse valuation API config
+		if category.ValuationAPIConfig.Valid && category.ValuationAPIConfig.String != "" {
+			var config map[string]interface{}
+			if err := json.Unmarshal([]byte(category.ValuationAPIConfig.String), &config); err == nil {
+				categoryMap["valuation_api_config"] = config
+			}
+		}
+		
+		categories = append(categories, categoryMap)
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"asset_categories": categories,
+		"total_count":      len(categories),
+	})
+}
+
+// @Summary Create new asset category
+// @Description Create a new asset category with custom schema
+// @Tags asset-categories
+// @Accept json
+// @Produce json
+// @Param request body map[string]interface{} true "Asset category data"
+// @Success 201 {object} map[string]interface{} "Asset category created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or validation error"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /asset-categories [post]
+func (s *Server) createAssetCategory(c *gin.Context) {
+	var data map[string]interface{}
+	if err := c.ShouldBindJSON(&data); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid JSON data",
+		})
+		return
+	}
+	
+	// Validate required fields
+	name, ok := data["name"].(string)
+	if !ok || strings.TrimSpace(name) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Name is required",
+		})
+		return
+	}
+	
+	// Prepare optional fields
+	var description, icon, color sql.NullString
+	var customSchema, valuationAPIConfig sql.NullString
+	var isActive = true
+	var sortOrder = 0
+	
+	if desc, ok := data["description"].(string); ok {
+		description.String = desc
+		description.Valid = true
+	}
+	if ic, ok := data["icon"].(string); ok {
+		icon.String = ic
+		icon.Valid = true
+	}
+	if col, ok := data["color"].(string); ok {
+		color.String = col
+		color.Valid = true
+	}
+	if active, ok := data["is_active"].(bool); ok {
+		isActive = active
+	}
+	if order, ok := data["sort_order"].(float64); ok {
+		sortOrder = int(order)
+	}
+	
+	// Handle custom schema
+	if schema, ok := data["custom_schema"]; ok {
+		if schemaJSON, err := json.Marshal(schema); err == nil {
+			customSchema.String = string(schemaJSON)
+			customSchema.Valid = true
+		}
+	}
+	
+	// Handle valuation API config
+	if config, ok := data["valuation_api_config"]; ok {
+		if configJSON, err := json.Marshal(config); err == nil {
+			valuationAPIConfig.String = string(configJSON)
+			valuationAPIConfig.Valid = true
+		}
+	}
+	
+	query := `
+		INSERT INTO asset_categories (name, description, icon, color, custom_schema, 
+		                            valuation_api_config, is_active, sort_order)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id
+	`
+	
+	var categoryID int
+	err := s.db.QueryRow(query, name, description, icon, color, customSchema, 
+		valuationAPIConfig, isActive, sortOrder).Scan(&categoryID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to create asset category",
+		})
+		return
+	}
+	
+	c.JSON(http.StatusCreated, gin.H{
+		"message":     "Asset category created successfully",
+		"category_id": categoryID,
+	})
+}
+
+// @Summary Update asset category
+// @Description Update an existing asset category
+// @Tags asset-categories
+// @Accept json
+// @Produce json
+// @Param id path int true "Category ID"
+// @Param request body map[string]interface{} true "Updated category data"
+// @Success 200 {object} map[string]interface{} "Asset category updated successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or validation error"
+// @Failure 404 {object} map[string]interface{} "Category not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /asset-categories/{id} [put]
+func (s *Server) updateAssetCategory(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid category ID",
+		})
+		return
+	}
+	
+	var data map[string]interface{}
+	if err := c.ShouldBindJSON(&data); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid JSON data",
+		})
+		return
+	}
+	
+	// Build dynamic update query
+	var setParts []string
+	var args []interface{}
+	argIndex := 1
+	
+	if name, ok := data["name"].(string); ok && strings.TrimSpace(name) != "" {
+		setParts = append(setParts, fmt.Sprintf("name = $%d", argIndex))
+		args = append(args, strings.TrimSpace(name))
+		argIndex++
+	}
+	
+	if desc, ok := data["description"].(string); ok {
+		setParts = append(setParts, fmt.Sprintf("description = $%d", argIndex))
+		args = append(args, desc)
+		argIndex++
+	}
+	
+	if icon, ok := data["icon"].(string); ok {
+		setParts = append(setParts, fmt.Sprintf("icon = $%d", argIndex))
+		args = append(args, icon)
+		argIndex++
+	}
+	
+	if color, ok := data["color"].(string); ok {
+		setParts = append(setParts, fmt.Sprintf("color = $%d", argIndex))
+		args = append(args, color)
+		argIndex++
+	}
+	
+	if active, ok := data["is_active"].(bool); ok {
+		setParts = append(setParts, fmt.Sprintf("is_active = $%d", argIndex))
+		args = append(args, active)
+		argIndex++
+	}
+	
+	if order, ok := data["sort_order"].(float64); ok {
+		setParts = append(setParts, fmt.Sprintf("sort_order = $%d", argIndex))
+		args = append(args, int(order))
+		argIndex++
+	}
+	
+	if schema, ok := data["custom_schema"]; ok {
+		if schemaJSON, err := json.Marshal(schema); err == nil {
+			setParts = append(setParts, fmt.Sprintf("custom_schema = $%d", argIndex))
+			args = append(args, string(schemaJSON))
+			argIndex++
+		}
+	}
+	
+	if config, ok := data["valuation_api_config"]; ok {
+		if configJSON, err := json.Marshal(config); err == nil {
+			setParts = append(setParts, fmt.Sprintf("valuation_api_config = $%d", argIndex))
+			args = append(args, string(configJSON))
+			argIndex++
+		}
+	}
+	
+	if len(setParts) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "No valid fields to update",
+		})
+		return
+	}
+	
+	// Add updated_at
+	setParts = append(setParts, fmt.Sprintf("updated_at = $%d", argIndex))
+	args = append(args, time.Now())
+	argIndex++
+	
+	// Add WHERE condition
+	args = append(args, id)
+	
+	query := fmt.Sprintf("UPDATE asset_categories SET %s WHERE id = $%d", 
+		strings.Join(setParts, ", "), argIndex)
+	
+	result, err := s.db.Exec(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update asset category",
+		})
+		return
+	}
+	
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check update result",
+		})
+		return
+	}
+	
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Asset category not found",
+		})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Asset category updated successfully",
+	})
+}
+
+// @Summary Delete asset category
+// @Description Delete an asset category (only if no assets use it)
+// @Tags asset-categories
+// @Accept json
+// @Produce json
+// @Param id path int true "Category ID"
+// @Success 200 {object} map[string]interface{} "Asset category deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or category in use"
+// @Failure 404 {object} map[string]interface{} "Category not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /asset-categories/{id} [delete]
+func (s *Server) deleteAssetCategory(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid category ID",
+		})
+		return
+	}
+	
+	// Check if category is in use
+	var count int
+	countQuery := "SELECT COUNT(*) FROM miscellaneous_assets WHERE asset_category_id = $1"
+	err = s.db.QueryRow(countQuery, id).Scan(&count)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check category usage",
+		})
+		return
+	}
+	
+	if count > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Cannot delete category: %d assets are using this category", count),
+		})
+		return
+	}
+	
+	// Delete category
+	query := "DELETE FROM asset_categories WHERE id = $1"
+	result, err := s.db.Exec(query, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to delete asset category",
+		})
+		return
+	}
+	
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check deletion result",
+		})
+		return
+	}
+	
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Asset category not found",
+		})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Asset category deleted successfully",
+	})
+}
+
+// @Summary Get asset category schema
+// @Description Get the custom field schema for a specific asset category
+// @Tags asset-categories
+// @Accept json
+// @Produce json
+// @Param id path int true "Category ID"
+// @Success 200 {object} map[string]interface{} "Asset category schema"
+// @Failure 404 {object} map[string]interface{} "Category not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /asset-categories/{id}/schema [get]
+func (s *Server) getAssetCategorySchema(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid category ID",
+		})
+		return
+	}
+	
+	var name, description sql.NullString
+	var customSchema sql.NullString
+	
+	query := "SELECT name, description, custom_schema FROM asset_categories WHERE id = $1"
+	err = s.db.QueryRow(query, id).Scan(&name, &description, &customSchema)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Asset category not found",
+			})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to fetch category schema",
+			})
+		}
+		return
+	}
+	
+	result := map[string]interface{}{
+		"category_id": id,
+		"name":        name.String,
+	}
+	
+	if description.Valid {
+		result["description"] = description.String
+	}
+	
+	if customSchema.Valid && customSchema.String != "" {
+		var schema map[string]interface{}
+		if err := json.Unmarshal([]byte(customSchema.String), &schema); err == nil {
+			result["schema"] = schema
+		}
+	}
+	
+	c.JSON(http.StatusOK, result)
 }
