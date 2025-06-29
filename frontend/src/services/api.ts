@@ -185,6 +185,9 @@ export const pluginsApi = {
   getSchema: (pluginName: string): Promise<ManualEntrySchema> =>
     api.get(`/plugins/${pluginName}/schema`).then(res => res.data),
   
+  getSchemaForCategory: (pluginName: string, categoryId: number): Promise<ManualEntrySchema> =>
+    api.get(`/plugins/${pluginName}/schema/${categoryId}`).then(res => res.data),
+  
   processManualEntry: (pluginName: string, data: any): Promise<ApiResponse<any>> =>
     api.post(`/plugins/${pluginName}/manual-entry`, data).then(res => res.data),
   

@@ -142,6 +142,19 @@ func (s *Server) setupRouter() {
 		// Crypto holdings endpoints
 		api.GET("/crypto-holdings", s.getCryptoHoldings)
 
+		// Other assets endpoints
+		api.GET("/other-assets", s.getOtherAssets)
+		api.POST("/other-assets", s.createOtherAsset)
+		api.PUT("/other-assets/:id", s.updateOtherAsset)
+		api.DELETE("/other-assets/:id", s.deleteOtherAsset)
+
+		// Asset categories endpoints
+		api.GET("/asset-categories", s.getAssetCategories)
+		api.POST("/asset-categories", s.createAssetCategory)
+		api.PUT("/asset-categories/:id", s.updateAssetCategory)
+		api.DELETE("/asset-categories/:id", s.deleteAssetCategory)
+		api.GET("/asset-categories/:id/schema", s.getAssetCategorySchema)
+
 		// Crypto price endpoints
 		api.GET("/crypto/prices/:symbol", s.getCryptoPrice)
 		api.GET("/crypto/prices/history", s.getCryptoPriceHistory)
@@ -151,6 +164,7 @@ func (s *Server) setupRouter() {
 		// Plugin management endpoints
 		api.GET("/plugins", s.getPlugins)
 		api.GET("/plugins/:name/schema", s.getPluginSchema)
+		api.GET("/plugins/:name/schema/:category_id", s.getPluginSchemaForCategory)
 		api.POST("/plugins/:name/manual-entry", s.processManualEntry)
 		api.POST("/plugins/refresh", s.refreshPluginData)
 		api.GET("/plugins/health", s.getPluginHealth)

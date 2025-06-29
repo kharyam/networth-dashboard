@@ -170,14 +170,39 @@ const (
 			UNIQUE(account_id, institution_name, account_name)
 		);`
 
+	createAssetCategoriesTable = `
+		CREATE TABLE IF NOT EXISTS asset_categories (
+			id SERIAL PRIMARY KEY,
+			name VARCHAR(100) NOT NULL UNIQUE,
+			description TEXT,
+			icon VARCHAR(50),
+			color VARCHAR(7), -- Hex color code
+			custom_schema JSONB, -- Schema definition for custom fields
+			valuation_api_config JSONB, -- API integration config
+			is_active BOOLEAN DEFAULT true,
+			sort_order INTEGER DEFAULT 0,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);`
+
 	createMiscellaneousAssetsTable = `
 		CREATE TABLE IF NOT EXISTS miscellaneous_assets (
 			id SERIAL PRIMARY KEY,
 			account_id INTEGER REFERENCES accounts(id),
+			asset_category_id INTEGER REFERENCES asset_categories(id),
 			asset_name VARCHAR(200) NOT NULL,
-			asset_type VARCHAR(50),
+			asset_type VARCHAR(50), -- Kept for backward compatibility
 			current_value DECIMAL(15,2) NOT NULL,
+			purchase_price DECIMAL(15,2),
+			amount_owed DECIMAL(15,2) DEFAULT 0,
+			purchase_date DATE,
 			description TEXT,
+			custom_fields JSONB, -- Extensible custom properties
+			valuation_method VARCHAR(20) DEFAULT 'manual', -- manual, api, formula
+			last_valuation_date TIMESTAMP,
+			api_provider VARCHAR(50),
+			notes TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);`
 
@@ -289,6 +314,22 @@ const (
 		END $$;
 	`
 
+	// Schema update for other assets extension
+	updateMiscellaneousAssetsTable = `
+		-- Add missing columns to miscellaneous_assets table
+		ALTER TABLE miscellaneous_assets ADD COLUMN IF NOT EXISTS asset_category_id INTEGER REFERENCES asset_categories(id);
+		ALTER TABLE miscellaneous_assets ADD COLUMN IF NOT EXISTS purchase_price DECIMAL(15,2);
+		ALTER TABLE miscellaneous_assets ADD COLUMN IF NOT EXISTS amount_owed DECIMAL(15,2) DEFAULT 0;
+		ALTER TABLE miscellaneous_assets ADD COLUMN IF NOT EXISTS purchase_date DATE;
+		ALTER TABLE miscellaneous_assets ADD COLUMN IF NOT EXISTS custom_fields JSONB;
+		ALTER TABLE miscellaneous_assets ADD COLUMN IF NOT EXISTS valuation_method VARCHAR(20) DEFAULT 'manual';
+		ALTER TABLE miscellaneous_assets ADD COLUMN IF NOT EXISTS last_valuation_date TIMESTAMP;
+		ALTER TABLE miscellaneous_assets ADD COLUMN IF NOT EXISTS api_provider VARCHAR(50);
+		ALTER TABLE miscellaneous_assets ADD COLUMN IF NOT EXISTS notes TEXT;
+		ALTER TABLE miscellaneous_assets ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+		ALTER TABLE miscellaneous_assets ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+	`
+
 	createIndices = `
 		CREATE INDEX IF NOT EXISTS idx_accounts_data_source ON accounts(data_source_id);
 		CREATE INDEX IF NOT EXISTS idx_account_balances_account ON account_balances(account_id);
@@ -313,5 +354,96 @@ const (
 		CREATE INDEX IF NOT EXISTS idx_crypto_prices_updated ON crypto_prices(last_updated);
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_crypto_prices_symbol_minute ON crypto_prices (symbol, date_trunc('minute', last_updated));
 		CREATE INDEX IF NOT EXISTS idx_net_worth_snapshots_timestamp ON net_worth_snapshots(timestamp);
+		CREATE INDEX IF NOT EXISTS idx_asset_categories_active ON asset_categories(is_active);
+		CREATE INDEX IF NOT EXISTS idx_asset_categories_sort ON asset_categories(sort_order);
+		CREATE INDEX IF NOT EXISTS idx_miscellaneous_assets_account ON miscellaneous_assets(account_id);
+		CREATE INDEX IF NOT EXISTS idx_miscellaneous_assets_category ON miscellaneous_assets(asset_category_id);
+		CREATE INDEX IF NOT EXISTS idx_miscellaneous_assets_type ON miscellaneous_assets(asset_type);
+		CREATE INDEX IF NOT EXISTS idx_miscellaneous_assets_valuation ON miscellaneous_assets(valuation_method);
+	`
+
+	// Seed data for default asset categories
+	seedAssetCategories = `
+		INSERT INTO asset_categories (name, description, icon, color, custom_schema, sort_order) VALUES
+		('Vehicles', 'Cars, motorcycles, boats, and other vehicles', 'car', '#3B82F6', 
+		 '{"fields": [
+		   {"name": "make", "type": "text", "label": "Make", "required": true},
+		   {"name": "model", "type": "text", "label": "Model", "required": true},
+		   {"name": "year", "type": "number", "label": "Year", "required": true, "validation": {"min": 1900, "max": 2030}},
+		   {"name": "mileage", "type": "number", "label": "Mileage", "required": false, "validation": {"min": 0}},
+		   {"name": "condition", "type": "select", "label": "Condition", "required": false, "options": [
+		     {"value": "excellent", "label": "Excellent"},
+		     {"value": "good", "label": "Good"},
+		     {"value": "fair", "label": "Fair"},
+		     {"value": "poor", "label": "Poor"}
+		   ]},
+		   {"name": "vin", "type": "text", "label": "VIN", "required": false}
+		 ]}', 1),
+		
+		('Jewelry & Collectibles', 'Jewelry, watches, coins, and collectible items', 'gem', '#8B5CF6', 
+		 '{"fields": [
+		   {"name": "type", "type": "select", "label": "Type", "required": true, "options": [
+		     {"value": "jewelry", "label": "Jewelry"},
+		     {"value": "watch", "label": "Watch"},
+		     {"value": "coin", "label": "Coin"},
+		     {"value": "stamp", "label": "Stamp"},
+		     {"value": "other", "label": "Other"}
+		   ]},
+		   {"name": "material", "type": "text", "label": "Material", "required": false},
+		   {"name": "appraised_value", "type": "number", "label": "Appraised Value", "required": false},
+		   {"name": "certificate_number", "type": "text", "label": "Certificate Number", "required": false},
+		   {"name": "appraisal_date", "type": "date", "label": "Appraisal Date", "required": false}
+		 ]}', 2),
+		
+		('Art & Antiques', 'Paintings, sculptures, and antique items', 'palette', '#EF4444', 
+		 '{"fields": [
+		   {"name": "artist", "type": "text", "label": "Artist", "required": false},
+		   {"name": "medium", "type": "text", "label": "Medium", "required": false},
+		   {"name": "dimensions", "type": "text", "label": "Dimensions", "required": false},
+		   {"name": "provenance", "type": "textarea", "label": "Provenance", "required": false},
+		   {"name": "insurance_value", "type": "number", "label": "Insurance Value", "required": false},
+		   {"name": "year_created", "type": "number", "label": "Year Created", "required": false}
+		 ]}', 3),
+		
+		('Business Interests', 'Business ownership, partnerships, and investments', 'briefcase', '#10B981', 
+		 '{"fields": [
+		   {"name": "business_name", "type": "text", "label": "Business Name", "required": true},
+		   {"name": "ownership_percentage", "type": "number", "label": "Ownership %", "required": false, "validation": {"min": 0, "max": 100}},
+		   {"name": "business_type", "type": "select", "label": "Business Type", "required": false, "options": [
+		     {"value": "corporation", "label": "Corporation"},
+		     {"value": "llc", "label": "LLC"},
+		     {"value": "partnership", "label": "Partnership"},
+		     {"value": "sole_proprietorship", "label": "Sole Proprietorship"},
+		     {"value": "other", "label": "Other"}
+		   ]},
+		   {"name": "industry", "type": "text", "label": "Industry", "required": false}
+		 ]}', 4),
+		
+		('Intellectual Property', 'Patents, trademarks, copyrights, and domain names', 'lightbulb', '#F59E0B', 
+		 '{"fields": [
+		   {"name": "ip_type", "type": "select", "label": "IP Type", "required": true, "options": [
+		     {"value": "patent", "label": "Patent"},
+		     {"value": "trademark", "label": "Trademark"},
+		     {"value": "copyright", "label": "Copyright"},
+		     {"value": "domain", "label": "Domain Name"},
+		     {"value": "other", "label": "Other"}
+		   ]},
+		   {"name": "registration_number", "type": "text", "label": "Registration Number", "required": false},
+		   {"name": "expiry_date", "type": "date", "label": "Expiry Date", "required": false},
+		   {"name": "jurisdiction", "type": "text", "label": "Jurisdiction", "required": false}
+		 ]}', 5),
+		
+		('Other', 'Miscellaneous assets that do not fit other categories', 'more-horizontal', '#6B7280', 
+		 '{"fields": [
+		   {"name": "category", "type": "text", "label": "Category", "required": false},
+		   {"name": "condition", "type": "select", "label": "Condition", "required": false, "options": [
+		     {"value": "new", "label": "New"},
+		     {"value": "excellent", "label": "Excellent"},
+		     {"value": "good", "label": "Good"},
+		     {"value": "fair", "label": "Fair"},
+		     {"value": "poor", "label": "Poor"}
+		   ]}
+		 ]}', 99)
+		ON CONFLICT (name) DO NOTHING;
 	`
 )

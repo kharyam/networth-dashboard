@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, TrendingDown, DollarSign, Briefcase, Building, PieChart, Wallet, Coins } from 'lucide-react'
+import { TrendingUp, TrendingDown, DollarSign, Briefcase, Building, PieChart, Wallet, Coins, Package } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell } from 'recharts'
 import { netWorthApi } from '@/services/api'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -44,9 +44,7 @@ const generateAllocationData = (netWorth: NetWorthSummary | null) => {
   const realEstateValue = netWorth.real_estate_equity || 0
   const cashHoldingsValue = netWorth.cash_holdings_value || 0
   const cryptoHoldingsValue = netWorth.crypto_holdings_value || 0
-  
-  // Calculate other assets as remaining assets (after separating all known asset types)
-  const otherValue = Math.max(0, totalAssets - stockValue - equityValue - realEstateValue - cashHoldingsValue - cryptoHoldingsValue)
+  const otherValue = netWorth.other_assets_value || 0
   
   const allocation = [
     {
@@ -302,8 +300,8 @@ function Dashboard() {
           />
         </div>
 
-        {/* Second Row - Liquid Assets */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Second Row - Individual Asset Categories */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <MetricCard
             title="Total Cash"
             value={netWorth?.cash_holdings_value || 0}
@@ -324,6 +322,13 @@ function Dashboard() {
             change={0}
             changeType="positive"
             icon={TrendingUp}
+          />
+          <MetricCard
+            title="Other Assets"
+            value={netWorth?.other_assets_value || 0}
+            change={0}
+            changeType="positive"
+            icon={Package}
           />
         </div>
       </div>

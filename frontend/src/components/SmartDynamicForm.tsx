@@ -10,9 +10,10 @@ interface SmartDynamicFormProps {
   loading?: boolean
   initialData?: Record<string, any>
   submitText?: string
+  onChange?: (fieldName: string, value: any, formData: Record<string, any>) => void
 }
 
-export function SmartDynamicForm({ schema, onSubmit, loading = false, initialData = {}, submitText = 'Submit' }: SmartDynamicFormProps) {
+export function SmartDynamicForm({ schema, onSubmit, loading = false, initialData = {}, submitText = 'Submit', onChange }: SmartDynamicFormProps) {
   // Initialize form data with default values from schema
   const getInitialFormData = () => {
     const defaultData: Record<string, any> = {}
@@ -45,10 +46,12 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
   }, [])
 
   const handleInputChange = useCallback((fieldName: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
+    const newFormData = {
+      ...formData,
       [fieldName]: value
-    }))
+    }
+    
+    setFormData(newFormData)
     
     // Clear error when user starts typing
     if (errors[fieldName]) {
@@ -63,7 +66,12 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
     if (typeof value === 'string' && value.length > 0) {
       smartDataService.addRecentValue(fieldName, value)
     }
-  }, [errors])
+    
+    // Call onChange callback if provided
+    if (onChange) {
+      onChange(fieldName, value, newFormData)
+    }
+  }, [errors, formData, onChange])
 
   const handleCompanyNameSuggestion = useCallback((companyName: string) => {
     // Auto-fill company_name field when symbol is selected
