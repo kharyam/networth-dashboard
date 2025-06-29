@@ -14,6 +14,7 @@ import { RealEstate as RealEstateType, ManualEntrySchema } from '../types'
 import PropertyCard from '../components/PropertyCard'
 import PropertyCharts from '../components/PropertyCharts'
 import SmartDynamicForm from '../components/SmartDynamicForm'
+import EditEntryModal from '../components/EditEntryModal'
 import { propertyValuationService } from '../services/propertyValuationService'
 
 type ViewMode = 'grid' | 'list' | 'charts'
@@ -567,39 +568,16 @@ function RealEstate() {
       )}
 
       {/* Edit Property Modal */}
-      {editModalOpen && selectedProperty && schema && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                Edit Property
-              </h3>
-              <button
-                onClick={closeModals}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="p-6">
-              <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                {schema.name}
-              </h4>
-              <p className="text-gray-600 dark:text-gray-400 mb-6">
-                {schema.description}
-              </p>
-              
-              <SmartDynamicForm
-                schema={schema}
-                initialData={propertyToFormData(selectedProperty)}
-                onSubmit={handleUpdateProperty}
-                loading={submitting}
-                submitText="Update Property"
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <EditEntryModal
+        entryType="real_estate"
+        entryData={selectedProperty ? propertyToFormData(selectedProperty) : {}}
+        title="Edit Property"
+        isOpen={editModalOpen && !!selectedProperty}
+        onClose={closeModals}
+        onUpdate={handleUpdateProperty}
+        submitText="Update Property"
+        schemaOverride={schema || undefined}
+      />
     </div>
   )
 }

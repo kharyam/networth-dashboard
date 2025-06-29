@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, TrendingDown, DollarSign, Calendar, Award, AlertCircle } from 'lucide-react'
+import { TrendingUp, TrendingDown, DollarSign, Calendar, Award, AlertCircle, Edit2, Eye, Trash2, X } from 'lucide-react'
 import { equityApi } from '@/services/api'
 import type { EquityGrant } from '@/types'
 import MarketStatus from '@/components/MarketStatus'
 import PriceRefreshControls from '@/components/PriceRefreshControls'
+import EditEntryModal from '@/components/EditEntryModal'
 
 interface EquityGrantWithValue extends EquityGrant {
   current_price?: number
@@ -58,7 +59,17 @@ function MetricCard({
   )
 }
 
-function EquityGrantCard({ grant }: { grant: EquityGrantWithValue }) {
+function EquityGrantCard({ 
+  grant, 
+  onEdit, 
+  onView, 
+  onDelete 
+}: { 
+  grant: EquityGrantWithValue
+  onEdit: (grant: EquityGrantWithValue) => void
+  onView: (grant: EquityGrantWithValue) => void
+  onDelete: (grant: EquityGrantWithValue) => void
+}) {
   const vestedPercentage = grant.total_shares > 0 ? (grant.vested_shares / grant.total_shares) * 100 : 0
   const hasPrice = grant.current_price && grant.current_price > 0
   
@@ -156,6 +167,33 @@ function EquityGrantCard({ grant }: { grant: EquityGrantWithValue }) {
           )}
         </div>
       )}
+
+      {/* Action Buttons */}
+      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+        <div className="flex justify-end space-x-2">
+          <button
+            onClick={() => onView(grant)}
+            className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+            title="View Details"
+          >
+            <Eye className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => onEdit(grant)}
+            className="p-2 text-gray-400 hover:text-green-600 dark:hover:text-green-400"
+            title="Edit"
+          >
+            <Edit2 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => onDelete(grant)}
+            className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+            title="Delete"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -164,6 +202,12 @@ function Equity() {
   const [grants, setGrants] = useState<EquityGrantWithValue[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  
+  // Modal states
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [viewModalOpen, setViewModalOpen] = useState(false)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [selectedGrant, setSelectedGrant] = useState<EquityGrantWithValue | null>(null)
 
   const fetchEquityGrants = async () => {
     try {
@@ -209,6 +253,54 @@ function Equity() {
 
   const handleRefreshComplete = async () => {
     await fetchEquityGrants() // Refresh grants with new prices
+  }
+
+  const closeModals = () => {
+    setEditModalOpen(false)
+    setViewModalOpen(false)
+    setDeleteModalOpen(false)
+    setSelectedGrant(null)
+  }
+
+  const handleEdit = (grant: EquityGrantWithValue) => {
+    setSelectedGrant(grant)
+    setEditModalOpen(true)
+  }
+
+  const handleView = (grant: EquityGrantWithValue) => {
+    setSelectedGrant(grant)
+    setViewModalOpen(true)
+  }
+
+  const handleDelete = (grant: EquityGrantWithValue) => {
+    setSelectedGrant(grant)
+    setDeleteModalOpen(true)
+  }
+
+  const handleUpdate = async (formData: Record<string, any>) => {
+    if (!selectedGrant) return
+
+    try {
+      await equityApi.update(selectedGrant.id, formData)
+      closeModals()
+      await fetchEquityGrants()
+    } catch (err: any) {
+      console.error('Failed to update equity grant:', err)
+      setError(err.message || 'Failed to update equity grant. Please try again.')
+    }
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedGrant) return
+
+    try {
+      await equityApi.delete(selectedGrant.id)
+      closeModals()
+      await fetchEquityGrants()
+    } catch (err: any) {
+      console.error('Failed to delete equity grant:', err)
+      setError(err.message || 'Failed to delete equity grant. Please try again.')
+    }
   }
 
   useEffect(() => {
@@ -298,7 +390,13 @@ function Equity() {
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Your Equity Grants</h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {grants.map((grant) => (
-              <EquityGrantCard key={grant.id} grant={grant} />
+              <EquityGrantCard 
+                key={grant.id} 
+                grant={grant}
+                onEdit={handleEdit}
+                onView={handleView}
+                onDelete={handleDelete}
+              />
             ))}
           </div>
         </div>
@@ -310,6 +408,124 @@ function Equity() {
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
               Add equity grants through Manual Entry to track your vesting schedule and current values.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      <EditEntryModal
+        entryType="morgan_stanley"
+        entryData={selectedGrant || {}}
+        title="Edit Equity Grant"
+        isOpen={editModalOpen}
+        onClose={closeModals}
+        onUpdate={handleUpdate}
+        submitText="Update Grant"
+      />
+
+      {/* View Modal */}
+      {viewModalOpen && selectedGrant && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Equity Grant Details
+              </h3>
+              <button
+                onClick={closeModals}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Company & Grant Type</h4>
+                  <p className="text-gray-900 dark:text-white">{selectedGrant.company_symbol || 'Unknown'} - {selectedGrant.grant_type.toUpperCase()}</p>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Grant ID</h4>
+                  <p className="text-gray-900 dark:text-white">{selectedGrant.grant_id || `#${selectedGrant.id}`}</p>
+                </div>
+                {selectedGrant.grant_date && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Grant Date</h4>
+                    <p className="text-gray-900 dark:text-white">{new Date(selectedGrant.grant_date).toLocaleDateString()}</p>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Vested Shares</h4>
+                    <p className="text-gray-900 dark:text-white">{selectedGrant.vested_shares.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Unvested Shares</h4>
+                    <p className="text-gray-900 dark:text-white">{selectedGrant.unvested_shares.toLocaleString()}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Vested Value</h4>
+                    <p className="text-green-600 dark:text-green-400">${selectedGrant.vested_value.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Total Value</h4>
+                    <p className="text-gray-900 dark:text-white">${selectedGrant.total_value.toLocaleString()}</p>
+                  </div>
+                </div>
+                {selectedGrant.current_price && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Current Price</h4>
+                    <p className="text-gray-900 dark:text-white">${selectedGrant.current_price.toFixed(2)}</p>
+                  </div>
+                )}
+                {selectedGrant.grant_type === 'stock_options' && selectedGrant.strike_price && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Strike Price</h4>
+                    <p className="text-gray-900 dark:text-white">${selectedGrant.strike_price.toFixed(2)}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteModalOpen && selectedGrant && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Delete Equity Grant
+              </h3>
+              <button
+                onClick={closeModals}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Are you sure you want to delete this equity grant ({selectedGrant.company_symbol} - {selectedGrant.grant_type.toUpperCase()})? This action cannot be undone.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={closeModals}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteConfirm}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

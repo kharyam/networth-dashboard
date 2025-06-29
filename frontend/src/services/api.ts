@@ -157,12 +157,30 @@ export const realEstateApi = {
 export const cashHoldingsApi = {
   getAll: (): Promise<any[]> =>
     api.get('/cash-holdings').then(res => res.data.cash_holdings || []),
+  
+  create: (holding: any): Promise<any> =>
+    api.post('/cash-holdings', holding).then(res => res.data),
+  
+  update: (id: number, holding: any): Promise<any> =>
+    api.put(`/cash-holdings/${id}`, holding).then(res => res.data),
+  
+  delete: (id: number): Promise<void> =>
+    api.delete(`/cash-holdings/${id}`).then(() => undefined),
 }
 
 // Crypto Holdings API
 export const cryptoHoldingsApi = {
   getAll: (): Promise<any[]> =>
     api.get('/crypto-holdings').then(res => res.data.crypto_holdings || []),
+  
+  create: (holding: any): Promise<any> =>
+    api.post('/crypto-holdings', holding).then(res => res.data),
+  
+  update: (id: number, holding: any): Promise<any> =>
+    api.put(`/crypto-holdings/${id}`, holding).then(res => res.data),
+  
+  delete: (id: number): Promise<void> =>
+    api.delete(`/crypto-holdings/${id}`).then(() => undefined),
   
   getPrice: (symbol: string): Promise<any> =>
     api.get(`/crypto/prices/${symbol}`).then(res => res.data),

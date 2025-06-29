@@ -22,7 +22,7 @@ import {
 import { pluginsApi } from '../services/api'
 import { ManualEntrySchema } from '../types'
 import SmartDynamicForm from '../components/SmartDynamicForm'
-import { flattenCustomFields } from '../utils/customFields'
+import EditEntryModal from '../components/EditEntryModal'
 
 interface AssetCategory {
   id: number
@@ -203,7 +203,6 @@ function OtherAssets() {
     setSelectedAsset(asset)
     setShowEditModal(true)
     setCurrentFormCategoryId(asset.asset_category_id)
-    await loadSchema(asset.asset_category_id)
   }
 
   const handleUpdateAsset = async (formData: Record<string, any>) => {
@@ -229,7 +228,6 @@ function OtherAssets() {
       setMessage({ type: 'success', text: 'Asset updated successfully!' })
       setShowEditModal(false)
       setSelectedAsset(null)
-      setSchema(null)
       await loadAssets(selectedCategory || undefined)
       
       setTimeout(() => setMessage(null), 3000)
@@ -820,40 +818,16 @@ function OtherAssets() {
       )}
 
       {/* Edit Asset Modal */}
-      {showEditModal && selectedAsset && schema && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">Edit Asset</h3>
-              <button
-                onClick={closeModals}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="p-6">
-              <SmartDynamicForm
-                schema={schema}
-                initialData={{
-                  asset_category_id: selectedAsset.asset_category_id,
-                  asset_name: selectedAsset.asset_name,
-                  current_value: selectedAsset.current_value,
-                  purchase_price: selectedAsset.purchase_price,
-                  amount_owed: selectedAsset.amount_owed,
-                  purchase_date: selectedAsset.purchase_date,
-                  description: selectedAsset.description,
-                  ...flattenCustomFields(selectedAsset.custom_fields),
-                }}
-                onSubmit={handleUpdateAsset}
-                loading={submitting}
-                submitText="Update Asset"
-                onChange={handleFormDataChange}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <EditEntryModal
+        entryType="other_assets"
+        entryData={selectedAsset || {}}
+        categoryId={selectedAsset?.asset_category_id}
+        title="Edit Asset"
+        isOpen={showEditModal && !!selectedAsset}
+        onClose={closeModals}
+        onUpdate={handleUpdateAsset}
+        submitText="Update Asset"
+      />
 
       {/* Delete Asset Modal */}
       {showDeleteModal && selectedAsset && (

@@ -10,6 +10,9 @@ import {
   X,
   ExternalLink,
   Clock,
+  Edit2,
+  Eye,
+  Trash2,
 } from 'lucide-react'
 import { 
   PieChart, Pie, Cell,
@@ -19,6 +22,7 @@ import {
 import { pluginsApi, cryptoHoldingsApi } from '../services/api'
 import { ManualEntrySchema, CryptoPriceHistoryResponse } from '../types'
 import SmartDynamicForm from '../components/SmartDynamicForm'
+import EditEntryModal from '../components/EditEntryModal'
 
 interface CryptoHolding {
   id: number
@@ -89,6 +93,9 @@ interface InstitutionCardProps {
   formatCrypto: (amount: number, symbol: string) => string
   convertToBTC: (usdAmount: number) => number
   colors: string[]
+  onEdit: (holding: CryptoHolding) => void
+  onView: (holding: CryptoHolding) => void
+  onDelete: (holding: CryptoHolding) => void
 }
 
 function InstitutionCard({
@@ -100,7 +107,10 @@ function InstitutionCard({
   formatCurrency,
   formatCrypto,
   convertToBTC,
-  colors
+  colors,
+  onEdit,
+  onView,
+  onDelete
 }: InstitutionCardProps) {
   const [institutionPriceMode, setInstitutionPriceMode] = useState<PriceMode>(priceMode)
 
@@ -206,13 +216,38 @@ function InstitutionCard({
               <span className="text-sm font-medium text-gray-900 dark:text-white">
                 {holding.crypto_symbol}
               </span>
-              {holding.price_change_24h && (
-                <span className={`text-xs font-medium ${
-                  holding.price_change_24h >= 0 ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {holding.price_change_24h >= 0 ? '+' : ''}{holding.price_change_24h.toFixed(2)}%
-                </span>
-              )}
+              <div className="flex items-center space-x-2">
+                {holding.price_change_24h && (
+                  <span className={`text-xs font-medium ${
+                    holding.price_change_24h >= 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {holding.price_change_24h >= 0 ? '+' : ''}{holding.price_change_24h.toFixed(2)}%
+                  </span>
+                )}
+                <div className="flex items-center space-x-1">
+                  <button
+                    onClick={() => onView(holding)}
+                    className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+                    title="View Details"
+                  >
+                    <Eye className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => onEdit(holding)}
+                    className="p-1 text-gray-400 hover:text-green-600 dark:hover:text-green-400"
+                    title="Edit"
+                  >
+                    <Edit2 className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => onDelete(holding)}
+                    className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
             </div>
             
             <div className="text-xs text-gray-600 dark:text-gray-400">
@@ -297,6 +332,10 @@ function CryptoHoldings() {
   
   // Modal states
   const [addModalOpen, setAddModalOpen] = useState(false)
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [viewModalOpen, setViewModalOpen] = useState(false)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [selectedHolding, setSelectedHolding] = useState<CryptoHolding | null>(null)
   
   // Form states
   const [schema, setSchema] = useState<ManualEntrySchema | null>(null)
@@ -402,6 +441,59 @@ function CryptoHoldings() {
       setMessage({ type: 'error', text: 'Failed to refresh crypto holdings' })
     } finally {
       setRefreshing(false)
+    }
+  }
+
+  const closeModals = () => {
+    setAddModalOpen(false)
+    setEditModalOpen(false)
+    setViewModalOpen(false)
+    setDeleteModalOpen(false)
+    setSelectedHolding(null)
+  }
+
+  const handleEdit = (holding: CryptoHolding) => {
+    setSelectedHolding(holding)
+    setEditModalOpen(true)
+  }
+
+  const handleView = (holding: CryptoHolding) => {
+    setSelectedHolding(holding)
+    setViewModalOpen(true)
+  }
+
+  const handleDelete = (holding: CryptoHolding) => {
+    setSelectedHolding(holding)
+    setDeleteModalOpen(true)
+  }
+
+  const handleUpdate = async (formData: Record<string, any>) => {
+    if (!selectedHolding) return
+
+    try {
+      await cryptoHoldingsApi.update(selectedHolding.id, formData)
+      setMessage({ type: 'success', text: 'Crypto holding updated successfully!' })
+      closeModals()
+      await loadCryptoHoldings()
+      setTimeout(() => setMessage(null), 3000)
+    } catch (err: any) {
+      console.error('Failed to update crypto holding:', err)
+      setError(err.message || 'Failed to update crypto holding. Please try again.')
+    }
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedHolding) return
+
+    try {
+      await cryptoHoldingsApi.delete(selectedHolding.id)
+      setMessage({ type: 'success', text: 'Crypto holding deleted successfully!' })
+      closeModals()
+      await loadCryptoHoldings()
+      setTimeout(() => setMessage(null), 3000)
+    } catch (err: any) {
+      console.error('Failed to delete crypto holding:', err)
+      setError(err.message || 'Failed to delete crypto holding. Please try again.')
     }
   }
 
@@ -927,6 +1019,9 @@ function CryptoHoldings() {
                   formatCrypto={formatCrypto}
                   convertToBTC={convertToBTC}
                   colors={COLORS}
+                  onEdit={handleEdit}
+                  onView={handleView}
+                  onDelete={handleDelete}
                 />
               )
             })
@@ -954,6 +1049,79 @@ function CryptoHoldings() {
               loading={submitting}
               submitText="Add Crypto Holding"
             />
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      <EditEntryModal
+        entryType="crypto_holdings"
+        entryData={selectedHolding || {}}
+        title="Edit Crypto Holding"
+        isOpen={editModalOpen && !!selectedHolding}
+        onClose={closeModals}
+        onUpdate={handleUpdate}
+        submitText="Update Crypto Holding"
+      />
+
+      {/* View Modal */}
+      {viewModalOpen && selectedHolding && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Crypto Holding Details
+              </h3>
+              <button
+                onClick={closeModals}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <pre className="text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-lg overflow-x-auto">
+                {JSON.stringify(selectedHolding, null, 2)}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Modal */}
+      {deleteModalOpen && selectedHolding && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Delete Crypto Holding
+              </h3>
+              <button
+                onClick={closeModals}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Are you sure you want to delete {selectedHolding.crypto_symbol} holding at {selectedHolding.institution_name}? This action cannot be undone.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={closeModals}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteConfirm}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

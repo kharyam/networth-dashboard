@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
+import { Edit2, Eye, Trash2, X } from 'lucide-react'
 import { stocksApi, equityApi } from '../services/api'
 import { StockHolding, StockConsolidation, EquityGrant } from '../types'
 import MarketStatus from '../components/MarketStatus'
 import PriceRefreshControls from '../components/PriceRefreshControls'
+import EditEntryModal from '../components/EditEntryModal'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts'
 
 function Stocks() {
@@ -12,6 +14,13 @@ function Stocks() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'individual' | 'consolidated' | 'equity' | 'institutions'>('consolidated')
   const [error, setError] = useState<string | null>(null)
+  
+  // Modal states
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [viewModalOpen, setViewModalOpen] = useState(false)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [selectedItem, setSelectedItem] = useState<StockHolding | EquityGrant | null>(null)
+  const [selectedItemType, setSelectedItemType] = useState<'stock_holding' | 'morgan_stanley' | null>(null)
 
   useEffect(() => {
     loadAllData()
@@ -41,6 +50,66 @@ function Stocks() {
 
   const handleRefreshComplete = async () => {
     await loadAllData() // Reload all data after price refresh
+  }
+
+  const closeModals = () => {
+    setEditModalOpen(false)
+    setViewModalOpen(false)
+    setDeleteModalOpen(false)
+    setSelectedItem(null)
+    setSelectedItemType(null)
+  }
+
+  const handleEdit = (item: StockHolding | EquityGrant, type: 'stock_holding' | 'morgan_stanley') => {
+    setSelectedItem(item)
+    setSelectedItemType(type)
+    setEditModalOpen(true)
+  }
+
+  const handleView = (item: StockHolding | EquityGrant, type: 'stock_holding' | 'morgan_stanley') => {
+    setSelectedItem(item)
+    setSelectedItemType(type)
+    setViewModalOpen(true)
+  }
+
+  const handleDelete = (item: StockHolding | EquityGrant, type: 'stock_holding' | 'morgan_stanley') => {
+    setSelectedItem(item)
+    setSelectedItemType(type)
+    setDeleteModalOpen(true)
+  }
+
+  const handleUpdate = async (formData: Record<string, any>) => {
+    if (!selectedItem || !selectedItemType) return
+
+    try {
+      if (selectedItemType === 'stock_holding') {
+        await stocksApi.update((selectedItem as StockHolding).id, formData)
+      } else {
+        await equityApi.update((selectedItem as EquityGrant).id, formData)
+      }
+      closeModals()
+      await loadAllData()
+    } catch (err: any) {
+      console.error('Failed to update item:', err)
+      setError(err.message || 'Failed to update item. Please try again.')
+    }
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedItem || !selectedItemType) return
+
+    try {
+      if (selectedItemType === 'stock_holding') {
+        await stocksApi.delete((selectedItem as StockHolding).id)
+      } else {
+        await equityApi.delete((selectedItem as EquityGrant).id)
+      }
+      closeModals()
+      await loadAllData()
+    } catch (err: any) {
+      console.error('Failed to delete item:', err)
+      setError(err.message || 'Failed to delete item. Please try again.')
+    }
   }
 
   const formatCurrency = (amount: number | undefined | null) => {
@@ -360,6 +429,7 @@ function Stocks() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Current Price</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Market Value</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Data Source</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -391,6 +461,31 @@ function Stocks() {
                               {stock.data_source}
                             </span>
                           </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <div className="flex items-center space-x-2">
+                              <button
+                                onClick={() => handleView(stock, 'stock_holding')}
+                                className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+                                title="View Details"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleEdit(stock, 'stock_holding')}
+                                className="p-1 text-gray-400 hover:text-green-600 dark:hover:text-green-400"
+                                title="Edit"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(stock, 'stock_holding')}
+                                className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -419,6 +514,7 @@ function Stocks() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Strike Price</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Grant Date</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Data Source</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -455,6 +551,31 @@ function Stocks() {
                             <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
                               {grant.data_source}
                             </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <div className="flex items-center space-x-2">
+                              <button
+                                onClick={() => handleView(grant, 'morgan_stanley')}
+                                className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+                                title="View Details"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleEdit(grant, 'morgan_stanley')}
+                                className="p-1 text-gray-400 hover:text-green-600 dark:hover:text-green-400"
+                                title="Edit"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(grant, 'morgan_stanley')}
+                                className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -536,6 +657,81 @@ function Stocks() {
           )}
         </div>
       </div>
+
+      {/* Edit Modal */}
+      {selectedItem && selectedItemType && (
+        <EditEntryModal
+          entryType={selectedItemType}
+          entryData={selectedItem}
+          title={`Edit ${selectedItemType === 'stock_holding' ? 'Stock Holding' : 'Equity Grant'}`}
+          isOpen={editModalOpen}
+          onClose={closeModals}
+          onUpdate={handleUpdate}
+          submitText={`Update ${selectedItemType === 'stock_holding' ? 'Stock' : 'Grant'}`}
+        />
+      )}
+
+      {/* View Modal */}
+      {viewModalOpen && selectedItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                {selectedItemType === 'stock_holding' ? 'Stock Holding' : 'Equity Grant'} Details
+              </h3>
+              <button
+                onClick={closeModals}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <pre className="text-sm bg-gray-50 dark:bg-gray-900 p-4 rounded-lg overflow-x-auto">
+                {JSON.stringify(selectedItem, null, 2)}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Modal */}
+      {deleteModalOpen && selectedItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Delete {selectedItemType === 'stock_holding' ? 'Stock Holding' : 'Equity Grant'}
+              </h3>
+              <button
+                onClick={closeModals}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Are you sure you want to delete this {selectedItemType === 'stock_holding' ? 'stock holding' : 'equity grant'}? This action cannot be undone.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={closeModals}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteConfirm}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
