@@ -20,7 +20,7 @@ import (
 // Net worth handlers
 
 // @Summary Get current net worth
-// @Description Calculate and return current net worth including all assets (stocks, equity, real estate, cash, crypto) minus liabilities
+// @Description Calculate and return current net worth including all assets (stocks, equity, real estate, cash, crypto, other assets) minus liabilities
 // @Tags net-worth
 // @Accept json
 // @Produce json
@@ -1605,6 +1605,33 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		FROM crypto_holdings cry
 		LEFT JOIN accounts a ON cry.account_id = a.id
 		WHERE cry.created_at IS NOT NULL
+		
+		UNION ALL
+		
+		SELECT 'other_assets' as entry_type,
+		       ma.id, ma.account_id, ma.created_at, ma.last_updated as updated_at,
+		       json_build_object(
+		           'asset_category_id', ma.asset_category_id,
+		           'asset_name', ma.asset_name,
+		           'current_value', ma.current_value,
+		           'purchase_price', ma.purchase_price,
+		           'amount_owed', ma.amount_owed,
+		           'purchase_date', ma.purchase_date,
+		           'description', ma.description,
+		           'custom_fields', ma.custom_fields,
+		           'valuation_method', ma.valuation_method,
+		           'last_valuation_date', ma.last_valuation_date,
+		           'notes', ma.notes,
+		           'category_name', ac.name,
+		           'category_description', ac.description,
+		           'category_icon', ac.icon,
+		           'category_color', ac.color
+		       ) as data_json,
+		       a.account_name, a.institution
+		FROM miscellaneous_assets ma
+		LEFT JOIN accounts a ON ma.account_id = a.id
+		LEFT JOIN asset_categories ac ON ma.asset_category_id = ac.id
+		WHERE ma.created_at IS NOT NULL
 	`
 
 	args := []interface{}{}

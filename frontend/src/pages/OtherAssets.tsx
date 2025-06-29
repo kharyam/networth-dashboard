@@ -22,6 +22,7 @@ import {
 import { pluginsApi } from '../services/api'
 import { ManualEntrySchema } from '../types'
 import SmartDynamicForm from '../components/SmartDynamicForm'
+import { flattenCustomFields } from '../utils/customFields'
 
 interface AssetCategory {
   id: number
@@ -842,7 +843,7 @@ function OtherAssets() {
                   amount_owed: selectedAsset.amount_owed,
                   purchase_date: selectedAsset.purchase_date,
                   description: selectedAsset.description,
-                  custom_fields: selectedAsset.custom_fields || {},
+                  ...flattenCustomFields(selectedAsset.custom_fields),
                 }}
                 onSubmit={handleUpdateAsset}
                 loading={submitting}

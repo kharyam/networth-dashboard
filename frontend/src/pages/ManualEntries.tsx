@@ -3,6 +3,7 @@ import { Plus, List, X, Eye, Edit2, Trash2, Filter } from 'lucide-react'
 import { pluginsApi, manualEntriesApi } from '../services/api'
 import { Plugin, ManualEntrySchema } from '../types'
 import SmartDynamicForm from '../components/SmartDynamicForm'
+import { flattenCustomFieldsFromParsedData } from '../utils/customFields'
 
 interface ManualEntry {
   id: number
@@ -204,6 +205,8 @@ function ManualEntries() {
         return `${data.institution_name || 'Bank'} - ${data.account_name || 'Account'} (${data.account_type || 'Cash'})`
       case 'crypto_holdings':
         return `${data.institution_name || 'Exchange'} - ${data.crypto_symbol || 'Crypto'} (${data.balance_tokens || 0} tokens)`
+      case 'other_assets':
+        return data.asset_name || `${data.category_name || 'Other'} Asset`
       default:
         return `${entry.entry_type} Entry`
     }
@@ -254,23 +257,45 @@ function ManualEntries() {
           return `$${value.toLocaleString()}`
         }
         return `${data.balance_tokens || 0} ${data.crypto_symbol || 'tokens'}`
+      case 'other_assets':
+        if (data.current_value) {
+          const netValue = data.current_value - (data.amount_owed || 0)
+          return `$${netValue.toLocaleString()}`
+        }
+        return 'N/A'
       default:
         return 'N/A'
     }
   }
 
+  // Enhanced filtering debug function
+  const debugFilterEntries = () => {
+    console.group('🔍 Manual Entries Filter Debug')
+    console.log('Filter state:', { filter, filterLength: filter.length })
+    console.log('Entries data:', {
+      totalEntries: entries.length,
+      entryTypes: [...new Set(entries.map(e => e.entry_type))],
+      sampleEntry: entries[0] ? {
+        id: entries[0].id,
+        type: entries[0].entry_type,
+        dataKeys: Object.keys(parseDataJson(entries[0].data_json))
+      } : null
+    })
+    console.groupEnd()
+  }
+
   // Get filtered entries - simple and reliable approach with debugging
   const getFilteredEntries = () => {
-    console.log('getFilteredEntries called with filter:', filter)
-    console.log('Total entries to filter:', entries.length)
+    console.log('🔍 getFilteredEntries called with filter:', filter)
+    console.log('📊 Total entries to filter:', entries.length)
     
     if (!filter || filter.trim() === '') {
-      console.log('No filter applied, returning all entries:', entries.length)
+      console.log('✅ No filter applied, returning all entries:', entries.length)
       return entries
     }
     
     const filterLower = filter.toLowerCase().trim()
-    console.log('Applying filter:', filterLower)
+    console.log('🎯 Applying filter:', filterLower)
     
     const filtered = entries.filter(entry => {
       try {
@@ -411,12 +436,21 @@ function ManualEntries() {
                 )}
               </div>
               
-              <button
-                onClick={loadEntries}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Refresh
-              </button>
+              <div className="flex space-x-2">
+                <button
+                  onClick={debugFilterEntries}
+                  className="px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm"
+                  title="Debug filter functionality (check console)"
+                >
+                  🐛 Debug
+                </button>
+                <button
+                  onClick={loadEntries}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Refresh
+                </button>
+              </div>
             </div>
           </div>
 
@@ -696,7 +730,14 @@ function EditEntryModal({ entry, onClose, onUpdate }: EditEntryModalProps) {
 
   const parseEntryData = () => {
     try {
-      return JSON.parse(entry.data_json)
+      const parsed = JSON.parse(entry.data_json)
+      
+      // For other_assets entries, flatten custom_fields to match schema field names
+      if (entry.entry_type === 'other_assets') {
+        return flattenCustomFieldsFromParsedData(parsed)
+      }
+      
+      return parsed
     } catch {
       return {}
     }

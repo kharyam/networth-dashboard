@@ -9,6 +9,7 @@ import RealEstate from '@/pages/RealEstate'
 import CashHoldings from '@/pages/CashHoldings'
 import CryptoHoldings from '@/pages/CryptoHoldings'
 import OtherAssets from '@/pages/OtherAssets'
+import AssetCategories from '@/pages/AssetCategories'
 import ManualEntries from '@/pages/ManualEntries'
 import Credentials from '@/pages/Credentials'
 import API from '@/pages/API'
@@ -27,6 +28,7 @@ function App() {
           <Route path="/cash-holdings" element={<CashHoldings />} />
           <Route path="/crypto-holdings" element={<CryptoHoldings />} />
           <Route path="/other-assets" element={<OtherAssets />} />
+          <Route path="/asset-categories" element={<AssetCategories />} />
           <Route path="/manual-entries" element={<ManualEntries />} />
           <Route path="/credentials" element={<Credentials />} />
           <Route path="/api" element={<API />} />

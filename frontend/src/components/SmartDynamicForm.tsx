@@ -14,8 +14,20 @@ interface SmartDynamicFormProps {
 }
 
 export function SmartDynamicForm({ schema, onSubmit, loading = false, initialData = {}, submitText = 'Submit', onChange }: SmartDynamicFormProps) {
-  // Initialize form data with default values from schema
-  const getInitialFormData = () => {
+  const [formData, setFormData] = useState<Record<string, any>>({})
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Initialize smart data service
+  useEffect(() => {
+    smartDataService.initialize()
+  }, [])
+
+  // Initialize and reset form data when schema or initialData changes
+  useEffect(() => {
+    if (!schema || !schema.fields) {
+      return
+    }
+    
     const defaultData: Record<string, any> = {}
     schema.fields.forEach(field => {
       if (field.default_value !== undefined) {
@@ -34,16 +46,8 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
       }
     })
     
-    return mergedData
-  }
-  
-  const [formData, setFormData] = useState<Record<string, any>>(() => getInitialFormData())
-  const [errors, setErrors] = useState<Record<string, string>>({})
-
-  // Initialize smart data service
-  useEffect(() => {
-    smartDataService.initialize()
-  }, [])
+    setFormData(mergedData)
+  }, [initialData, schema])
 
   const handleInputChange = useCallback((fieldName: string, value: any) => {
     const newFormData = {
@@ -201,7 +205,7 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
 
   const renderField = (field: ManualEntryField) => {
     const fieldId = `field-${field.name}`
-    const value = formData[field.name] || ''
+    const value = formData[field.name] !== undefined ? formData[field.name] : ''
     const error = errors[field.name]
     const entryType = getEntryType()
 

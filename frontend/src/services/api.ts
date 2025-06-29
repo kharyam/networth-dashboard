@@ -216,6 +216,27 @@ export const manualEntriesApi = {
     api.delete(`/manual-entries/${id}?type=${entryType}`).then(() => undefined),
 }
 
+// Asset Categories API
+export const assetCategoriesApi = {
+  getAll: (): Promise<any[]> =>
+    api.get('/asset-categories').then(res => res.data.asset_categories || []),
+  
+  getById: (id: number): Promise<any> =>
+    api.get(`/asset-categories/${id}`).then(res => res.data),
+  
+  create: (category: any): Promise<any> =>
+    api.post('/asset-categories', category).then(res => res.data),
+  
+  update: (id: number, category: any): Promise<any> =>
+    api.put(`/asset-categories/${id}`, category).then(res => res.data),
+  
+  delete: (id: number): Promise<void> =>
+    api.delete(`/asset-categories/${id}`).then(() => undefined),
+  
+  getSchema: (id: number): Promise<any> =>
+    api.get(`/asset-categories/${id}/schema`).then(res => res.data),
+}
+
 // Price Management API
 export const pricesApi = {
   // Smart refresh - respects cache and market hours logic
