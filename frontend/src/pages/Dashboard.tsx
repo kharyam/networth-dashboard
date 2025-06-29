@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, TrendingDown, DollarSign, Briefcase, Building, PieChart, Wallet, Coins, Package } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { TrendingUp, TrendingDown, DollarSign, Briefcase, Building, PieChart, Wallet, Coins, Package, X } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell } from 'recharts'
 import { netWorthApi } from '@/services/api'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -175,7 +176,10 @@ function MetricCard({
 function Dashboard() {
   const [netWorth, setNetWorth] = useState<NetWorthSummary | null>(null)
   const [loading, setLoading] = useState(true)
+  const [showNotImplemented, setShowNotImplemented] = useState(false)
+  const [notImplementedFeature, setNotImplementedFeature] = useState('')
   const { isDarkMode } = useTheme() // Still needed for chart dynamic styling
+  const navigate = useNavigate()
 
   const fetchNetWorth = async () => {
     try {
@@ -201,6 +205,28 @@ function Dashboard() {
 
   const handleRefreshComplete = async () => {
     await fetchNetWorth() // Refresh net worth after price update
+  }
+
+  const handleAddStockHolding = () => {
+    navigate('/manual-entries')
+  }
+
+  const handleUpdateEquity = () => {
+    navigate('/manual-entries')
+  }
+
+  const handleUpdateProperty = () => {
+    navigate('/real-estate')
+  }
+
+  const handleViewAnalytics = () => {
+    setNotImplementedFeature('Advanced Analytics Dashboard')
+    setShowNotImplemented(true)
+  }
+
+  const closeNotImplementedModal = () => {
+    setShowNotImplemented(false)
+    setNotImplementedFeature('')
   }
 
   useEffect(() => {
@@ -427,19 +453,31 @@ function Dashboard() {
       <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Quick Actions</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <button className="btn-primary flex items-center justify-center">
+          <button 
+            onClick={handleAddStockHolding}
+            className="btn-primary flex items-center justify-center"
+          >
             <DollarSign className="w-4 h-4 mr-2" />
             Add Stock Holding
           </button>
-          <button className="btn-secondary flex items-center justify-center">
+          <button 
+            onClick={handleUpdateEquity}
+            className="btn-secondary flex items-center justify-center"
+          >
             <Briefcase className="w-4 h-4 mr-2" />
             Update Equity
           </button>
-          <button className="btn-secondary flex items-center justify-center">
+          <button 
+            onClick={handleUpdateProperty}
+            className="btn-secondary flex items-center justify-center"
+          >
             <Building className="w-4 h-4 mr-2" />
             Update Property
           </button>
-          <button className="btn-secondary flex items-center justify-center">
+          <button 
+            onClick={handleViewAnalytics}
+            className="btn-secondary flex items-center justify-center"
+          >
             <PieChart className="w-4 h-4 mr-2" />
             View Analytics
           </button>
@@ -473,6 +511,41 @@ function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Not Implemented Modal */}
+      {showNotImplemented && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Feature Not Yet Available
+              </h3>
+              <button
+                onClick={closeNotImplementedModal}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                {notImplementedFeature} is not yet implemented. This feature is planned for a future release.
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                For now, you can use the existing pages to manage your financial data manually.
+              </p>
+              <div className="flex justify-end">
+                <button
+                  onClick={closeNotImplementedModal}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+                >
+                  Got it
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
