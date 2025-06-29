@@ -1,1 +1,6 @@
 .env
+backend/docs/swagger.json
+backend/docs/swagger.yaml
+go.sum
+backend/networth-dashboard
+package-lock.json
