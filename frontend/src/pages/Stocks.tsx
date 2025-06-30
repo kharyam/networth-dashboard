@@ -303,6 +303,7 @@ function Stocks() {
                       outerRadius={80}
                       paddingAngle={2}
                       dataKey="value"
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                     >
                       {institutionData.map((_, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -342,6 +343,7 @@ function Stocks() {
                       outerRadius={80}
                       paddingAngle={2}
                       dataKey="value"
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                     >
                       {individualHoldingsData.map((_, index) => (
                         <Cell key={`cell-individual-${index}`} fill={COLORS[index % COLORS.length]} />

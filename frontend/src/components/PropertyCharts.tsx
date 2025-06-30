@@ -164,6 +164,7 @@ function PropertyCharts({ properties }: PropertyChartsProps) {
                   outerRadius={100}
                   paddingAngle={5}
                   dataKey="value"
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                 >
                   {equityDebtData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
@@ -215,6 +216,7 @@ function PropertyCharts({ properties }: PropertyChartsProps) {
                   outerRadius={100}
                   paddingAngle={5}
                   dataKey="value"
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                 >
                   {propertyTypeData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
