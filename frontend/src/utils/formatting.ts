@@ -16,6 +16,14 @@ export const formatCurrency = (amount: number, options?: {
     currency = 'USD'
   } = options || {}
 
+  // Handle BTC as a special case since it's not a valid ISO currency code
+  if (currency.toUpperCase() === 'BTC') {
+    return `₿${formatNumber(amount, { 
+      minimumFractionDigits: minimumFractionDigits || 8, 
+      maximumFractionDigits: maximumFractionDigits || 8 
+    })}`
+  }
+
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,

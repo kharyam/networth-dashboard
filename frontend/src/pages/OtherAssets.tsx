@@ -127,6 +127,26 @@ const OtherAssetCard = (
       </div>
     </div>
 
+    {/* Custom Fields Display */}
+    {asset.custom_fields && Object.keys(asset.custom_fields).length > 0 && (
+      <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+        <div className="space-y-1">
+          {Object.entries(asset.custom_fields).map(([key, value]) => (
+            value && (
+              <div key={key} className="flex justify-between items-center">
+                <span className="text-xs text-gray-500 dark:text-gray-400 capitalize">
+                  {key.replace('_', ' ')}:
+                </span>
+                <span className="text-xs text-gray-700 dark:text-gray-300">
+                  {String(value)}
+                </span>
+              </div>
+            )
+          ))}
+        </div>
+      </div>
+    )}
+
     {asset.purchase_date && (
       <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
         <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -162,6 +182,24 @@ const OtherAssetListRow = (
       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
         {asset.category?.name || 'Uncategorized'}
       </span>
+    </td>
+    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+      {asset.custom_fields && Object.keys(asset.custom_fields).length > 0 ? (
+        <div className="space-y-1">
+          {Object.entries(asset.custom_fields).slice(0, 2).map(([key, value]) => (
+            value && (
+              <div key={key} className="text-xs">
+                <span className="font-medium capitalize">{key.replace('_', ' ')}:</span> {String(value)}
+              </div>
+            )
+          ))}
+          {Object.keys(asset.custom_fields).length > 2 && (
+            <div className="text-xs text-gray-400">+{Object.keys(asset.custom_fields).length - 2} more</div>
+          )}
+        </div>
+      ) : (
+        <span className="text-gray-400">-</span>
+      )}
     </td>
     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
       {formatCurrency(asset.current_value)}
@@ -201,6 +239,7 @@ const OtherAssetListHeaders = (): JSX.Element => (
   <tr>
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Asset</th>
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Category</th>
+    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Details</th>
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Current Value</th>
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Amount Owed</th>
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Net Equity</th>

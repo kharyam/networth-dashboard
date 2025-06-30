@@ -176,6 +176,21 @@ function Stocks() {
       .sort((a, b) => b.value - a.value)
   }, [stockHoldings, equityGrants])
 
+  // Calculate individual holdings data for pie chart
+  const individualHoldingsData = useMemo(() => {
+    const holdingsData = stockHoldings
+      .filter(holding => (holding.market_value || 0) > 0)
+      .map(holding => ({
+        name: `${holding.symbol} (${holding.institution_name})`,
+        value: holding.market_value || 0,
+        symbol: holding.symbol
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10) // Show top 10 holdings only
+    
+    return holdingsData
+  }, [stockHoldings])
+
   // Group stock holdings by institution
   const stocksByInstitution = useMemo(() => {
     const groups = new Map<string, StockHolding[]>()
@@ -248,29 +263,31 @@ function Stocks() {
 
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Portfolio Summary</h3>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-              <div className="text-sm text-blue-600 dark:text-blue-400">Total Portfolio Value</div>
-              <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
-                {formatCurrency(getTotalValue())}
-              </div>
-            </div>
-            <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
-              <div className="text-sm text-green-600 dark:text-green-400">Total Positions</div>
-              <div className="text-2xl font-bold text-green-900 dark:text-green-100">
-                {consolidatedStocks.length + equityGrants.length}
-              </div>
-            </div>
-            <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
-              <div className="text-sm text-purple-600 dark:text-purple-400">Institutions</div>
-              <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">
-                {institutionData.length}
-              </div>
+        
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+            <div className="text-sm text-blue-600 dark:text-blue-400">Total Portfolio Value</div>
+            <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
+              {formatCurrency(getTotalValue())}
             </div>
           </div>
+          <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+            <div className="text-sm text-green-600 dark:text-green-400">Total Positions</div>
+            <div className="text-2xl font-bold text-green-900 dark:text-green-100">
+              {consolidatedStocks.length + equityGrants.length}
+            </div>
+          </div>
+          <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
+            <div className="text-sm text-purple-600 dark:text-purple-400">Institutions</div>
+            <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">
+              {institutionData.length}
+            </div>
+          </div>
+        </div>
 
+        {/* Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Institution Pie Chart */}
           {institutionData.length > 0 && (
             <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg">
@@ -289,6 +306,45 @@ function Stocks() {
                     >
                       {institutionData.map((_, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value: number) => [formatCurrency(value), 'Value']}
+                      labelStyle={{ color: '#374151' }}
+                      contentStyle={{
+                        backgroundColor: '#f9fafb',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '6px'
+                      }}
+                    />
+                    <Legend 
+                      wrapperStyle={{ fontSize: '12px' }}
+                      formatter={(value) => value}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* Individual Holdings Pie Chart */}
+          {individualHoldingsData.length > 0 && (
+            <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg">
+              <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3">Top Individual Holdings</h4>
+              <div style={{ width: '100%', height: '200px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={individualHoldingsData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={40}
+                      outerRadius={80}
+                      paddingAngle={2}
+                      dataKey="value"
+                    >
+                      {individualHoldingsData.map((_, index) => (
+                        <Cell key={`cell-individual-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
                     <Tooltip

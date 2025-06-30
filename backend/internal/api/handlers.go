@@ -718,21 +718,52 @@ func (s *Server) updateStockHolding(c *gin.Context) {
 }
 
 // @Summary Delete stock holding
-// @Description Delete a stock holding record (placeholder - to be implemented)
+// @Description Delete an existing stock holding by ID
 // @Tags stocks
 // @Accept json
 // @Produce json
-// @Param id path string true "Stock Holding ID"
+// @Param id path int true "Stock Holding ID"
 // @Success 200 {object} map[string]interface{} "Stock holding deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid ID"
 // @Failure 404 {object} map[string]interface{} "Stock holding not found"
 // @Failure 500 {object} map[string]interface{} "Internal server error"
 // @Router /stocks/{id} [delete]
 func (s *Server) deleteStockHolding(c *gin.Context) {
 	id := c.Param("id")
-	// TODO: Implement stock holding deletion
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Stock holding ID is required",
+		})
+		return
+	}
+
+	// Delete the stock holding record
+	query := `DELETE FROM stock_holdings WHERE id = $1`
+	result, err := s.db.Exec(query, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to delete stock holding",
+		})
+		return
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check deletion result",
+		})
+		return
+	}
+
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Stock holding not found",
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"stock_id": id,
-		"message":  "Delete stock holding endpoint - to be implemented",
+		"message": "Stock holding deleted successfully",
 	})
 }
 
@@ -1180,6 +1211,176 @@ func (s *Server) getCryptoHoldings(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"crypto_holdings": holdings,
+	})
+}
+
+// @Summary Create new crypto holding
+// @Description Create a new cryptocurrency holding using the crypto holdings plugin
+// @Tags crypto-holdings
+// @Accept json
+// @Produce json
+// @Param request body map[string]interface{} true "Crypto holding details"
+// @Success 201 {object} map[string]interface{} "Crypto holding created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid data"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /crypto-holdings [post]
+func (s *Server) createCryptoHolding(c *gin.Context) {
+	var requestData map[string]interface{}
+	if err := c.ShouldBindJSON(&requestData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid JSON data",
+		})
+		return
+	}
+
+	// Get the crypto holdings plugin
+	plugin, err := s.pluginManager.GetPlugin("crypto_holdings")
+	if err != nil || plugin == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Crypto holdings plugin not found",
+		})
+		return
+	}
+
+	manualPlugin, ok := plugin.(interface {
+		ProcessManualEntry(data map[string]interface{}) error
+	})
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Plugin does not support manual entry",
+		})
+		return
+	}
+
+	// Process the manual entry
+	err = manualPlugin.ProcessManualEntry(requestData)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Failed to create crypto holding: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Crypto holding created successfully",
+	})
+}
+
+// @Summary Update crypto holding
+// @Description Update an existing cryptocurrency holding using the crypto holdings plugin
+// @Tags crypto-holdings
+// @Accept json
+// @Produce json
+// @Param id path int true "Crypto holding ID"
+// @Param request body map[string]interface{} true "Updated crypto holding details"
+// @Success 200 {object} map[string]interface{} "Crypto holding updated successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid data"
+// @Failure 404 {object} map[string]interface{} "Crypto holding not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /crypto-holdings/{id} [put]
+func (s *Server) updateCryptoHolding(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid crypto holding ID",
+		})
+		return
+	}
+
+	var requestData map[string]interface{}
+	if err := c.ShouldBindJSON(&requestData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid JSON data",
+		})
+		return
+	}
+
+	// Get the crypto holdings plugin
+	plugin, err := s.pluginManager.GetPlugin("crypto_holdings")
+	if err != nil || plugin == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Crypto holdings plugin not found",
+		})
+		return
+	}
+
+	manualPlugin, ok := plugin.(interface {
+		UpdateManualEntry(id int, data map[string]interface{}) error
+	})
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Plugin does not support manual entry",
+		})
+		return
+	}
+
+	// Update the manual entry
+	err = manualPlugin.UpdateManualEntry(id, requestData)
+	if err != nil {
+		if strings.Contains(err.Error(), "no crypto holding found") {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Crypto holding not found",
+			})
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("Failed to update crypto holding: %v", err),
+			})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Crypto holding updated successfully",
+	})
+}
+
+// @Summary Delete crypto holding
+// @Description Delete an existing cryptocurrency holding
+// @Tags crypto-holdings
+// @Accept json
+// @Produce json
+// @Param id path int true "Crypto holding ID"
+// @Success 200 {object} map[string]interface{} "Crypto holding deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid ID"
+// @Failure 404 {object} map[string]interface{} "Crypto holding not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /crypto-holdings/{id} [delete]
+func (s *Server) deleteCryptoHolding(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid crypto holding ID",
+		})
+		return
+	}
+
+	// Delete the crypto holding record
+	query := `DELETE FROM crypto_holdings WHERE id = $1`
+	result, err := s.db.Exec(query, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to delete crypto holding",
+		})
+		return
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check deletion result",
+		})
+		return
+	}
+
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Crypto holding not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Crypto holding deleted successfully",
 	})
 }
 

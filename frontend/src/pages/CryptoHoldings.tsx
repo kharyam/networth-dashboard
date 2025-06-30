@@ -1,8 +1,29 @@
-import React, { useState, useEffect, Component, ErrorInfo } from 'react'
-import { Coins, ExternalLink, Eye, Edit2, Trash2, TrendingUp, TrendingDown, Clock, AlertTriangle } from 'lucide-react'
-import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import GenericAssetPage, { GenericAssetPageConfig } from '@/components/GenericAssetPage'
-import { cryptoHoldingsApi, pluginsApi } from '@/services/api'
+import { useState, useEffect, useMemo, Component, ErrorInfo } from 'react'
+import { 
+  Plus, 
+  RefreshCw, 
+  BarChart3, 
+  Grid3X3, 
+  List,
+  Coins,
+  AlertTriangle,
+  X,
+  ExternalLink,
+  Clock,
+  Edit2,
+  Eye,
+  Trash2,
+  TrendingUp,
+  TrendingDown
+} from 'lucide-react'
+import { 
+  PieChart, Pie, Cell,
+  Tooltip, ResponsiveContainer 
+} from 'recharts'
+import { pluginsApi, cryptoHoldingsApi } from '@/services/api'
+import { ManualEntrySchema } from '@/types'
+import SmartDynamicForm from '@/components/SmartDynamicForm'
+import EditEntryModal from '@/components/EditEntryModal'
 import { formatCurrency, formatNumber } from '@/utils/formatting'
 
 interface CryptoHolding {
@@ -22,6 +43,9 @@ interface CryptoHolding {
   price_change_24h?: number
   price_last_updated?: string
 }
+
+type ViewMode = 'grid' | 'list' | 'charts' | 'history'
+type PriceMode = 'usd' | 'btc'
 
 // Error boundary for chart components
 class ChartErrorBoundary extends Component<
@@ -60,492 +84,969 @@ class ChartErrorBoundary extends Component<
   }
 }
 
-// Transform and validate API response data
-const transformCryptoData = (rawData: any[]): CryptoHolding[] => {
-  if (!Array.isArray(rawData)) {
-    console.warn('Invalid crypto holdings data format:', rawData)
-    return []
-  }
+function CryptoHoldings() {
+  const [holdings, setHoldings] = useState<CryptoHolding[]>([])
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [priceMode, setPriceMode] = useState<PriceMode>('usd')
+  const [individualPriceModes, setIndividualPriceModes] = useState<Record<number, PriceMode>>({})
+  
+  // Modal states
+  const [addModalOpen, setAddModalOpen] = useState(false)
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [viewModalOpen, setViewModalOpen] = useState(false)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [selectedHolding, setSelectedHolding] = useState<CryptoHolding | null>(null)
+  
+  // Form states
+  const [schema, setSchema] = useState<ManualEntrySchema | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
-  return rawData
-    .map(item => ({
-      id: parseInt(item.id) || 0,
-      institution_name: String(item.institution_name || 'Unknown'),
-      crypto_symbol: String(item.crypto_symbol || '').toUpperCase(),
-      balance_tokens: parseFloat(item.balance_tokens) || 0,
-      purchase_price_usd: item.purchase_price_usd ? parseFloat(item.purchase_price_usd) : undefined,
-      purchase_date: item.purchase_date || undefined,
-      wallet_address: item.wallet_address || undefined,
-      notes: item.notes || undefined,
-      created_at: item.created_at || '',
-      updated_at: item.updated_at || '',
-      current_price_usd: item.current_price_usd ? parseFloat(item.current_price_usd) : undefined,
-      current_price_btc: item.current_price_btc ? parseFloat(item.current_price_btc) : undefined,
-      current_value_usd: item.current_value_usd ? parseFloat(item.current_value_usd) : undefined,
-      price_change_24h: item.price_change_24h ? parseFloat(item.price_change_24h) : undefined,
-      price_last_updated: item.price_last_updated || undefined
-    }))
-    .filter(holding => holding.id > 0 && holding.crypto_symbol && holding.balance_tokens > 0)
-}
-
-
-// Custom crypto card renderer for individual holdings
-const CryptoCard = (
-  holding: CryptoHolding,
-  actions: { onEdit: () => void, onView: () => void, onDelete: () => void }
-) => (
-  <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-    <div className="flex items-start justify-between mb-4">
-      <div className="flex-1">
-        <div className="flex items-center mb-2">
-          <Coins className="w-5 h-5 text-gray-400 mr-2" />
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            {holding.crypto_symbol}
-          </h3>
-        </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-          {holding.institution_name}
-        </p>
-        {holding.wallet_address && (
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {holding.wallet_address.slice(0, 8)}...{holding.wallet_address.slice(-6)}
-          </p>
-        )}
-      </div>
-    </div>
-
-    {/* Token Balance */}
-    <div className="mb-4">
-      <p className="text-sm text-gray-500 dark:text-gray-400">Balance</p>
-      <p className="text-xl font-bold text-gray-900 dark:text-white">
-        {formatNumber(holding.balance_tokens, { maximumFractionDigits: 8 })} {holding.crypto_symbol}
-      </p>
-    </div>
-
-    {/* Current Value */}
-    <div className="mb-4">
-      <p className="text-sm text-gray-500 dark:text-gray-400">Current Value</p>
-      <p className="text-xl font-bold text-green-600 dark:text-green-400">
-        {formatCurrency(holding.current_value_usd || 0)}
-      </p>
-    </div>
-
-    {/* Price Info */}
-    <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
-      {holding.current_price_usd && (
-        <div>
-          <p className="text-gray-500 dark:text-gray-400">Price</p>
-          <p className="font-medium text-gray-900 dark:text-white">
-            {formatCurrency(holding.current_price_usd)}
-          </p>
-        </div>
-      )}
-      {holding.price_change_24h !== undefined && (
-        <div>
-          <p className="text-gray-500 dark:text-gray-400">24h Change</p>
-          <p className={`font-medium flex items-center ${
-            holding.price_change_24h >= 0 ? 'text-green-600' : 'text-red-600'
-          }`}>
-            {holding.price_change_24h >= 0 ? (
-              <TrendingUp className="w-3 h-3 mr-1" />
-            ) : (
-              <TrendingDown className="w-3 h-3 mr-1" />
-            )}
-            {Math.abs(holding.price_change_24h).toFixed(2)}%
-          </p>
-        </div>
-      )}
-    </div>
-
-    {/* External chart link */}
-    {['BTC', 'ETH', 'ADA', 'DOT', 'LINK', 'UNI'].includes(holding.crypto_symbol) && (
-      <div className="mb-4">
-        <a
-          href={`https://www.coingecko.com/en/coins/${holding.crypto_symbol.toLowerCase()}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-        >
-          <ExternalLink className="w-4 h-4 mr-1" />
-          View on CoinGecko
-        </a>
-      </div>
-    )}
-
-    {/* Action Buttons */}
-    <div className="flex justify-end space-x-2 pt-4 border-t border-gray-200 dark:border-gray-600">
-      <button
-        onClick={actions.onView}
-        className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
-        title="View Details"
-      >
-        <Eye className="w-4 h-4" />
-      </button>
-      <button
-        onClick={actions.onEdit}
-        className="p-2 text-gray-400 hover:text-green-600 dark:hover:text-green-400"
-        title="Edit"
-      >
-        <Edit2 className="w-4 h-4" />
-      </button>
-      <button
-        onClick={actions.onDelete}
-        className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
-        title="Delete"
-      >
-        <Trash2 className="w-4 h-4" />
-      </button>
-    </div>
-  </div>
-)
-
-// Summary cards renderer
-const CryptoSummaryCards = (holdings: CryptoHolding[]) => {
-  const totalValue = holdings.reduce((sum, h) => sum + (h.current_value_usd || 0), 0)
-  const totalSymbols = new Set(holdings.map(h => h.crypto_symbol)).size
-  const totalInstitutions = new Set(holdings.map(h => h.institution_name)).size
-  const avgHoldingValue = holdings.length > 0 ? totalValue / holdings.length : 0
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-      <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-        <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Total Value</h3>
-        <p className="text-2xl font-bold text-gray-900 dark:text-white">
-          {formatCurrency(totalValue)}
-        </p>
-      </div>
-      <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-        <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Crypto Assets</h3>
-        <p className="text-2xl font-bold text-gray-900 dark:text-white">
-          {totalSymbols}
-        </p>
-      </div>
-      <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-        <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Institutions</h3>
-        <p className="text-2xl font-bold text-gray-900 dark:text-white">
-          {totalInstitutions}
-        </p>
-      </div>
-      <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-        <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Avg Holding</h3>
-        <p className="text-2xl font-bold text-gray-900 dark:text-white">
-          {formatCurrency(avgHoldingValue)}
-        </p>
-      </div>
-    </div>
-  )
-}
-
-// Chart functionality
-const CryptoCharts = (holdings: CryptoHolding[]): JSX.Element => {
-  const COLORS = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#F97316', '#06B6D4', '#84CC16']
-
-  // Get current BTC price for conversions
-  const btcPrice = (() => {
-    const btcHolding = holdings.find(h => h.crypto_symbol === 'BTC')
-    return btcHolding?.current_price_usd || 45000 // Fallback BTC price
-  })()
-
-  // Helper function to convert USD to BTC
-  const convertToBTC = (usdAmount: number) => {
-    return usdAmount / btcPrice
-  }
-
-  // Portfolio distribution data (by crypto symbol)
-  const portfolioDistributionData = (() => {
-    const symbolMap = new Map<string, { value: number, tokens: number }>()
-    
-    holdings
-      .filter(holding => holding.current_value_usd && holding.current_value_usd > 0)
-      .forEach(holding => {
-        const existing = symbolMap.get(holding.crypto_symbol) || { value: 0, tokens: 0 }
-        symbolMap.set(holding.crypto_symbol, {
-          value: existing.value + holding.current_value_usd!,
-          tokens: existing.tokens + holding.balance_tokens
-        })
-      })
-
-    return Array.from(symbolMap.entries())
-      .map(([symbol, { value, tokens }]) => ({
-        name: symbol,
-        value,
-        valueBTC: convertToBTC(value),
-        tokens,
-      }))
-      .sort((a, b) => b.value - a.value)
-  })()
-
-  // Institution distribution data
-  const institutionDistributionData = (() => {
-    const institutionMap = new Map<string, number>()
-    
-    holdings.forEach(holding => {
-      const value = holding.current_value_usd || 0
-      const current = institutionMap.get(holding.institution_name) || 0
-      institutionMap.set(holding.institution_name, current + value)
-    })
-
-    return Array.from(institutionMap.entries())
-      .filter(([, value]) => value > 0)
-      .map(([name, value]) => ({ 
-        name, 
-        value,
-        valueBTC: convertToBTC(value)
-      }))
-      .sort((a, b) => b.value - a.value)
-  })()
-
-  if (holdings.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-gray-500 dark:text-gray-400">No crypto holdings data available for charts</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Portfolio Distribution */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Portfolio Distribution</h3>
-          <ChartErrorBoundary>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={portfolioDistributionData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={120}
-                  paddingAngle={2}
-                  dataKey="value"
-                >
-                  {portfolioDistributionData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  formatter={(value: number) => [formatCurrency(value), 'Value']}
-                  labelFormatter={(label) => `${label}`}
-                />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </ChartErrorBoundary>
-        </div>
-
-        {/* Institution Distribution */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Distribution by Institution</h3>
-          <ChartErrorBoundary>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={institutionDistributionData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={120}
-                  paddingAngle={2}
-                  dataKey="value"
-                >
-                  {institutionDistributionData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  formatter={(value: number) => [formatCurrency(value), 'Value']}
-                  labelFormatter={(label) => `${label}`}
-                />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </ChartErrorBoundary>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// Price History functionality
-const CryptoHistory = (_holdings: CryptoHolding[]): JSX.Element => {
-  const [priceHistory, setPriceHistory] = useState<any>(null)
+  // History state
   const [historyLoading, setHistoryLoading] = useState(false)
-  const [historyError, setHistoryError] = useState<string | null>(null)
+
+  useEffect(() => {
+    loadHoldings()
+    loadSchema()
+    // Refresh prices on component mount to ensure fresh data
+    refreshPrices()
+  }, [])
+
+  const refreshPrices = async () => {
+    try {
+      await cryptoHoldingsApi.refreshAllPrices()
+      // Reload holdings after price refresh to get updated data
+      await loadHoldings()
+    } catch (err) {
+      console.error('Failed to refresh crypto prices:', err)
+      // Don't set error state since this is background refresh
+    }
+  }
+
+  const loadHoldings = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const data = await cryptoHoldingsApi.getAll()
+      setHoldings(data)
+    } catch (err) {
+      console.error('Failed to load crypto holdings:', err)
+      setError('Failed to load crypto holdings. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const refreshHoldings = async () => {
+    try {
+      setRefreshing(true)
+      setError(null)
+      // First refresh all crypto prices
+      await cryptoHoldingsApi.refreshAllPrices()
+      // Then reload holdings with updated prices
+      const data = await cryptoHoldingsApi.getAll()
+      setHoldings(data)
+    } catch (err) {
+      console.error('Failed to refresh crypto holdings:', err)
+      setError('Failed to refresh crypto holdings. Please try again.')
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const loadSchema = async () => {
+    try {
+      const cryptoSchema = await pluginsApi.getSchema('crypto_holdings')
+      setSchema(cryptoSchema)
+    } catch (error) {
+      console.error('Failed to load crypto schema:', error)
+    }
+  }
 
   const loadPriceHistory = async () => {
+    if (holdings.length === 0) return
+    
     try {
       setHistoryLoading(true)
-      setHistoryError(null)
-      const data = await cryptoHoldingsApi.getPriceHistory()
-      setPriceHistory(data)
-    } catch (error: any) {
+      await cryptoHoldingsApi.getPriceHistory(30)
+    } catch (error) {
       console.error('Failed to load price history:', error)
-      setHistoryError('Failed to load price history data')
     } finally {
       setHistoryLoading(false)
     }
   }
 
   useEffect(() => {
-    loadPriceHistory()
-  }, [])
+    if (viewMode === 'history') {
+      loadPriceHistory()
+    }
+  }, [viewMode, holdings])
+
+  const handleAddHolding = async (formData: Record<string, any>) => {
+    setSubmitting(true)
+    setMessage(null)
+
+    try {
+      await pluginsApi.processManualEntry('crypto_holdings', formData)
+      setMessage({ type: 'success', text: 'Crypto holding added successfully!' })
+      
+      await loadHoldings()
+      setAddModalOpen(false)
+      
+      setTimeout(() => setMessage(null), 3000)
+    } catch (error: any) {
+      console.error('Failed to add crypto holding:', error)
+      const errorMessage = error.response?.data?.error || 'Failed to add crypto holding. Please try again.'
+      setMessage({ type: 'error', text: errorMessage })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleUpdateHolding = async (formData: Record<string, any>) => {
+    if (!selectedHolding) return
+
+    try {
+      await cryptoHoldingsApi.update(selectedHolding.id, formData)
+      setMessage({ type: 'success', text: 'Crypto holding updated successfully!' })
+      
+      await loadHoldings()
+      closeModals()
+      
+      setTimeout(() => setMessage(null), 3000)
+    } catch (error: any) {
+      console.error('Failed to update crypto holding:', error)
+      const errorMessage = error.response?.data?.error || 'Failed to update crypto holding. Please try again.'
+      setMessage({ type: 'error', text: errorMessage })
+    }
+  }
+
+  const handleDeleteHolding = async () => {
+    if (!selectedHolding) return
+
+    try {
+      await cryptoHoldingsApi.delete(selectedHolding.id)
+      await loadHoldings()
+      closeModals()
+      setMessage({ type: 'success', text: 'Crypto holding deleted successfully!' })
+      setTimeout(() => setMessage(null), 3000)
+    } catch (err) {
+      console.error('Failed to delete crypto holding:', err)
+      setError('Failed to delete crypto holding. Please try again.')
+    }
+  }
+
+  const closeModals = () => {
+    setAddModalOpen(false)
+    setEditModalOpen(false)
+    setViewModalOpen(false)
+    setDeleteModalOpen(false)
+    setSelectedHolding(null)
+  }
+
+  const clearMessage = () => {
+    setMessage(null)
+  }
+
+  const clearError = () => {
+    setError(null)
+  }
+
+  // Helper functions
+  const formatCrypto = (amount: number, symbol: string) => {
+    return `${formatNumber(amount)} ${symbol}`
+  }
+
+  const convertToBTC = (usdAmount: number): number => {
+    const btcPrice = holdings.find(h => h.crypto_symbol === 'BTC')?.current_price_usd || 50000
+    return usdAmount / btcPrice
+  }
+
+  const toggleIndividualPriceMode = (holdingId: number) => {
+    setIndividualPriceModes(prev => ({
+      ...prev,
+      [holdingId]: prev[holdingId] === 'btc' ? 'usd' : 'btc'
+    }))
+  }
+
+  const getIndividualPriceMode = (holdingId: number): PriceMode => {
+    return individualPriceModes[holdingId] || 'usd'
+  }
+
+  const getCoinGeckoId = (symbol: string) => {
+    const symbolMap: Record<string, string> = {
+      'BTC': 'bitcoin',
+      'ETH': 'ethereum',
+      'ADA': 'cardano',
+      'DOT': 'polkadot',
+      'LINK': 'chainlink',
+      'UNI': 'uniswap',
+      'LTC': 'litecoin',
+      'XRP': 'ripple',
+      'BCH': 'bitcoin-cash',
+      'BNB': 'binancecoin',
+      'SOL': 'solana',
+      'MATIC': 'polygon',
+      'AVAX': 'avalanche-2',
+      'ATOM': 'cosmos',
+      'NEAR': 'near',
+      'FTM': 'fantom',
+      'ALGO': 'algorand',
+      'XLM': 'stellar',
+      'VET': 'vechain',
+      'ICP': 'internet-computer',
+      'THETA': 'theta-token',
+      'FIL': 'filecoin',
+      'TRX': 'tron',
+      'EOS': 'eos',
+      'XMR': 'monero',
+      'AAVE': 'aave',
+      'MKR': 'maker',
+      'COMP': 'compound-coin',
+      'SUSHI': 'sushi',
+      '1INCH': '1inch',
+      'CRV': 'curve-dao-token'
+    }
+    
+    return symbolMap[symbol.toUpperCase()] || symbol.toLowerCase()
+  }
+
+  // Calculations
+  const totalValue = holdings.reduce((sum, h) => sum + (h.current_value_usd || 0), 0)
+  const totalChange24h = holdings.reduce((sum, h) => {
+    if (h.price_change_24h && h.current_value_usd) {
+      const previousValue = h.current_value_usd / (1 + h.price_change_24h / 100)
+      const change = h.current_value_usd - previousValue
+      return sum + change
+    }
+    return sum
+  }, 0)
+
+  const portfolioChange24hPercent = totalValue > 0 ? (totalChange24h / (totalValue - totalChange24h)) * 100 : 0
+
+  // Group holdings by institution
+  const groupedHoldings = useMemo(() => {
+    const groups = holdings.reduce((acc, holding) => {
+      const key = holding.institution_name
+      if (!acc[key]) {
+        acc[key] = []
+      }
+      acc[key].push(holding)
+      return acc
+    }, {} as Record<string, CryptoHolding[]>)
+
+    return Object.entries(groups).map(([institutionName, groupHoldings]) => ({
+      institutionName,
+      holdings: groupHoldings,
+      totalValue: groupHoldings.reduce((sum, h) => sum + (h.current_value_usd || 0), 0)
+    }))
+  }, [holdings])
+
+  // Charts data
+  const pieData = holdings
+    .filter(h => h.current_value_usd && h.current_value_usd > 0)
+    .map(holding => ({
+      name: holding.crypto_symbol,
+      value: holding.current_value_usd || 0,
+      valueBTC: convertToBTC(holding.current_value_usd || 0)
+    }))
+
+  // Institution-based pie chart data
+  const institutionPieData = useMemo(() => {
+    const institutionMap = new Map<string, { value: number, valueBTC: number }>()
+    
+    holdings
+      .filter(h => h.current_value_usd && h.current_value_usd > 0)
+      .forEach(holding => {
+        const institution = holding.institution_name || 'Unknown Exchange'
+        const value = holding.current_value_usd || 0
+        const valueBTC = convertToBTC(value)
+        
+        const existing = institutionMap.get(institution) || { value: 0, valueBTC: 0 }
+        institutionMap.set(institution, {
+          value: existing.value + value,
+          valueBTC: existing.valueBTC + valueBTC
+        })
+      })
+    
+    return Array.from(institutionMap.entries()).map(([name, data]) => ({
+      name,
+      value: data.value,
+      valueBTC: data.valueBTC
+    }))
+  }, [holdings])
+
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D', '#FFC658', '#FF7C7C']
+
+  // Generate pie chart data for a specific institution
+  const getInstitutionPieData = (institutionHoldings: CryptoHolding[]) => {
+    return institutionHoldings
+      .filter(h => h.current_value_usd && h.current_value_usd > 0)
+      .map(holding => ({
+        name: holding.crypto_symbol,
+        value: holding.current_value_usd || 0,
+        valueBTC: convertToBTC(holding.current_value_usd || 0)
+      }))
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
-      {/* Disclaimer */}
-      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-        <div className="flex items-start space-x-3">
-          <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5" />
-          <div>
-            <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-              Cached Price Data Disclaimer
-            </h3>
-            <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-              {priceHistory?.disclaimer || 'This data represents cached price snapshots taken during application usage and may not reflect complete or real-time market data.'}
-            </p>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
+            <Coins className="w-8 h-8 mr-3 text-primary-600" />
+            Crypto Holdings
+          </h1>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">
+            Track your cryptocurrency portfolio across exchanges and wallets
+          </p>
+        </div>
+
+        <div className="flex items-center space-x-4">
+          {/* Global Price Mode Toggle */}
+          <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+            <button
+              onClick={() => setPriceMode('usd')}
+              className={`px-3 py-2 text-sm font-medium rounded transition-colors ${
+                priceMode === 'usd'
+                  ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              USD
+            </button>
+            <button
+              onClick={() => setPriceMode('btc')}
+              className={`px-3 py-2 text-sm font-medium rounded transition-colors ${
+                priceMode === 'btc'
+                  ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              BTC
+            </button>
           </div>
+
+          {/* View Mode Toggle */}
+          <div className="flex rounded-lg border border-gray-300 dark:border-gray-600">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`px-3 py-2 text-sm font-medium rounded-l-lg ${
+                viewMode === 'grid'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+              }`}
+            >
+              <Grid3X3 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`px-3 py-2 text-sm font-medium ${
+                viewMode === 'list'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+              }`}
+            >
+              <List className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('charts')}
+              className={`px-3 py-2 text-sm font-medium ${
+                viewMode === 'charts'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('history')}
+              className={`px-3 py-2 text-sm font-medium rounded-r-lg ${
+                viewMode === 'history'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+              }`}
+            >
+              <Clock className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Action Buttons */}
+          <button
+            onClick={refreshHoldings}
+            disabled={refreshing}
+            className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+
+          <button
+            onClick={() => setAddModalOpen(true)}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Holding
+          </button>
         </div>
       </div>
 
-      {/* Price History Chart */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Crypto Price History (USD)
-        </h3>
-        
-        {historyLoading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      {/* Success/Error Messages */}
+      {message && (
+        <div className={`card border-l-4 ${
+          message.type === 'success' 
+            ? 'bg-green-50 dark:bg-green-900/20 border-green-400 dark:border-green-600' 
+            : 'bg-red-50 dark:bg-red-900/20 border-red-400 dark:border-red-600'
+        }`}>
+          <div className="flex items-center justify-between">
+            <p className={`${
+              message.type === 'success' 
+                ? 'text-green-700 dark:text-green-300' 
+                : 'text-red-700 dark:text-red-300'
+            }`}>
+              {message.text}
+            </p>
+            <button onClick={clearMessage} className="ml-3">
+              <X className="w-4 h-4" />
+            </button>
           </div>
-        ) : historyError ? (
-          <div className="flex items-center justify-center h-64 text-red-500 dark:text-red-400">
-            <div className="text-center">
-              <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
-              <p>{historyError}</p>
-              <button
-                onClick={loadPriceHistory}
-                className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Try Again
-              </button>
+        </div>
+      )}
+
+      {/* Error State */}
+      {error && (
+        <div className="card bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 mr-2" />
+              <p className="text-red-700 dark:text-red-300">{error}</p>
+            </div>
+            <button onClick={clearError} className="ml-3">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Portfolio Summary */}
+      {holdings.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Total Portfolio Value</h3>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">
+              {priceMode === 'btc' ? formatCurrency(convertToBTC(totalValue), { currency: 'BTC' }) : formatCurrency(totalValue)}
+            </p>
+          </div>
+          <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">24h Change</h3>
+            <div className="flex items-center">
+              {portfolioChange24hPercent >= 0 ? (
+                <TrendingUp className="w-5 h-5 text-green-500 mr-1" />
+              ) : (
+                <TrendingDown className="w-5 h-5 text-red-500 mr-1" />
+              )}
+              <span className={`text-2xl font-bold ${
+                portfolioChange24hPercent >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+              }`}>
+                {portfolioChange24hPercent >= 0 ? '+' : ''}{portfolioChange24hPercent.toFixed(2)}%
+              </span>
             </div>
           </div>
-        ) : !priceHistory || priceHistory.price_history.length === 0 ? (
-          <div className="flex items-center justify-center h-64 text-gray-500 dark:text-gray-400">
-            <div className="text-center">
-              <Clock className="h-8 w-8 mx-auto mb-2" />
-              <p>No price history data available</p>
-              <p className="text-sm mt-2">Price data will accumulate as you use the application</p>
-            </div>
+          <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Holdings</h3>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">
+              {holdings.length}
+            </p>
           </div>
-        ) : (
-          <ChartErrorBoundary>
-            <div className="h-96">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={(() => {
-                  // Combine all data points with timestamps as the key
-                  const allDataPoints = new Map()
-                  
-                  priceHistory.price_history.forEach((crypto: any) => {
-                    crypto.data.forEach((point: any) => {
-                      const timestamp = point.timestamp
-                      if (!allDataPoints.has(timestamp)) {
-                        allDataPoints.set(timestamp, { timestamp })
-                      }
-                      const dataPoint = allDataPoints.get(timestamp)
-                      dataPoint[crypto.symbol] = point.price_usd
-                    })
-                  })
-                  
-                  return Array.from(allDataPoints.values()).sort((a, b) => 
-                    new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-                  )
-                })()}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="timestamp" 
-                    tickFormatter={(value) => new Date(value).toLocaleDateString()}
-                  />
-                  <YAxis 
-                    tickFormatter={(value) => `$${value.toLocaleString()}`}
-                  />
+          <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Exchanges</h3>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">
+              {new Set(holdings.map(h => h.institution_name)).size}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content */}
+      {viewMode === 'charts' ? (
+        <ChartErrorBoundary>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Portfolio Distribution by Asset</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  >
+                    {pieData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
                   <Tooltip 
-                    labelFormatter={(value) => new Date(value).toLocaleString()}
-                    formatter={(value: number, name: string) => [
-                      `$${value.toLocaleString()}`, name
-                    ]}
+                    formatter={(value: number, _name: string, props: any) => {
+                      if (priceMode === 'btc') {
+                        return [formatCurrency(props.payload.valueBTC, { currency: 'BTC' }), 'Value']
+                      }
+                      return [formatCurrency(value), 'Value']
+                    }}
                   />
-                  <Legend />
-                  {priceHistory.price_history.map((crypto: any, index: number) => (
-                    <Line 
-                      key={crypto.symbol}
-                      type="monotone" 
-                      dataKey={crypto.symbol} 
-                      stroke={['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6'][index % 5]}
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  ))}
-                </LineChart>
+                </PieChart>
               </ResponsiveContainer>
             </div>
-          </ChartErrorBoundary>
-        )}
-      </div>
+
+            <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Holdings by Institution</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={institutionPieData}
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  >
+                    {institutionPieData.map((_, index) => (
+                      <Cell key={`cell-institution-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    formatter={(value: number, _name: string, props: any) => {
+                      if (priceMode === 'btc') {
+                        return [formatCurrency(props.payload.valueBTC, { currency: 'BTC' }), 'Value']
+                      }
+                      return [formatCurrency(value), 'Value']
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </ChartErrorBoundary>
+      ) : viewMode === 'history' ? (
+        <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Price History (30 Days)</h3>
+          {historyLoading ? (
+            <div className="flex justify-center items-center h-64">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+            </div>
+          ) : (
+            <p className="text-gray-500 dark:text-gray-400">Price history chart would be displayed here</p>
+          )}
+        </div>
+      ) : holdings.length === 0 ? (
+        <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-center py-12">
+          <Coins className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No crypto holdings found</h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">
+            Get started by adding your first cryptocurrency holding.
+          </p>
+          <button
+            onClick={() => setAddModalOpen(true)}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Your First Holding
+          </button>
+        </div>
+      ) : viewMode === 'grid' ? (
+        /* Grid View - Individual Crypto Cards */
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {holdings.map((holding) => (
+            <div key={holding.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
+              {/* Card Header */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-bold text-gray-900 dark:text-white">
+                    {holding.crypto_symbol}
+                  </span>
+                  <a
+                    href={`https://www.coingecko.com/en/coins/${getCoinGeckoId(holding.crypto_symbol)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                    title="View on CoinGecko"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+                <button
+                  onClick={() => toggleIndividualPriceMode(holding.id)}
+                  className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600"
+                  title={`Switch to ${getIndividualPriceMode(holding.id) === 'usd' ? 'BTC' : 'USD'}`}
+                >
+                  {getIndividualPriceMode(holding.id) === 'usd' ? '₿' : '$'}
+                </button>
+              </div>
+
+              {/* Institution */}
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                {holding.institution_name}
+              </p>
+
+              {/* Balance */}
+              <div className="mb-3">
+                <p className="text-sm text-gray-500 dark:text-gray-400">Balance</p>
+                <p className="text-base font-medium text-gray-900 dark:text-white">
+                  {formatCrypto(holding.balance_tokens, holding.crypto_symbol)}
+                </p>
+              </div>
+
+              {/* Value */}
+              <div className="mb-3">
+                <p className="text-sm text-gray-500 dark:text-gray-400">Value</p>
+                <p className="text-lg font-bold text-green-600 dark:text-green-400">
+                  {getIndividualPriceMode(holding.id) === 'btc' 
+                    ? formatCurrency(convertToBTC(holding.current_value_usd || 0), { currency: 'BTC' })
+                    : formatCurrency(holding.current_value_usd || 0)
+                  }
+                </p>
+              </div>
+
+              {/* 24h Change */}
+              {holding.price_change_24h && (
+                <div className="mb-3">
+                  <div className="flex items-center gap-1">
+                    {holding.price_change_24h >= 0 ? (
+                      <TrendingUp className="w-3 h-3 text-green-500" />
+                    ) : (
+                      <TrendingDown className="w-3 h-3 text-red-500" />
+                    )}
+                    <span className={`text-xs font-medium ${
+                      holding.price_change_24h >= 0 ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      {holding.price_change_24h >= 0 ? '+' : ''}{holding.price_change_24h.toFixed(2)}%
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end space-x-1 pt-2 border-t border-gray-100 dark:border-gray-700">
+                <button
+                  onClick={() => {
+                    setSelectedHolding(holding)
+                    setViewModalOpen(true)
+                  }}
+                  className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+                  title="View Details"
+                >
+                  <Eye className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedHolding(holding)
+                    setEditModalOpen(true)
+                  }}
+                  className="p-1 text-gray-400 hover:text-green-600 dark:hover:text-green-400"
+                  title="Edit"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedHolding(holding)
+                    setDeleteModalOpen(true)
+                  }}
+                  className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                  title="Delete"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        /* List View - Grouped by Institution */
+        <div className="space-y-6">
+          {groupedHoldings.map(({ institutionName, holdings: institutionHoldings, totalValue: institutionTotal }) => (
+            <div key={institutionName} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              {/* Institution Header */}
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  {/* Institution Pie Chart */}
+                  <div className="flex-shrink-0">
+                    <ChartErrorBoundary>
+                      <ResponsiveContainer width={60} height={60}>
+                        <PieChart>
+                          <Pie
+                            data={getInstitutionPieData(institutionHoldings)}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={25}
+                            fill="#8884d8"
+                            dataKey="value"
+                            stroke="none"
+                          >
+                            {getInstitutionPieData(institutionHoldings).map((_, index) => (
+                              <Cell key={`cell-${institutionName}-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip 
+                            formatter={(value: number, _name: string, props: any) => {
+                              if (priceMode === 'btc') {
+                                return [formatCurrency(props.payload.valueBTC, { currency: 'BTC' }), 'Value']
+                              }
+                              return [formatCurrency(value), 'Value']
+                            }}
+                            labelFormatter={(name) => `${name}`}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </ChartErrorBoundary>
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-baseline gap-3">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        {institutionName}
+                      </h3>
+                      <span className="text-lg font-bold text-green-600 dark:text-green-400">
+                        {priceMode === 'btc' 
+                          ? formatCurrency(convertToBTC(institutionTotal), { currency: 'BTC' })
+                          : formatCurrency(institutionTotal)
+                        }
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      {institutionHoldings.length} holding{institutionHoldings.length !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Holdings List */}
+              <div className="space-y-3">
+                {institutionHoldings.map((holding) => (
+                  <div key={holding.id} className="border-l-4 border-blue-500 pl-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {holding.crypto_symbol}
+                        </span>
+                        <a
+                          href={`https://www.coingecko.com/en/coins/${getCoinGeckoId(holding.crypto_symbol)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                          title="View on CoinGecko"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                        <button
+                          onClick={() => toggleIndividualPriceMode(holding.id)}
+                          className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600"
+                          title={`Switch to ${getIndividualPriceMode(holding.id) === 'usd' ? 'BTC' : 'USD'}`}
+                        >
+                          {getIndividualPriceMode(holding.id) === 'usd' ? '₿' : '$'}
+                        </button>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {holding.price_change_24h && (
+                          <span className={`text-xs font-medium ${
+                            holding.price_change_24h >= 0 ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            {holding.price_change_24h >= 0 ? '+' : ''}{holding.price_change_24h.toFixed(2)}%
+                          </span>
+                        )}
+                        <div className="flex items-center space-x-1">
+                          <button
+                            onClick={() => {
+                              setSelectedHolding(holding)
+                              setViewModalOpen(true)
+                            }}
+                            className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+                            title="View Details"
+                          >
+                            <Eye className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedHolding(holding)
+                              setEditModalOpen(true)
+                            }}
+                            className="p-1 text-gray-400 hover:text-green-600 dark:hover:text-green-400"
+                            title="Edit"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedHolding(holding)
+                              setDeleteModalOpen(true)
+                            }}
+                            className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600 dark:text-gray-400">
+                        {formatCrypto(holding.balance_tokens, holding.crypto_symbol)}
+                      </span>
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        {getIndividualPriceMode(holding.id) === 'btc' 
+                          ? formatCurrency(convertToBTC(holding.current_value_usd || 0), { currency: 'BTC' })
+                          : formatCurrency(holding.current_value_usd || 0)
+                        }
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add Holding Modal */}
+      {addModalOpen && schema && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Add New Crypto Holding
+              </h3>
+              <button
+                onClick={closeModals}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <SmartDynamicForm
+                schema={schema}
+                onSubmit={handleAddHolding}
+                loading={submitting}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Holding Modal */}
+      <EditEntryModal
+        entryType="crypto_holdings"
+        entryData={selectedHolding || {}}
+        title="Edit Crypto Holding"
+        isOpen={editModalOpen && !!selectedHolding}
+        onClose={closeModals}
+        onUpdate={handleUpdateHolding}
+        submitText="Update Holding"
+        schemaOverride={schema || undefined}
+      />
+
+      {/* View Modal */}
+      {viewModalOpen && selectedHolding && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Crypto Holding Details
+              </h3>
+              <button
+                onClick={closeModals}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">Cryptocurrency</h4>
+                <p className="text-gray-900 dark:text-white">{selectedHolding.crypto_symbol}</p>
+              </div>
+              <div>
+                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">Institution</h4>
+                <p className="text-gray-900 dark:text-white">{selectedHolding.institution_name}</p>
+              </div>
+              <div>
+                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">Balance</h4>
+                <p className="text-gray-900 dark:text-white">{formatCrypto(selectedHolding.balance_tokens, selectedHolding.crypto_symbol)}</p>
+              </div>
+              <div>
+                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">Current Value</h4>
+                <p className="text-gray-900 dark:text-white">{formatCurrency(selectedHolding.current_value_usd || 0)}</p>
+              </div>
+              {selectedHolding.purchase_price_usd && (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">Purchase Price</h4>
+                  <p className="text-gray-900 dark:text-white">{formatCurrency(selectedHolding.purchase_price_usd)}</p>
+                </div>
+              )}
+              {selectedHolding.wallet_address && (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">Wallet Address</h4>
+                  <p className="text-gray-900 dark:text-white font-mono text-sm break-all">{selectedHolding.wallet_address}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteModalOpen && selectedHolding && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Delete Crypto Holding
+              </h3>
+              <button
+                onClick={closeModals}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Are you sure you want to delete this {selectedHolding.crypto_symbol} holding from {selectedHolding.institution_name}? This action cannot be undone.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={closeModals}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteHolding}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
-}
-
-// Configuration for the generic page
-const cryptoHoldingsConfig: GenericAssetPageConfig<CryptoHolding> = {
-  // API configuration
-  fetchAll: cryptoHoldingsApi.getAll,
-  create: cryptoHoldingsApi.create,
-  update: cryptoHoldingsApi.update,
-  delete: cryptoHoldingsApi.delete,
-  fetchSchema: () => pluginsApi.getSchema('crypto_holdings'),
-  transformData: transformCryptoData,
-  
-  // Page configuration
-  title: 'Crypto Holdings',
-  description: 'Track your cryptocurrency investments across exchanges and wallets',
-  icon: Coins,
-  entityName: 'Crypto Holding',
-  
-  // Rendering configuration
-  renderCard: CryptoCard,
-  renderSummaryCards: CryptoSummaryCards,
-  renderCharts: CryptoCharts,
-  renderCustomView: (viewMode: string, holdings: CryptoHolding[]) => {
-    if (viewMode === 'history') {
-      return CryptoHistory(holdings)
-    }
-    return null
-  },
-  
-  // Feature configuration
-  supportedViewModes: ['grid', 'list', 'charts', 'history'],
-  enableAdd: true,
-  enableRefresh: true,
-  
-  // Modal configuration
-  entryType: 'crypto_holdings',
-  getFormData: (holding) => ({
-    institution_name: holding.institution_name,
-    crypto_symbol: holding.crypto_symbol,
-    balance_tokens: holding.balance_tokens,
-    purchase_price_usd: holding.purchase_price_usd || null,
-    purchase_date: holding.purchase_date || '',
-    wallet_address: holding.wallet_address || '',
-    notes: holding.notes || ''
-  })
-}
-
-function CryptoHoldings() {
-  return <GenericAssetPage config={cryptoHoldingsConfig} />
 }
 
 export default CryptoHoldings

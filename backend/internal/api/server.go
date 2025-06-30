@@ -141,6 +141,9 @@ func (s *Server) setupRouter() {
 
 		// Crypto holdings endpoints
 		api.GET("/crypto-holdings", s.getCryptoHoldings)
+		api.POST("/crypto-holdings", s.createCryptoHolding)
+		api.PUT("/crypto-holdings/:id", s.updateCryptoHolding)
+		api.DELETE("/crypto-holdings/:id", s.deleteCryptoHolding)
 
 		// Other assets endpoints
 		api.GET("/other-assets", s.getOtherAssets)

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { TrendingUp, TrendingDown, DollarSign, Calendar, Award, AlertCircle, Edit2, Eye, Trash2, X } from 'lucide-react'
-import { equityApi } from '@/services/api'
-import type { EquityGrant } from '@/types'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts'
+import { equityApi, pluginsApi } from '@/services/api'
+import type { EquityGrant, ManualEntrySchema } from '@/types'
 import MarketStatus from '@/components/MarketStatus'
 import PriceRefreshControls from '@/components/PriceRefreshControls'
 import EditEntryModal from '@/components/EditEntryModal'
@@ -202,6 +203,7 @@ function Equity() {
   const [grants, setGrants] = useState<EquityGrantWithValue[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [schema, setSchema] = useState<ManualEntrySchema | null>(null)
   
   // Modal states
   const [editModalOpen, setEditModalOpen] = useState(false)
@@ -303,10 +305,19 @@ function Equity() {
     }
   }
 
+  const loadSchema = async () => {
+    try {
+      const equitySchema = await pluginsApi.getSchema('morgan_stanley')
+      setSchema(equitySchema)
+    } catch (error) {
+      console.error('Failed to load equity schema:', error)
+    }
+  }
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true)
-      await fetchEquityGrants()
+      await Promise.all([fetchEquityGrants(), loadSchema()])
       setLoading(false)
     }
     
@@ -319,6 +330,22 @@ function Equity() {
   const totalEquityValue = totalVestedValue + totalUnvestedValue
   const totalVestedShares = grants.reduce((sum, grant) => sum + grant.vested_shares, 0)
   const totalUnvestedShares = grants.reduce((sum, grant) => sum + grant.unvested_shares, 0)
+
+  // Chart data for vested vs unvested
+  const vestingChartData = useMemo(() => [
+    {
+      name: 'Vested',
+      value: totalVestedValue,
+      shares: totalVestedShares,
+      color: '#10B981'
+    },
+    {
+      name: 'Unvested',
+      value: totalUnvestedValue,
+      shares: totalUnvestedShares,
+      color: '#3B82F6'
+    }
+  ].filter(item => item.value > 0), [totalVestedValue, totalUnvestedValue, totalVestedShares, totalUnvestedShares])
 
   if (loading) {
     return (
@@ -384,6 +411,71 @@ function Equity() {
         />
       </div>
 
+      {/* Vesting Chart */}
+      {vestingChartData.length > 0 && (
+        <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Vesting Overview</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={vestingChartData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={120}
+                    paddingAngle={4}
+                    dataKey="value"
+                  >
+                    {vestingChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value: number) => [`$${value.toLocaleString()}`, 'Value']}
+                    labelStyle={{ color: '#374151' }}
+                    contentStyle={{
+                      backgroundColor: '#f9fafb',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '6px'
+                    }}
+                  />
+                  <Legend 
+                    wrapperStyle={{ fontSize: '14px' }}
+                    formatter={(value) => value}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex flex-col justify-center space-y-6">
+              <div className="text-center">
+                <div className="text-3xl font-bold text-green-600 dark:text-green-400">
+                  ${totalVestedValue.toLocaleString()}
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  {totalVestedShares.toLocaleString()} vested shares
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                  Available to exercise/sell
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+                  ${totalUnvestedValue.toLocaleString()}
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  {totalUnvestedShares.toLocaleString()} unvested shares
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                  Future vesting potential
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Equity Grants */}
       {grants.length > 0 ? (
         <div className="space-y-6">
@@ -421,6 +513,7 @@ function Equity() {
         onClose={closeModals}
         onUpdate={handleUpdate}
         submitText="Update Grant"
+        schemaOverride={schema || undefined}
       />
 
       {/* View Modal */}
