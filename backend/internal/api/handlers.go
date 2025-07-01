@@ -1115,6 +1115,176 @@ func (s *Server) getCashHoldings(c *gin.Context) {
 	})
 }
 
+// @Summary Create cash holding
+// @Description Create a new cash holding using the cash holdings plugin
+// @Tags cash-holdings
+// @Accept json
+// @Produce json
+// @Param request body map[string]interface{} true "Cash holding details"
+// @Success 201 {object} map[string]interface{} "Cash holding created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid data"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /cash-holdings [post]
+func (s *Server) createCashHolding(c *gin.Context) {
+	var requestData map[string]interface{}
+	if err := c.ShouldBindJSON(&requestData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid JSON data",
+		})
+		return
+	}
+
+	// Get the cash holdings plugin
+	plugin, err := s.pluginManager.GetPlugin("cash_holdings")
+	if err != nil || plugin == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Cash holdings plugin not found",
+		})
+		return
+	}
+
+	manualPlugin, ok := plugin.(interface {
+		ProcessManualEntry(data map[string]interface{}) error
+	})
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Plugin does not support manual entry",
+		})
+		return
+	}
+
+	// Process the manual entry
+	err = manualPlugin.ProcessManualEntry(requestData)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Failed to create cash holding: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Cash holding created successfully",
+	})
+}
+
+// @Summary Update cash holding
+// @Description Update an existing cash holding using the cash holdings plugin
+// @Tags cash-holdings
+// @Accept json
+// @Produce json
+// @Param id path int true "Cash holding ID"
+// @Param request body map[string]interface{} true "Updated cash holding details"
+// @Success 200 {object} map[string]interface{} "Cash holding updated successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid data"
+// @Failure 404 {object} map[string]interface{} "Cash holding not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /cash-holdings/{id} [put]
+func (s *Server) updateCashHolding(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid cash holding ID",
+		})
+		return
+	}
+
+	var requestData map[string]interface{}
+	if err := c.ShouldBindJSON(&requestData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid JSON data",
+		})
+		return
+	}
+
+	// Get the cash holdings plugin
+	plugin, err := s.pluginManager.GetPlugin("cash_holdings")
+	if err != nil || plugin == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Cash holdings plugin not found",
+		})
+		return
+	}
+
+	manualPlugin, ok := plugin.(interface {
+		UpdateManualEntry(id int, data map[string]interface{}) error
+	})
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Plugin does not support manual entry",
+		})
+		return
+	}
+
+	// Update the manual entry
+	err = manualPlugin.UpdateManualEntry(id, requestData)
+	if err != nil {
+		if strings.Contains(err.Error(), "no cash holding found") {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Cash holding not found",
+			})
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("Failed to update cash holding: %v", err),
+			})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Cash holding updated successfully",
+	})
+}
+
+// @Summary Delete cash holding
+// @Description Delete an existing cash holding
+// @Tags cash-holdings
+// @Accept json
+// @Produce json
+// @Param id path int true "Cash holding ID"
+// @Success 200 {object} map[string]interface{} "Cash holding deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid ID"
+// @Failure 404 {object} map[string]interface{} "Cash holding not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /cash-holdings/{id} [delete]
+func (s *Server) deleteCashHolding(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid cash holding ID",
+		})
+		return
+	}
+
+	// Delete the cash holding record
+	query := `DELETE FROM cash_holdings WHERE id = $1`
+	result, err := s.db.Exec(query, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to delete cash holding",
+		})
+		return
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check deletion result",
+		})
+		return
+	}
+
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Cash holding not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Cash holding deleted successfully",
+	})
+}
+
 // @Summary Get cryptocurrency holdings
 // @Description Retrieve all cryptocurrency holdings with current prices and values
 // @Tags crypto

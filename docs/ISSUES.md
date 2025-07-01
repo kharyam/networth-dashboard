@@ -30,24 +30,18 @@ DONE When I type something in the filter under manual entries, the list does not
 DONE Other Assets
 * Add another page for "other assets" for things like cars, jewelry, etc. where you can have fields for estimated value and amount owed and purchase price. Is that the point of the miscellaneous_assets table? The type of asset should be in a dropdown.  There should be a way to update the possible asset types (categories) of assets, store this in a database table. Can you create a simple / elegant way such that each asset type could potentially have custom features?  For example, for a "Car", we might want to allow additional fields like make, model, mileage and condition so we can reach out to an API to get estimated value.  This extended ability should be an option for all asset types, so we need a good, maintainable framework to enable this extensibility. Each asset should have the option of having its own visualization page to support its custom features - again, this should be implemented in a modular / pluggable way for simplified extensibility. Make sure the swagger documentation is updated for the newly added API endpoints. This doesn't need to be integrated with manual entries, it can be fully managed from the other assets page. Give me other potential ideas for this page as well as you see fit.
 
-- The asset allocation pie chart on the dashboard is showing 0 for Equity comp.  Is the equity comp being added to direct stocks instead?
 
-- When I force refresh the stock price, it is not updating and looks like it is still pulling price from the cache.
-
-- These tables are currently empty - are there any plans for these or should they be deleted? manual_entries manual_entries_id_seq manual_entry_log manual_entry_log_id_seq 
-
-
-
-- Look at the quick actions on the dashboard that are not implemented. Implement the ones that you can now. Make sure these still make sense.  For future ones, create a popup to let the user know the feature isn't implemented yet.
+[IN PROGRESS] When I force refresh the stock price, it is not updating and looks like it is still pulling price from the cache.
+Also give some type of visual confirmation of what stocks were loaded from the api and the prices that were fetched. Show how much the price went up or down since the last price in the cache. Continue with this as well as the other items in your todo list.  
 
 - Refactor exercise
-* Analyze the entire application, identify areas that could be made more efficient and maintainable.  Check if there is redundant code that can be consolidated.  Make sure things are modular and can be understood by a developer or AI taking ownership of the project.  Make a list of recommended updates and changes to address any of these shortcomings.  The preference should be to lessen the overall amount of code and make it more readable and understandable overall - more maintainable and extendable to allow new features to be easily added.
+[DONE] Analyze the entire application, identify areas that could be made more efficient and maintainable.  Check if there is redundant code that can be consolidated.  Make sure things are modular and can be understood by a developer or AI taking ownership of the project.  Make a list of recommended updates and changes to address any of these shortcomings.  The preference should be to lessen the overall amount of code and make it more readable and understandable overall - more maintainable and extendable to allow new features to be easily added.
 
 - Unit Tests
 ...
 
 - Helm Chart
-Create a helm chart that can deploy the application (frontend, backend and postgres database) to OpenShift.  It should create ingress objects for exposing the frontend and backend. The frontend should be configured to use the hostname of the backend ingress for its api calls.  Implement any CORS configuration that may be needed so that the frontend and backend can talk properly. Don't create any openshift specific features, it should work in kubernetes as well. Create the appropriate configuration items in the values.yml, including the items from the env file as parameters.  Sensitive things, like API keys, should be added to a secret. There should be a separate values file for secret information, document that this should never be added to version control. Define the helm chart under a "helm" directory, organize it as you see fit, make it highly maintainable and easy to understand. If you can use an existing helm chart as a dependency to deploy postgres, do that. Make sure a persistent volume claim is created for postgres storage, and we have the ability to specify storage size in the values (with a reasonable default in values.yaml)
+Create a helm chart that can deploy the application (frontend, backend and postgres database) to OpenShift.  It should create ingress objects for exposing the frontend and backend. The frontend should be configured to use the hostname of the backend ingress for its api calls.  Implement any CORS configuration that may be needed so that the frontend and backend can talk properly. Don't create any openshift specific features, it should work in kubernetes as well. Create the appropriate configuration items in the values.yml, including the items from the env file as parameters.  Sensitive things, like API keys, should be added to a secret. There should be a separate values file for secret information, document that this should never be added to version control. Define the helm chart under a "helm" directory, organize it as you see fit, make it highly maintainable and easy to understand. If you can use an existing helm chart as a dependency to deploy postgres, do that. Make sure a persistent volume claim is created for postgres storage, and we have the ability to specify storage size in the values (with a reasonable default in values.yaml).  We should also be able to specify cpu/memory requests and limtis for each pod, choose reasonable defaults for each.
 
 At this point, we should be able to plan the implementation of prompt 3
 
@@ -78,8 +72,7 @@ Future visualizations
   9. Cash Flow Analysis
 
 
-# STUCK
-- [IN PROGRESS] Add new fields in real estate for city, state and zip - we assume united states. The existing name should be the property address. Get house zestimate with: https://freewebapi.com/data-apis/real-estate-api/  or some other service that can retrieve a house price estimate based on address for free. Give me a plan
+- DONE Add new fields in real estate for city, state and zip - we assume united states. The existing name should be the property address. Get house zestimate with: https://freewebapi.com/data-apis/real-estate-api/  or some other service that can retrieve a house price estimate based on address for free. Give me a plan
 
 When editing real estate on real estate page, there was an error and it failed to save.  It also did not accept an unset lot size, but it should.
 
@@ -103,3 +96,4 @@ Implementation Plan for Zillow Integration:
 
 # Future
 Multi user support. Create a demo user with realistc fake data (Insert realistic fake data for a user into the DB tables as part of initialization)
+- These tables are currently empty - are there any plans for these or should they be deleted? manual_entries manual_entries_id_seq manual_entry_log manual_entry_log_id_seq 

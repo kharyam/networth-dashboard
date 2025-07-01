@@ -4,3 +4,7 @@ backend/docs/swagger.yaml
 go.sum
 backend/networth-dashboard
 package-lock.json
+secrets.yaml
+*Old.tsx
+Chart.lock
+helm/networth-dashboard/charts/

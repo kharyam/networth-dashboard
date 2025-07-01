@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "networth-dashboard.fullname" . }}-frontend
+  labels:
+    {{- include "networth-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "networth-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        {{- include "networth-dashboard.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: frontend
+    spec:
+      initContainers:
+        - name: wait-for-backend
+          image: busybox
+          command:
+            - /bin/sh
+            - -c
+            - >
+              until nc -z {{ .Release.Name }}-networth-dashboard-backend 8080 ; do
+                echo "Waiting for {{ .Release.Name }}-network-dashboard-backend ...";
+                sleep 3;
+              done
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontend.service.port }}
+              protocol: TCP
+          env:
+            - name: VITE_API_BASE_URL
+              value: "http://{{ (index .Values.backend.ingress.hosts 0).host }}"
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          volumeMounts:
+            - name: nginx-config-volume
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+      volumes:
+        - name: nginx-config-volume
+          configMap:
+            name: {{ include "networth-dashboard.fullname" . }}-frontend-nginx-config

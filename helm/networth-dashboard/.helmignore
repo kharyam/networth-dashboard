@@ -1,0 +1,13 @@
+# Patterns to ignore when building packages.
+# This supports shell glob matching, relative path matching, and
+# negation (prefixed with !).
+
+# Common things to ignore
+.DS_Store
+.git/
+.gitignore
+.idea/
+.vscode/
+
+# Ignore the secrets template file
+secrets.yaml.gotmpl
