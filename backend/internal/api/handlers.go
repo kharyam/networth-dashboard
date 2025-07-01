@@ -2160,12 +2160,15 @@ func (s *Server) refreshPrices(c *gin.Context) {
 		}
 	}
 
+	// Determine the actual provider name based on results
+	actualProviderName := s.determineActualProviderName(results, priceService.GetProviderName())
+
 	summary := services.PriceRefreshSummary{
 		TotalSymbols:   len(symbols),
 		UpdatedSymbols: updatedCount,
 		FailedSymbols:  failedCount,
 		Results:        results,
-		ProviderName:   priceService.GetProviderName(),
+		ProviderName:   actualProviderName,
 		Timestamp:      time.Now(),
 		DurationMs:     time.Since(startTime).Milliseconds(),
 	}
@@ -2297,33 +2300,113 @@ func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceSe
 		Timestamp: time.Now(),
 	}
 
+	// Get old price and cache info for comparison and analysis
+	var oldPrice float64
+	var lastCacheUpdate time.Time
+	var stockHoldingsPrice sql.NullFloat64
+	var stockPricesTimestamp sql.NullTime
+	
+	priceQuery := `
+		SELECT COALESCE(h.current_price, 0), h.current_price, sp.timestamp
+		FROM stock_holdings h
+		LEFT JOIN (
+			SELECT symbol, timestamp 
+			FROM stock_prices 
+			WHERE symbol = $1 
+			ORDER BY timestamp DESC 
+			LIMIT 1
+		) sp ON sp.symbol = h.symbol
+		WHERE h.symbol = $1 
+		LIMIT 1
+	`
+	err := s.db.QueryRow(priceQuery, symbol).Scan(&oldPrice, &stockHoldingsPrice, &stockPricesTimestamp)
+	if err != nil && err != sql.ErrNoRows {
+		fmt.Printf("ERROR: Failed to get old price for %s: %v\n", symbol, err)
+	}
+	
+	// Determine cache source and age
+	if stockPricesTimestamp.Valid {
+		lastCacheUpdate = stockPricesTimestamp.Time
+		fmt.Printf("DEBUG: Old price %.2f for %s from stock_prices table (timestamp: %v)\n", oldPrice, symbol, lastCacheUpdate)
+	} else if stockHoldingsPrice.Valid {
+		fmt.Printf("DEBUG: Old price %.2f for %s from stock_holdings.current_price (no stock_prices entry)\n", oldPrice, symbol)
+		// For stock holdings price, we don't have a reliable timestamp, so use a very old date to force refresh
+		lastCacheUpdate = time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+	} else {
+		fmt.Printf("DEBUG: No old price found for %s in any cache location\n", symbol)
+		oldPrice = 0
+		lastCacheUpdate = time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+
+	// Calculate cache age if we have cache data
+	if !lastCacheUpdate.IsZero() && lastCacheUpdate.Year() > 1970 {
+		cacheAge := time.Since(lastCacheUpdate)
+		if cacheAge < time.Minute {
+			result.CacheAge = fmt.Sprintf("%.0fs", cacheAge.Seconds())
+		} else if cacheAge < time.Hour {
+			result.CacheAge = fmt.Sprintf("%.0fm", cacheAge.Minutes())
+		} else {
+			result.CacheAge = fmt.Sprintf("%.1fh", cacheAge.Hours())
+		}
+	}
+
+	result.OldPrice = oldPrice
+
 	// Get current price from service
 	newPrice, err := priceService.GetCurrentPriceWithForce(symbol, forceRefresh)
 	if err != nil {
 		result.Error = err.Error()
+		
+		// Categorize the error type for better handling
+		errorStr := strings.ToLower(err.Error())
+		if strings.Contains(errorStr, "rate limit") {
+			result.ErrorType = "rate_limited"
+		} else if strings.Contains(errorStr, "no cached price") || strings.Contains(errorStr, "cache") {
+			result.ErrorType = "cache_error"
+			result.Source = "cache"
+		} else if strings.Contains(errorStr, "api") || strings.Contains(errorStr, "fetch") {
+			result.ErrorType = "api_error"
+		} else if strings.Contains(errorStr, "symbol") || strings.Contains(errorStr, "not found") {
+			result.ErrorType = "invalid_symbol"
+		} else {
+			result.ErrorType = "unknown"
+		}
 		return result
 	}
 
-	// Get old price for comparison
-	var oldPrice float64
-	priceQuery := `
-		SELECT COALESCE(current_price, 0) 
-		FROM stock_holdings 
-		WHERE symbol = $1 
-		LIMIT 1
-	`
-	s.db.QueryRow(priceQuery, symbol).Scan(&oldPrice)
-
-	result.OldPrice = oldPrice
 	result.NewPrice = newPrice
+	
+	// Calculate price changes
+	if oldPrice > 0 {
+		result.PriceChange = newPrice - oldPrice
+		result.PriceChangePct = (result.PriceChange / oldPrice) * 100
+	}
 
-	// Update stock_holdings
+	// Determine source - if we got a new price and it's different from cache, it's from API
+	if forceRefresh || newPrice != oldPrice {
+		result.Source = "api"
+	} else {
+		result.Source = "cache"
+	}
+
+	// Update stock_holdings with transaction for consistency
+	fmt.Printf("INFO: Starting database transaction to update prices for %s (new price: %.2f)\n", symbol, newPrice)
+	tx, err := s.db.Begin()
+	if err != nil {
+		result.Error = fmt.Sprintf("Failed to start transaction: %v", err)
+		result.ErrorType = "database_error"
+		fmt.Printf("ERROR: Failed to start transaction for %s: %v\n", symbol, err)
+		return result
+	}
+	defer tx.Rollback()
+
 	stockUpdate := `
 		UPDATE stock_holdings 
 		SET current_price = $1, last_updated = $2 
 		WHERE symbol = $3
 	`
-	stockResult, err := s.db.Exec(stockUpdate, newPrice, time.Now(), symbol)
+	fmt.Printf("INFO: Updating stock_holdings for %s with price %.2f\n", symbol, newPrice)
+	stockResult, err := tx.Exec(stockUpdate, newPrice, time.Now(), symbol)
 
 	// Update equity_grants
 	equityUpdate := `
@@ -2331,18 +2414,38 @@ func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceSe
 		SET current_price = $1, last_updated = $2 
 		WHERE company_symbol = $3
 	`
-	equityResult, err2 := s.db.Exec(equityUpdate, newPrice, time.Now(), symbol)
+	fmt.Printf("INFO: Updating equity_grants for %s with price %.2f\n", symbol, newPrice)
+	equityResult, err2 := tx.Exec(equityUpdate, newPrice, time.Now(), symbol)
 
 	// Check if any rows were updated
-	stockRows, _ := stockResult.RowsAffected()
-	equityRows, _ := equityResult.RowsAffected()
+	stockRows, stockErr := stockResult.RowsAffected()
+	equityRows, equityErr := equityResult.RowsAffected()
 
+	fmt.Printf("INFO: Database update results for %s - stock_holdings: %d rows, equity_grants: %d rows\n", symbol, stockRows, equityRows)
+
+	// Handle database errors comprehensively
 	if err != nil && err2 != nil {
-		result.Error = fmt.Sprintf("Update failed: %v, %v", err, err2)
+		result.Error = fmt.Sprintf("Update failed: stock_holdings: %v, equity_grants: %v", err, err2)
+		result.ErrorType = "database_error"
+		fmt.Printf("ERROR: Both updates failed for %s - stock: %v, equity: %v\n", symbol, err, err2)
+	} else if stockErr != nil || equityErr != nil {
+		result.Error = fmt.Sprintf("Failed to check affected rows: %v, %v", stockErr, equityErr)
+		result.ErrorType = "database_error"
+		fmt.Printf("ERROR: Failed to check affected rows for %s - stock: %v, equity: %v\n", symbol, stockErr, equityErr)
 	} else if stockRows > 0 || equityRows > 0 {
-		result.Updated = true
+		// Commit the transaction only if updates were successful
+		if commitErr := tx.Commit(); commitErr != nil {
+			result.Error = fmt.Sprintf("Failed to commit transaction: %v", commitErr)
+			result.ErrorType = "database_error"
+			fmt.Printf("ERROR: Failed to commit transaction for %s: %v\n", symbol, commitErr)
+		} else {
+			result.Updated = true
+			fmt.Printf("SUCCESS: Price update committed for %s - stock_holdings: %d rows, equity_grants: %d rows\n", symbol, stockRows, equityRows)
+		}
 	} else {
-		result.Error = "No records found to update"
+		result.Error = "No records found to update for this symbol"
+		result.ErrorType = "invalid_symbol"
+		fmt.Printf("WARNING: No records found to update for symbol %s - may not exist in stock_holdings or equity_grants\n", symbol)
 	}
 
 	return result
@@ -3447,4 +3550,43 @@ func (s *Server) getAssetCategorySchema(c *gin.Context) {
 	}
 	
 	c.JSON(http.StatusOK, result)
+}
+
+// determineActualProviderName analyzes the refresh results to determine what provider was actually used
+func (s *Server) determineActualProviderName(results []services.PriceUpdateResult, defaultProviderName string) string {
+	if len(results) == 0 {
+		return defaultProviderName
+	}
+
+	apiCount := 0
+	cacheCount := 0
+	
+	// Count API vs cache sources
+	for _, result := range results {
+		if result.Updated {
+			if result.Source == "api" {
+				apiCount++
+			} else if result.Source == "cache" {
+				cacheCount++
+			}
+		}
+	}
+	
+	// If all data came from cache, indicate that
+	if apiCount == 0 && cacheCount > 0 {
+		return "Cache"
+	}
+	
+	// If all data came from API, use the configured provider name
+	if apiCount > 0 && cacheCount == 0 {
+		return defaultProviderName
+	}
+	
+	// If mixed sources, indicate that
+	if apiCount > 0 && cacheCount > 0 {
+		return fmt.Sprintf("%s + Cache", defaultProviderName)
+	}
+	
+	// Default fallback
+	return defaultProviderName
 }

@@ -48,9 +48,8 @@ func NewServer(cfg *config.Config, db *sql.DB, pluginManager *plugins.Manager) *
 		log.Fatal("Failed to initialize market hours service:", err)
 	}
 
-	// Initialize price service with Alpha Vantage
-	priceService := services.NewPriceServiceWithAlphaVantage(
-		cfg.API.AlphaVantageAPIKey,
+	// Initialize price service with intelligent provider selection
+	priceService := services.NewPriceServiceWithProviders(
 		db,
 		marketService,
 		&cfg.API,

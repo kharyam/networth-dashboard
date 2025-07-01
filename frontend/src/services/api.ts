@@ -282,7 +282,7 @@ export const pricesApi = {
     const url = `/prices/refresh${force ? '?force=true' : ''}`
     const context = force ? 'FORCE_REFRESH' : 'SMART_REFRESH'
     logger.log(`🔄 [pricesApi.refreshAll] Making request:`, { context, force, url, method: 'POST' })
-    return api.post(url).then(res => res.data)
+    return api.post(url).then(res => res.data.summary)
   },
 
   // Convenience method for auto-refresh (page loads, navigation)
@@ -300,7 +300,7 @@ export const pricesApi = {
   refreshSymbol: (symbol: string, force: boolean = false): Promise<any> => {
     const url = `/prices/refresh/${symbol}${force ? '?force=true' : ''}`
     logger.log('🔄 [pricesApi.refreshSymbol] Refreshing symbol:', { symbol, force, url })
-    return api.post(url).then(res => res.data)
+    return api.post(url).then(res => res.data.result)
   },
   
   getStatus: (): Promise<any> =>

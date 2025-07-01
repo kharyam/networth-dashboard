@@ -49,7 +49,24 @@ function Stocks() {
   }
 
   const handleRefreshComplete = async () => {
-    await loadAllData() // Reload all data after price refresh
+    // Reload data without triggering loading state to prevent modal from disappearing
+    try {
+      setError(null)
+      
+      const [stocks, consolidated, equity] = await Promise.all([
+        stocksApi.getAll(),
+        stocksApi.getConsolidated(),
+        equityApi.getAll()
+      ])
+      
+      setStockHoldings(stocks)
+      setConsolidatedStocks(consolidated)
+      setEquityGrants(equity)
+    } catch (error) {
+      console.error('Failed to reload stock data after price refresh:', error)
+      setError('Failed to reload stock data. Please try again.')
+    }
+    // Note: No setLoading(true/false) to prevent component unmounting
   }
 
   const closeModals = () => {
