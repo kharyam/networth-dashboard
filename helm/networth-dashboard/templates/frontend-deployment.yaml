@@ -36,9 +36,6 @@ spec:
             - name: http
               containerPort: {{ .Values.frontend.service.port }}
               protocol: TCP
-          env:
-            - name: VITE_API_BASE_URL
-              value: "http://{{ (index .Values.backend.ingress.hosts 0).host }}"
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
           volumeMounts:

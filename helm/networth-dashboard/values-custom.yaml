@@ -9,13 +9,6 @@ backend:
     pullPolicy: IfNotPresent
     tag: "latest"
 
-  ingress:
-    hosts:
-      - host: backend-networth-dashboard.apps.ocp.khary.net
-        paths:
-          - path: /
-            pathType: ImplementationSpecific
-
   resources:
     requests:
       cpu: 100m
@@ -36,6 +29,9 @@ frontend:
     tag: "latest"
 
   ingress:
+    annotations:
+      route.openshift.io/termination: edge
+      route.openshift.io/insecureEdgeTerminationPolicy: Redirect
     hosts:
       - host: frontend-networth-dashboard.apps.ocp.khary.net
         paths:
