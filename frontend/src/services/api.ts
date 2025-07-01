@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { logger, criticalLogger } from '@/utils/logger'
 import type { 
   NetWorthSummary, 
   Account, 
@@ -22,7 +23,7 @@ const api = axios.create({
 
 // Request interceptor for auth and logging
 api.interceptors.request.use((config) => {
-  console.log('🌐 [Axios] REQUEST:', {
+  logger.log('🌐 [Axios] REQUEST:', {
     method: config.method?.toUpperCase(),
     url: config.url,
     baseURL: config.baseURL,
@@ -35,14 +36,14 @@ api.interceptors.request.use((config) => {
   // TODO: Add auth token when implemented
   return config
 }, (error) => {
-  console.error('❌ [Axios] REQUEST ERROR:', error)
+  criticalLogger.error('❌ [Axios] REQUEST ERROR:', error)
   return Promise.reject(error)
 })
 
 // Response interceptor for error handling and logging
 api.interceptors.response.use(
   (response) => {
-    console.log('✅ [Axios] RESPONSE:', {
+    logger.log('✅ [Axios] RESPONSE:', {
       status: response.status,
       statusText: response.statusText,
       url: response.config.url,
@@ -53,7 +54,7 @@ api.interceptors.response.use(
     return response
   },
   (error) => {
-    console.error('❌ [Axios] RESPONSE ERROR:', {
+    criticalLogger.error('❌ [Axios] RESPONSE ERROR:', {
       message: error.message,
       status: error.response?.status,
       statusText: error.response?.statusText,
@@ -234,6 +235,25 @@ export const manualEntriesApi = {
     api.delete(`/manual-entries/${id}?type=${entryType}`).then(() => undefined),
 }
 
+// Other Assets API
+export const otherAssetsApi = {
+  getAll: (categoryFilter?: string): Promise<any> => {
+    const url = categoryFilter 
+      ? `/other-assets?category=${categoryFilter}`
+      : '/other-assets'
+    return api.get(url).then(res => res.data)
+  },
+  
+  create: (asset: any): Promise<any> =>
+    api.post('/other-assets', asset).then(res => res.data),
+  
+  update: (id: number, asset: any): Promise<any> =>
+    api.put(`/other-assets/${id}`, asset).then(res => res.data),
+  
+  delete: (id: number): Promise<void> =>
+    api.delete(`/other-assets/${id}`).then(() => undefined),
+}
+
 // Asset Categories API
 export const assetCategoriesApi = {
   getAll: (): Promise<any[]> =>
@@ -261,26 +281,26 @@ export const pricesApi = {
   refreshAll: (force: boolean = false): Promise<any> => {
     const url = `/prices/refresh${force ? '?force=true' : ''}`
     const context = force ? 'FORCE_REFRESH' : 'SMART_REFRESH'
-    console.log(`🔄 [pricesApi.refreshAll] Making request:`, { context, force, url, method: 'POST' })
-    return api.post(url).then(res => res.data)
+    logger.log(`🔄 [pricesApi.refreshAll] Making request:`, { context, force, url, method: 'POST' })
+    return api.post(url).then(res => res.data.summary)
   },
 
   // Convenience method for auto-refresh (page loads, navigation)
   autoRefresh: (): Promise<any> => {
-    console.log('🔄 [pricesApi.autoRefresh] Auto-refreshing with smart cache logic')
+    logger.log('🔄 [pricesApi.autoRefresh] Auto-refreshing with smart cache logic')
     return pricesApi.refreshAll(false)
   },
 
   // Convenience method for user-initiated force refresh
   forceRefresh: (): Promise<any> => {
-    console.log('🔄 [pricesApi.forceRefresh] Force refreshing - bypassing cache')
+    logger.log('🔄 [pricesApi.forceRefresh] Force refreshing - bypassing cache')
     return pricesApi.refreshAll(true)
   },
   
   refreshSymbol: (symbol: string, force: boolean = false): Promise<any> => {
     const url = `/prices/refresh/${symbol}${force ? '?force=true' : ''}`
-    console.log('🔄 [pricesApi.refreshSymbol] Refreshing symbol:', { symbol, force, url })
-    return api.post(url).then(res => res.data)
+    logger.log('🔄 [pricesApi.refreshSymbol] Refreshing symbol:', { symbol, force, url })
+    return api.post(url).then(res => res.data.result)
   },
   
   getStatus: (): Promise<any> =>

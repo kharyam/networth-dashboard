@@ -146,48 +146,6 @@ function PropertyCharts({ properties }: PropertyChartsProps) {
 
   return (
     <div className="space-y-6">
-      {/* Portfolio Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-          <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Total Portfolio Value</h4>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">
-            {formatCurrency(portfolioMetrics.totalValue)}
-          </p>
-        </div>
-        <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-          <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Total Equity</h4>
-          <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-            {formatCurrency(portfolioMetrics.totalEquity)}
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {portfolioMetrics.equityPercentage.toFixed(1)}% of portfolio
-          </p>
-        </div>
-        <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-          <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Total Appreciation</h4>
-          <p className={`text-2xl font-bold ${
-            portfolioMetrics.totalAppreciation >= 0 
-              ? 'text-green-600 dark:text-green-400' 
-              : 'text-red-600 dark:text-red-400'
-          }`}>
-            {formatCurrency(portfolioMetrics.totalAppreciation)}
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {portfolioMetrics.appreciationPercentage > 0 ? '+' : ''}
-            {portfolioMetrics.appreciationPercentage.toFixed(1)}% growth
-          </p>
-        </div>
-        <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-          <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Properties</h4>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">
-            {properties.length}
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {formatCurrency(portfolioMetrics.totalValue / properties.length)} avg value
-          </p>
-        </div>
-      </div>
-
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Equity vs Debt Chart */}
@@ -206,6 +164,7 @@ function PropertyCharts({ properties }: PropertyChartsProps) {
                   outerRadius={100}
                   paddingAngle={5}
                   dataKey="value"
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                 >
                   {equityDebtData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
@@ -257,6 +216,7 @@ function PropertyCharts({ properties }: PropertyChartsProps) {
                   outerRadius={100}
                   paddingAngle={5}
                   dataKey="value"
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                 >
                   {propertyTypeData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Plus, List, X, Eye, Edit2, Trash2, Filter } from 'lucide-react'
-import { pluginsApi, manualEntriesApi } from '../services/api'
-import { Plugin, ManualEntrySchema } from '../types'
-import SmartDynamicForm from '../components/SmartDynamicForm'
-import EditEntryModal from '../components/EditEntryModal'
+import { FileText, Plus, List, RefreshCw, Eye, Edit2, Trash2, X, AlertTriangle } from 'lucide-react'
+import { manualEntriesApi, pluginsApi } from '@/services/api'
+import { Plugin, ManualEntrySchema } from '@/types'
+import SmartDynamicForm from '@/components/SmartDynamicForm'
+import EditEntryModal from '@/components/EditEntryModal'
 
 interface ManualEntry {
   id: number
@@ -16,29 +16,192 @@ interface ManualEntry {
   institution?: string
 }
 
+interface EntriesSummary {
+  total_count: number
+  by_type: Record<string, number>
+  recent_count: number
+}
+
 type TabType = 'add' | 'view'
+
+// Transform API response data
+const transformManualEntriesData = (rawData: any): { entries: ManualEntry[], summary: EntriesSummary } => {
+  if (!rawData) {
+    return { 
+      entries: [], 
+      summary: { total_count: 0, by_type: {}, recent_count: 0 } 
+    }
+  }
+  
+  // Handle both array response and wrapped response
+  const entriesArray = Array.isArray(rawData) ? rawData : (rawData.entries || [])
+  
+  // Enhanced duplicate removal with robust uniqueness check
+  const uniqueEntries = entriesArray.filter((entry: any, index: number, arr: any[]) => {
+    if (!entry || !entry.id || !entry.entry_type) {
+      return false
+    }
+    
+    const entryKey = `${entry.entry_type}-${entry.id}-${entry.account_id}-${entry.created_at}`
+    const firstOccurrenceIndex = arr.findIndex((e: any) => {
+      const otherKey = `${e.entry_type}-${e.id}-${e.account_id}-${e.created_at}`
+      return otherKey === entryKey
+    })
+    
+    return firstOccurrenceIndex === index
+  })
+  
+  // Calculate summary
+  const byType = uniqueEntries.reduce((acc: Record<string, number>, entry: ManualEntry) => {
+    acc[entry.entry_type] = (acc[entry.entry_type] || 0) + 1
+    return acc
+  }, {})
+  
+  const recentCount = uniqueEntries.filter((entry: ManualEntry) => {
+    const entryDate = new Date(entry.created_at)
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    return entryDate >= weekAgo
+  }).length
+  
+  return {
+    entries: uniqueEntries,
+    summary: {
+      total_count: uniqueEntries.length,
+      by_type: byType,
+      recent_count: recentCount
+    }
+  }
+}
+
+const parseDataJson = (dataJson: string) => {
+  try {
+    return JSON.parse(dataJson)
+  } catch {
+    return {}
+  }
+}
+
+const getIconForEntryType = (entryType: string): string => {
+  switch (entryType) {
+    case 'stock_holding': return '📈'
+    case 'morgan_stanley': return '🏛️'
+    case 'real_estate': return '🏠'
+    case 'cash_holdings': return '💰'
+    case 'crypto_holdings': return '₿'
+    case 'other_assets': return '📦'
+    default: return '📄'
+  }
+}
+
+const formatDate = (dateString: string) => {
+  return new Date(dateString).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+const getEntryTitle = (entry: ManualEntry) => {
+  const data = parseDataJson(entry.data_json)
+  
+  switch (entry.entry_type) {
+    case 'stock_holding':
+      return `${data.symbol || 'Stock'} at ${data.institution_name || 'Institution'} - ${data.shares_owned || 0} shares`
+    case 'morgan_stanley':
+      return `${data.company_symbol || 'Equity'} ${data.grant_type || 'Grant'}`
+    case 'real_estate':
+      return data.property_name || 'Real Estate Property'
+    case 'cash_holdings':
+      return `${data.institution_name || 'Bank'} - ${data.account_name || 'Account'} (${data.account_type || 'Cash'})`
+    case 'crypto_holdings':
+      return `${data.institution_name || 'Exchange'} - ${data.crypto_symbol || 'Crypto'} (${data.balance_tokens || 0} tokens)`
+    case 'other_assets':
+      return data.asset_name || `${data.category_name || 'Other'} Asset`
+    default:
+      return `${entry.entry_type} Entry`
+  }
+}
+
+const getEntryValue = (entry: ManualEntry) => {
+  const data = parseDataJson(entry.data_json)
+  
+  switch (entry.entry_type) {
+    case 'stock_holding':
+      if (data.shares_owned && data.current_price) {
+        return `$${(data.shares_owned * data.current_price).toLocaleString()}`
+      }
+      return 'N/A'
+    case 'morgan_stanley':
+      if (data.vested_shares && data.current_price) {
+        if (data.grant_type === 'stock_option' && data.strike_price) {
+          const intrinsicValue = Math.max(0, data.current_price - data.strike_price)
+          const totalValue = data.vested_shares * intrinsicValue
+          return totalValue > 0 ? `$${totalValue.toLocaleString()}` : '$0'
+        } else {
+          const totalValue = data.vested_shares * data.current_price
+          return `$${totalValue.toLocaleString()}`
+        }
+      }
+      return 'N/A'
+    case 'real_estate':
+      if (data.current_value) {
+        return `$${data.current_value.toLocaleString()}`
+      }
+      return 'N/A'
+    case 'cash_holdings':
+      if (data.current_balance) {
+        const currency = data.currency || 'USD'
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: currency
+        }).format(data.current_balance)
+      }
+      return 'N/A'
+    case 'crypto_holdings':
+      if (data.current_value_usd) {
+        return `$${data.current_value_usd.toLocaleString()}`
+      } else if (data.balance_tokens && data.current_price_usd) {
+        const value = data.balance_tokens * data.current_price_usd
+        return `$${value.toLocaleString()}`
+      }
+      return `${data.balance_tokens || 0} ${data.crypto_symbol || 'tokens'}`
+    case 'other_assets':
+      if (data.current_value) {
+        const netValue = data.current_value - (data.amount_owed || 0)
+        return `$${netValue.toLocaleString()}`
+      }
+      return 'N/A'
+    default:
+      return 'N/A'
+  }
+}
 
 function ManualEntries() {
   // Tab management
   const [activeTab, setActiveTab] = useState<TabType>('view')
   
-  // Add Entry state (from ManualEntry.tsx)
+  // Add Entry state
   const [plugins, setPlugins] = useState<Plugin[]>([])
   const [selectedPlugin, setSelectedPlugin] = useState<string>('')
   const [schema, setSchema] = useState<ManualEntrySchema | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
-  // View Entries state (from MyEntries.tsx)
+  // View Entries state
   const [entries, setEntries] = useState<ManualEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [filter, setFilter] = useState<string>('')
-  const [isLoadingEntries, setIsLoadingEntries] = useState(false)
   const [selectedEntry, setSelectedEntry] = useState<ManualEntry | null>(null)
   const [viewModalOpen, setViewModalOpen] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  
+  // Filter state
+  const [filterType, setFilterType] = useState<string>('')
+  const [searchTerm, setSearchTerm] = useState<string>('')
 
   useEffect(() => {
     loadPlugins()
@@ -106,235 +269,34 @@ function ManualEntries() {
 
   // View Entries functions
   const loadEntries = async () => {
-    // Prevent multiple simultaneous calls
-    if (isLoadingEntries) {
-      console.log('Already loading entries, skipping...')
-      return
-    }
-    
     try {
-      setIsLoadingEntries(true)
       setLoading(true)
       setError(null)
-      
-      console.log('Loading entries from API...')
       const response = await manualEntriesApi.getAll()
-      console.log('Raw API response:', response)
-      console.log('Response is array:', Array.isArray(response))
-      console.log('Response length:', response?.length || 'no length')
-      
-      // Ensure response is an array
-      const entriesArray = Array.isArray(response) ? response : []
-      console.log('Entries array length:', entriesArray.length)
-      
-      // Log first few entries to see their structure
-      if (entriesArray.length > 0) {
-        console.log('Sample entries:', entriesArray.slice(0, 3))
-        console.log('All entry IDs and types:', entriesArray.map(e => ({ id: e.id, type: e.entry_type })))
-      }
-      
-      // Enhanced duplicate removal with more robust uniqueness check
-      const uniqueEntries = entriesArray.filter((entry, index, arr) => {
-        if (!entry || !entry.id || !entry.entry_type) {
-          console.warn('Invalid entry found:', entry)
-          return false
-        }
-        
-        // Create a unique key combining multiple fields for better deduplication
-        const entryKey = `${entry.entry_type}-${entry.id}-${entry.account_id}-${entry.created_at}`
-        const firstOccurrenceIndex = arr.findIndex(e => {
-          const otherKey = `${e.entry_type}-${e.id}-${e.account_id}-${e.created_at}`
-          return otherKey === entryKey
-        })
-        
-        const isUnique = firstOccurrenceIndex === index
-        if (!isUnique) {
-          console.log('Removing duplicate:', { entry, index, firstOccurrenceIndex })
-        }
-        
-        return isUnique
-      })
-      
-      console.log('Unique entries after filtering:', uniqueEntries.length)
-      console.log('Final unique entries:', uniqueEntries.map(e => ({ 
-        id: e.id, 
-        type: e.entry_type, 
-        account_id: e.account_id,
-        created_at: e.created_at 
-      })))
-      
-      setEntries(uniqueEntries)
+      const { entries } = transformManualEntriesData(response)
+      setEntries(entries)
     } catch (err) {
       console.error('Failed to load manual entries:', err)
       setError('Failed to load manual entries. Please try again.')
     } finally {
       setLoading(false)
-      setIsLoadingEntries(false)
     }
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
-
-  const parseDataJson = (dataJson: string) => {
+  const refreshEntries = async () => {
     try {
-      return JSON.parse(dataJson)
-    } catch {
-      return {}
+      setRefreshing(true)
+      setError(null)
+      const response = await manualEntriesApi.getAll()
+      const { entries } = transformManualEntriesData(response)
+      setEntries(entries)
+    } catch (err) {
+      console.error('Failed to refresh manual entries:', err)
+      setError('Failed to refresh manual entries. Please try again.')
+    } finally {
+      setRefreshing(false)
     }
   }
-
-  const getEntryTitle = (entry: ManualEntry) => {
-    const data = parseDataJson(entry.data_json)
-    
-    switch (entry.entry_type) {
-      case 'stock_holding':
-        return `${data.symbol || 'Stock'} at ${data.institution_name || 'Institution'} - ${data.shares_owned || 0} shares`
-      case 'morgan_stanley':
-        return `${data.company_symbol || 'Equity'} ${data.grant_type || 'Grant'}`
-      case 'real_estate':
-        return data.property_name || 'Real Estate Property'
-      case 'cash_holdings':
-        return `${data.institution_name || 'Bank'} - ${data.account_name || 'Account'} (${data.account_type || 'Cash'})`
-      case 'crypto_holdings':
-        return `${data.institution_name || 'Exchange'} - ${data.crypto_symbol || 'Crypto'} (${data.balance_tokens || 0} tokens)`
-      case 'other_assets':
-        return data.asset_name || `${data.category_name || 'Other'} Asset`
-      default:
-        return `${entry.entry_type} Entry`
-    }
-  }
-
-  const getEntryValue = (entry: ManualEntry) => {
-    const data = parseDataJson(entry.data_json)
-    
-    switch (entry.entry_type) {
-      case 'stock_holding':
-        if (data.shares_owned && data.current_price) {
-          return `$${(data.shares_owned * data.current_price).toLocaleString()}`
-        }
-        return 'N/A'
-      case 'morgan_stanley':
-        if (data.vested_shares && data.current_price) {
-          if (data.grant_type === 'stock_option' && data.strike_price) {
-            // For options: calculate intrinsic value
-            const intrinsicValue = Math.max(0, data.current_price - data.strike_price)
-            const totalValue = data.vested_shares * intrinsicValue
-            return totalValue > 0 ? `$${totalValue.toLocaleString()}` : '$0'
-          } else {
-            // For RSUs/ESPP: simple market value
-            const totalValue = data.vested_shares * data.current_price
-            return `$${totalValue.toLocaleString()}`
-          }
-        }
-        return 'N/A'
-      case 'real_estate':
-        if (data.current_value) {
-          return `$${data.current_value.toLocaleString()}`
-        }
-        return 'N/A'
-      case 'cash_holdings':
-        if (data.current_balance) {
-          const currency = data.currency || 'USD'
-          return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: currency
-          }).format(data.current_balance)
-        }
-        return 'N/A'
-      case 'crypto_holdings':
-        if (data.current_value_usd) {
-          return `$${data.current_value_usd.toLocaleString()}`
-        } else if (data.balance_tokens && data.current_price_usd) {
-          const value = data.balance_tokens * data.current_price_usd
-          return `$${value.toLocaleString()}`
-        }
-        return `${data.balance_tokens || 0} ${data.crypto_symbol || 'tokens'}`
-      case 'other_assets':
-        if (data.current_value) {
-          const netValue = data.current_value - (data.amount_owed || 0)
-          return `$${netValue.toLocaleString()}`
-        }
-        return 'N/A'
-      default:
-        return 'N/A'
-    }
-  }
-
-  // Enhanced filtering debug function
-  const debugFilterEntries = () => {
-    console.group('🔍 Manual Entries Filter Debug')
-    console.log('Filter state:', { filter, filterLength: filter.length })
-    console.log('Entries data:', {
-      totalEntries: entries.length,
-      entryTypes: [...new Set(entries.map(e => e.entry_type))],
-      sampleEntry: entries[0] ? {
-        id: entries[0].id,
-        type: entries[0].entry_type,
-        dataKeys: Object.keys(parseDataJson(entries[0].data_json))
-      } : null
-    })
-    console.groupEnd()
-  }
-
-  // Get filtered entries - simple and reliable approach with debugging
-  const getFilteredEntries = () => {
-    console.log('🔍 getFilteredEntries called with filter:', filter)
-    console.log('📊 Total entries to filter:', entries.length)
-    
-    if (!filter || filter.trim() === '') {
-      console.log('✅ No filter applied, returning all entries:', entries.length)
-      return entries
-    }
-    
-    const filterLower = filter.toLowerCase().trim()
-    console.log('🎯 Applying filter:', filterLower)
-    
-    const filtered = entries.filter(entry => {
-      try {
-        const data = parseDataJson(entry.data_json)
-        
-        // Simple search in common fields
-        const searchableText = [
-          entry.entry_type || '',
-          data.institution_name || '',
-          data.symbol || '',
-          data.company_symbol || '',
-          data.crypto_symbol || '',
-          data.property_name || '',
-          data.account_name || '',
-          data.grant_type || ''
-        ].join(' ').toLowerCase()
-        
-        const matches = searchableText.includes(filterLower)
-        if (matches) {
-          console.log('Entry matches filter:', {
-            id: entry.id,
-            type: entry.entry_type,
-            searchableText,
-            filter: filterLower
-          })
-        }
-        
-        return matches
-      } catch (e) {
-        console.error('Error filtering entry:', entry, e)
-        return false
-      }
-    })
-    
-    console.log('Filtered results:', filtered.length, 'entries')
-    return filtered
-  }
-  
-  const filteredEntries = getFilteredEntries()
 
   const closeModals = () => {
     setViewModalOpen(false)
@@ -350,6 +312,8 @@ function ManualEntries() {
       await manualEntriesApi.delete(selectedEntry.id, selectedEntry.entry_type)
       await loadEntries()
       closeModals()
+      setMessage({ type: 'success', text: 'Entry deleted successfully!' })
+      setTimeout(() => setMessage(null), 3000)
     } catch (err) {
       console.error('Failed to delete entry:', err)
       setError('Failed to delete entry. Please try again.')
@@ -374,15 +338,94 @@ function ManualEntries() {
     }
   }
 
+  const clearMessage = () => {
+    setMessage(null)
+  }
+
+  const clearError = () => {
+    setError(null)
+  }
+
+  // Filter entries based on search term and type filter
+  const filteredEntries = entries.filter(entry => {
+    const matchesType = !filterType || entry.entry_type === filterType
+    const matchesSearch = !searchTerm || 
+      getEntryTitle(entry).toLowerCase().includes(searchTerm.toLowerCase()) ||
+      entry.entry_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (entry.institution && entry.institution.toLowerCase().includes(searchTerm.toLowerCase()))
+    
+    return matchesType && matchesSearch
+  })
+
+  // Calculate summary from filtered entries
+  const { summary } = transformManualEntriesData(filteredEntries)
+  
+  // Get unique entry types for filter dropdown
+  const entryTypes = [...new Set(entries.map(entry => entry.entry_type))].sort()
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Manual Entries</h1>
-        <p className="mt-2 text-gray-600 dark:text-gray-400">
-          Add new entries and manage your existing manual data
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
+            <FileText className="w-8 h-8 mr-3 text-primary-600" />
+            Manual Entries
+          </h1>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">
+            Add new entries and manage your existing manual data
+          </p>
+        </div>
+
+        <div className="flex items-center space-x-4">
+          {/* Refresh Button */}
+          <button
+            onClick={refreshEntries}
+            disabled={refreshing}
+            className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
       </div>
+
+      {/* Success/Error Messages */}
+      {message && (
+        <div className={`card border-l-4 ${
+          message.type === 'success' 
+            ? 'bg-green-50 dark:bg-green-900/20 border-green-400 dark:border-green-600' 
+            : 'bg-red-50 dark:bg-red-900/20 border-red-400 dark:border-red-600'
+        }`}>
+          <div className="flex items-center justify-between">
+            <p className={`${
+              message.type === 'success' 
+                ? 'text-green-700 dark:text-green-300' 
+                : 'text-red-700 dark:text-red-300'
+            }`}>
+              {message.text}
+            </p>
+            <button onClick={clearMessage} className="ml-3">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Error State */}
+      {error && (
+        <div className="card bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 mr-2" />
+              <p className="text-red-700 dark:text-red-300">{error}</p>
+            </div>
+            <button onClick={clearError} className="ml-3">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tab Navigation */}
       <div className="border-b border-gray-200 dark:border-gray-700">
@@ -396,7 +439,7 @@ function ManualEntries() {
             }`}
           >
             <List className="w-4 h-4 inline mr-2" />
-            View Entries ({entries.length})
+            View Entries ({summary.total_count})
           </button>
           <button
             onClick={() => setActiveTab('add')}
@@ -412,46 +455,100 @@ function ManualEntries() {
         </nav>
       </div>
 
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <div className="flex items-center">
+            <div className="p-3 rounded-full bg-blue-100 dark:bg-blue-900">
+              <FileText className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Entries</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{summary.total_count}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <div className="flex items-center">
+            <div className="p-3 rounded-full bg-green-100 dark:bg-green-900">
+              <List className="w-6 h-6 text-green-600 dark:text-green-400" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Entry Types</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{Object.keys(summary.by_type).length}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <div className="flex items-center">
+            <div className="p-3 rounded-full bg-purple-100 dark:bg-purple-900">
+              <Plus className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Recent (7 days)</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{summary.recent_count}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Tab Content */}
       {activeTab === 'view' && (
         <div className="space-y-6">
-          {/* Filter and Actions */}
+          {/* Filter Controls */}
           <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="flex items-center space-x-4">
-                <div className="relative">
-                  <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Filter entries..."
-                    value={filter}
-                    onChange={(e) => setFilter(e.target.value)}
-                    className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                </div>
-                {filter && (
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    {filteredEntries.length} of {entries.length} entries
-                  </span>
-                )}
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Filter Entries</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="search" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Search
+                </label>
+                <input
+                  type="text"
+                  id="search"
+                  placeholder="Search entries by title, type, or institution..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
               </div>
-              
-              <div className="flex space-x-2">
-                <button
-                  onClick={debugFilterEntries}
-                  className="px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm"
-                  title="Debug filter functionality (check console)"
+              <div>
+                <label htmlFor="filter-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Entry Type
+                </label>
+                <select
+                  id="filter-type"
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 >
-                  🐛 Debug
-                </button>
-                <button
-                  onClick={loadEntries}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Refresh
-                </button>
+                  <option value="">All Types</option>
+                  {entryTypes.map(type => (
+                    <option key={type} value={type}>
+                      {type.replace(/_/g, ' ').toUpperCase()}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
+            {(searchTerm || filterType) && (
+              <div className="mt-4 flex items-center justify-between">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Showing {filteredEntries.length} of {entries.length} entries
+                </p>
+                <button
+                  onClick={() => {
+                    setSearchTerm('')
+                    setFilterType('')
+                  }}
+                  className="text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300"
+                >
+                  Clear Filters
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Entries List */}
@@ -459,58 +556,47 @@ function ManualEntries() {
             <div className="flex justify-center items-center h-32">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
             </div>
-          ) : error ? (
-            <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-center py-12">
-              <p className="text-red-600 dark:text-red-400">{error}</p>
-              <button
-                onClick={loadEntries}
-                className="mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-              >
-                Try Again
-              </button>
-            </div>
           ) : filteredEntries.length === 0 ? (
             <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-center py-12">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                {entries.length === 0 ? 'No entries found' : 'No matching entries'}
-              </h3>
+              <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No entries found</h3>
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                {entries.length === 0 
-                  ? 'Get started by adding your first manual entry.'
-                  : 'Try adjusting your filter or add a new entry.'
-                }
+                Get started by adding your first manual entry.
               </p>
               <button
                 onClick={() => setActiveTab('add')}
-                className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700"
               >
-                Add Entry
+                <Plus className="w-4 h-4 mr-2" />
+                Add Your First Entry
               </button>
             </div>
           ) : (
             <div className="grid gap-4">
-              {(() => {
-                console.log('Rendering entries - Total:', entries.length, 'Filtered:', filteredEntries.length)
-                console.log('Entries being rendered:', filteredEntries.map(e => ({ id: e.id, type: e.entry_type })))
-                return filteredEntries.map((entry) => (
+              {filteredEntries.map((entry) => (
                 <div key={`${entry.entry_type}-${entry.id}`} className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
                   <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                          {getEntryTitle(entry)}
-                        </h3>
-                        <span className="text-lg font-semibold text-green-600 dark:text-green-400">
-                          {getEntryValue(entry)}
-                        </span>
+                    <div className="flex items-start space-x-3 flex-1">
+                      <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-lg">
+                        {getIconForEntryType(entry.entry_type)}
                       </div>
-                      <div className="mt-1 flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                          {entry.entry_type}
-                        </span>
-                        <span>{entry.institution}</span>
-                        <span>•</span>
-                        <span>{formatDate(entry.created_at)}</span>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                            {getEntryTitle(entry)}
+                          </h3>
+                          <span className="text-lg font-semibold text-green-600 dark:text-green-400">
+                            {getEntryValue(entry)}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                            {entry.entry_type}
+                          </span>
+                          {entry.institution && <span>{entry.institution}</span>}
+                          <span>•</span>
+                          <span>{formatDate(entry.created_at)}</span>
+                        </div>
                       </div>
                     </div>
                     <div className="ml-4 flex items-center space-x-2">
@@ -547,8 +633,7 @@ function ManualEntries() {
                     </div>
                   </div>
                 </div>
-                ))
-              })()}
+              ))}
             </div>
           )}
         </div>
@@ -556,23 +641,6 @@ function ManualEntries() {
 
       {activeTab === 'add' && (
         <div className="space-y-6">
-          {/* Success/Error Messages */}
-          {message && (
-            <div className={`card border-l-4 ${
-              message.type === 'success' 
-                ? 'bg-green-50 dark:bg-green-900/20 border-green-400 dark:border-green-600' 
-                : 'bg-red-50 dark:bg-red-900/20 border-red-400 dark:border-red-600'
-            }`}>
-              <p className={`${
-                message.type === 'success' 
-                  ? 'text-green-700 dark:text-green-300' 
-                  : 'text-red-700 dark:text-red-300'
-              }`}>
-                {message.text}
-              </p>
-            </div>
-          )}
-
           {/* Plugin Selection */}
           <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
@@ -696,6 +764,5 @@ function ManualEntries() {
     </div>
   )
 }
-
 
 export default ManualEntries

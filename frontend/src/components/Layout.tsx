@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { 
   DollarSign, 
@@ -43,8 +43,18 @@ const navigation = [
 
 function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState(new Date().toLocaleString())
   const { isDarkMode, toggleTheme } = useTheme()
   const location = useLocation()
+
+  // Update timestamp every minute to avoid constant re-renders
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLastUpdated(new Date().toLocaleString())
+    }, 60000) // Update every minute
+
+    return () => clearInterval(interval)
+  }, [])
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -89,7 +99,7 @@ function Layout({ children }: LayoutProps) {
             <div className="hidden sm:flex items-center space-x-4">
               <div className="text-right">
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Last updated: {new Date().toLocaleString()}
+                  Last updated: {lastUpdated}
                 </p>
               </div>
             </div>

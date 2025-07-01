@@ -42,9 +42,20 @@ type SecurityConfig struct {
 }
 
 type ApiConfig struct {
+	// Primary price provider (Twelve Data)
+	TwelveDataAPIKey     string
+	TwelveDataDailyLimit int
+	TwelveDataRateLimit  int
+	
+	// Fallback price provider (Alpha Vantage)
 	AlphaVantageAPIKey     string
 	AlphaVantageDailyLimit int
 	AlphaVantageRateLimit  int
+	
+	// Price provider selection
+	PrimaryPriceProvider   string // "twelvedata" or "alphavantage"
+	FallbackPriceProvider  string
+	
 	CacheRefreshInterval   time.Duration
 	AttomDataAPIKey        string
 	AttomDataBaseURL       string
@@ -63,20 +74,39 @@ type MarketConfig struct {
 func Load() (*Config, error) {
 	dbPort, _ := strconv.Atoi(getEnvOrDefault("DB_PORT", "5432"))
 	rateLimitRPS, _ := strconv.Atoi(getEnvOrDefault("RATE_LIMIT_RPS", "100"))
+	
+	// Twelve Data configuration
+	twelveDataDailyLimit, _ := strconv.Atoi(getEnvOrDefault("TWELVE_DATA_DAILY_LIMIT", "800"))
+	twelveDataRateLimit, _ := strconv.Atoi(getEnvOrDefault("TWELVE_DATA_RATE_LIMIT", "8"))
+	
+	// Alpha Vantage configuration (fallback)
 	alphaVantageDailyLimit, _ := strconv.Atoi(getEnvOrDefault("ALPHA_VANTAGE_DAILY_LIMIT", "25"))
 	alphaVantageRateLimit, _ := strconv.Atoi(getEnvOrDefault("ALPHA_VANTAGE_RATE_LIMIT", "5"))
+	
 	cacheRefreshMinutes, _ := strconv.Atoi(getEnvOrDefault("CACHE_REFRESH_MINUTES", "15"))
 	
 	// Parse feature flag boolean values (default to false for safety)
 	propertyValuationEnabled, _ := strconv.ParseBool(getEnvOrDefault("PROPERTY_VALUATION_ENABLED", "false"))
 	attomDataEnabled, _ := strconv.ParseBool(getEnvOrDefault("ATTOM_DATA_ENABLED", "false"))
 
-	// Debug logging for API key
-	apiKey := getEnvOrDefault("ALPHA_VANTAGE_API_KEY", "")
-	if apiKey == "" {
-		log.Println("WARNING: ALPHA_VANTAGE_API_KEY is not set - will use mock price provider")
+	// Price provider configuration
+	primaryProvider := getEnvOrDefault("PRIMARY_PRICE_PROVIDER", "twelvedata")
+	fallbackProvider := getEnvOrDefault("FALLBACK_PRICE_PROVIDER", "alphavantage")
+
+	// Debug logging for API keys
+	twelveDataKey := getEnvOrDefault("TWELVE_DATA_API_KEY", "")
+	alphaVantageKey := getEnvOrDefault("ALPHA_VANTAGE_API_KEY", "")
+	
+	if twelveDataKey == "" && alphaVantageKey == "" {
+		log.Println("WARNING: No price provider API keys set - will use mock price provider")
 	} else {
-		log.Printf("INFO: Alpha Vantage API key loaded (length: %d characters)", len(apiKey))
+		if twelveDataKey != "" {
+			log.Printf("INFO: Twelve Data API key loaded (length: %d characters)", len(twelveDataKey))
+		}
+		if alphaVantageKey != "" {
+			log.Printf("INFO: Alpha Vantage API key loaded (length: %d characters)", len(alphaVantageKey))
+		}
+		log.Printf("INFO: Primary price provider: %s, Fallback: %s", primaryProvider, fallbackProvider)
 	}
 
 	return &Config{
@@ -104,9 +134,14 @@ func Load() (*Config, error) {
 			RateLimitRPS:    rateLimitRPS,
 		},
 		API: ApiConfig{
-			AlphaVantageAPIKey:       apiKey,
+			TwelveDataAPIKey:         twelveDataKey,
+			TwelveDataDailyLimit:     twelveDataDailyLimit,
+			TwelveDataRateLimit:      twelveDataRateLimit,
+			AlphaVantageAPIKey:       alphaVantageKey,
 			AlphaVantageDailyLimit:   alphaVantageDailyLimit,
 			AlphaVantageRateLimit:    alphaVantageRateLimit,
+			PrimaryPriceProvider:     primaryProvider,
+			FallbackPriceProvider:    fallbackProvider,
 			CacheRefreshInterval:     time.Duration(cacheRefreshMinutes) * time.Minute,
 			AttomDataAPIKey:          getEnvOrDefault("ATTOM_DATA_API_KEY", ""),
 			AttomDataBaseURL:         getEnvOrDefault("ATTOM_DATA_BASE_URL", "https://api.gateway.attomdata.com/propertyapi/v1.0.0"),

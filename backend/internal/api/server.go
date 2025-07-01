@@ -48,9 +48,8 @@ func NewServer(cfg *config.Config, db *sql.DB, pluginManager *plugins.Manager) *
 		log.Fatal("Failed to initialize market hours service:", err)
 	}
 
-	// Initialize price service with Alpha Vantage
-	priceService := services.NewPriceServiceWithAlphaVantage(
-		cfg.API.AlphaVantageAPIKey,
+	// Initialize price service with intelligent provider selection
+	priceService := services.NewPriceServiceWithProviders(
 		db,
 		marketService,
 		&cfg.API,
@@ -141,6 +140,9 @@ func (s *Server) setupRouter() {
 
 		// Crypto holdings endpoints
 		api.GET("/crypto-holdings", s.getCryptoHoldings)
+		api.POST("/crypto-holdings", s.createCryptoHolding)
+		api.PUT("/crypto-holdings/:id", s.updateCryptoHolding)
+		api.DELETE("/crypto-holdings/:id", s.deleteCryptoHolding)
 
 		// Other assets endpoints
 		api.GET("/other-assets", s.getOtherAssets)

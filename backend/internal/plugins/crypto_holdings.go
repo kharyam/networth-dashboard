@@ -511,6 +511,14 @@ func (p *CryptoHoldingsPlugin) UpdateManualEntry(id int, data map[string]interfa
 		return fmt.Errorf("validation failed: %v", validation.Errors)
 	}
 
+	// First, get the actual account ID for this crypto holding
+	var actualAccountID int
+	accountQuery := `SELECT account_id FROM crypto_holdings WHERE id = $1`
+	err := p.db.QueryRow(accountQuery, id).Scan(&actualAccountID)
+	if err != nil {
+		return fmt.Errorf("failed to get crypto holding account ID: %w", err)
+	}
+
 	// Update the crypto holding record
 	query := `
 		UPDATE crypto_holdings SET
@@ -537,7 +545,7 @@ func (p *CryptoHoldingsPlugin) UpdateManualEntry(id int, data map[string]interfa
 		validation.Data["wallet_address"],
 		validation.Data["notes"],
 		now,
-		p.accountID,
+		actualAccountID,
 	)
 
 	if err != nil {

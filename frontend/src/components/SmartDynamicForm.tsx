@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { ManualEntrySchema, ManualEntryField } from '../types'
 import SmartInput from './SmartInput'
 import SmartValidation from './SmartValidation'
@@ -16,37 +16,46 @@ interface SmartDynamicFormProps {
 export function SmartDynamicForm({ schema, onSubmit, loading = false, initialData = {}, submitText = 'Submit', onChange }: SmartDynamicFormProps) {
   const [formData, setFormData] = useState<Record<string, any>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const initializedRef = useRef<string | false>(false)
 
   // Initialize smart data service
   useEffect(() => {
     smartDataService.initialize()
   }, [])
 
-  // Initialize and reset form data when schema or initialData changes
+  // Initialize form data when schema or initialData changes (but only once per modal open)
   useEffect(() => {
     if (!schema || !schema.fields) {
+      initializedRef.current = false
       return
     }
     
-    const defaultData: Record<string, any> = {}
-    schema.fields.forEach(field => {
-      if (field.default_value !== undefined) {
-        defaultData[field.name] = field.default_value
-      }
-    })
+    // Only initialize if not already done or if schema/initialData fundamentally changed
+    const dataKey = JSON.stringify({ schema: schema.name, initialData })
+    const shouldInitialize = !initializedRef.current || initializedRef.current !== dataKey
     
-    // Merge with initial data, converting null values to empty strings for form inputs
-    const mergedData = { ...defaultData, ...initialData }
-    
-    // Convert null values to empty strings for form display, but keep track of original null state
-    Object.keys(mergedData).forEach(key => {
-      const field = schema.fields.find(f => f.name === key)
-      if (field && field.type === 'number' && mergedData[key] === null) {
-        mergedData[key] = ''
-      }
-    })
-    
-    setFormData(mergedData)
+    if (shouldInitialize) {
+      const defaultData: Record<string, any> = {}
+      schema.fields.forEach(field => {
+        if (field.default_value !== undefined) {
+          defaultData[field.name] = field.default_value
+        }
+      })
+      
+      // Merge with initial data, converting null values to empty strings for form inputs
+      const mergedData = { ...defaultData, ...initialData }
+      
+      // Convert null values to empty strings for form display, but keep track of original null state
+      Object.keys(mergedData).forEach(key => {
+        const field = schema.fields.find(f => f.name === key)
+        if (field && field.type === 'number' && mergedData[key] === null) {
+          mergedData[key] = ''
+        }
+      })
+      
+      setFormData(mergedData)
+      initializedRef.current = dataKey
+    }
   }, [initialData, schema])
 
   const handleInputChange = useCallback((fieldName: string, value: any) => {
