@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "networth-dashboard.fullname" . }}-backend
+  labels:
+    {{- include "networth-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "networth-dashboard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "networth-dashboard.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox
+          command:
+            - /bin/sh
+            - -c
+            - >
+              until nc -z {{ .Release.Name }}-postgresql 5432; do
+                echo "Waiting for {{ .Release.Name }}-postgresql...";
+                sleep 3;
+              done
+      containers:
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.config.port }}
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "{{ .Values.backend.config.port }}"
+            - name: DB_HOST
+              value: "{{ .Release.Name }}-postgresql"
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_USER
+              value: "{{ .Values.postgresql.auth.username }}"
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-postgresql
+                  key: password
+            - name: DB_NAME
+              value: "{{ .Values.postgresql.auth.database }}"
+            - name: DB_SSLMODE
+              value: "{{ .Values.backend.config.dbSslmode }}"
+            - name: RATE_LIMIT_RPS
+              value: "{{ .Values.backend.config.rateLimitRps }}"
+            - name: CACHE_REFRESH_MINUTES
+              value: "{{ .Values.backend.config.cacheRefreshMinutes }}"
+            - name: MARKET_OPEN_LOCAL
+              value: "{{ .Values.backend.config.marketOpenLocal }}"
+            - name: MARKET_CLOSE_LOCAL
+              value: "{{ .Values.backend.config.marketCloseLocal }}"
+            - name: MARKET_TIMEZONE
+              value: "{{ .Values.backend.config.marketTimezone }}"
+            - name: PROPERTY_VALUATION_ENABLED
+              value: "{{ .Values.backend.config.propertyValuationEnabled }}"
+            - name: ATTOM_DATA_ENABLED
+              value: "{{ .Values.backend.config.attomDataEnabled }}"
+            - name: ATTOM_DATA_BASE_URL
+              value: "{{ .Values.backend.config.attomDataBaseUrl }}"
+            - name: TWELVE_DATA_DAILY_LIMIT
+              value: "{{ .Values.backend.config.twelveDataDailyLimit }}"
+            - name: TWELVE_DATA_RATE_LIMIT
+              value: "{{ .Values.backend.config.twelveDataRateLimit }}"
+            - name: ALPHA_VANTAGE_DAILY_LIMIT
+              value: "{{ .Values.backend.config.alphaVantageDailyLimit }}"
+            - name: ALPHA_VANTAGE_RATE_LIMIT
+              value: "{{ .Values.backend.config.alphaVantageRateLimit }}"
+            - name: PRIMARY_PRICE_PROVIDER
+              value: "{{ .Values.backend.config.primaryPriceProvider }}"
+            - name: FALLBACK_PRICE_PROVIDER
+              value: "{{ .Values.backend.config.fallbackPriceProvider }}"
+            - name: CORS_ENABLED
+              value: "{{ .Values.backend.cors.enabled }}"
+            - name: CORS_ALLOWED_ORIGINS
+              value: "http://{{ (index .Values.frontend.ingress.hosts 0).host }}"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "networth-dashboard.fullname" . }}-secrets
+                  key: jwtSecret
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "networth-dashboard.fullname" . }}-secrets
+                  key: encryptionKey
+            - name: CREDENTIAL_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "networth-dashboard.fullname" . }}-secrets
+                  key: credentialKey
+            - name: ALPHA_VANTAGE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "networth-dashboard.fullname" . }}-secrets
+                  key: alphaVantageApiKey
+            - name: TWELVE_DATA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "networth-dashboard.fullname" . }}-secrets
+                  key: twelveDataApiKey
+            - name: ATTOM_DATA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "networth-dashboard.fullname" . }}-secrets
+                  key: attomDataApiKey
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}

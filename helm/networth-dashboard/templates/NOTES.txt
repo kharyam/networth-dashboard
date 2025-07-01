@@ -1,0 +1,7 @@
+Your networth-dashboard application has been deployed.
+
+Get the application URL by running these commands:
+
+  export FRONTEND_URL=$(kubectl get ingress {{ include "networth-dashboard.fullname" . }}-frontend -o jsonpath="{.spec.rules[0].host}")
+
+  echo "Frontend URL: http://$FRONTEND_URL"

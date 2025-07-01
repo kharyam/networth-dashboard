@@ -117,6 +117,86 @@ For local development without Docker:
    npm run dev
    ```
 
+## Helm Deployment
+
+The application can be deployed to Kubernetes using the provided Helm chart.
+
+### Prerequisites
+
+- A Kubernetes cluster (e.g., Minikube, Docker Desktop, OpenShift, GKE, EKS, AKS)
+- [Helm](https://helm.sh/docs/intro/install/) version 3+
+- A container registry (e.g., Docker Hub, GCR, ECR, Quay.io) to store your built images.
+- An Ingress controller installed in your cluster (e.g., NGINX Ingress Controller, Traefik).
+
+### Setup
+
+1.  **Build and Push Docker Images:**
+
+    Build the backend and frontend images and push them to your container registry.
+
+    ```bash
+    # Example for backend
+    docker build -t your-registry/networth-backend:latest ./backend
+    docker push your-registry/networth-backend:latest
+
+    # Example for frontend
+    docker build -t your-registry/networth-frontend:latest ./frontend
+    docker push your-registry/networth-frontend:latest
+    ```
+
+2.  **Configure Chart Values:**
+
+    Update `helm/networth-dashboard/values.yaml` to point to the images you just pushed.
+
+    ```yaml
+    backend:
+      image:
+        repository: your-registry/networth-backend
+        tag: "latest"
+
+    frontend:
+      image:
+        repository: your-registry/networth-frontend
+        tag: "latest"
+    ```
+
+3.  **Create Secrets File:**
+
+    The chart separates sensitive data into a `secrets.yaml` file. Create this file from the provided template.
+
+    ```bash
+    cp helm/networth-dashboard/secrets.yaml.gotmpl helm/networth-dashboard/secrets.yaml
+    ```
+
+    Now, edit `helm/networth-dashboard/secrets.yaml` and fill in all the required sensitive values. **This file should never be committed to version control.**
+
+4.  **Install the Chart:**
+
+    Use the `helm install` command to deploy the application. You must include your `secrets.yaml` file.
+
+    ```bash
+    helm dependency update helm/networht-dashboard
+    helm install my-release helm/networth-dashboard -f helm/networth-dashboard/secrets.yaml
+    ```
+
+    Replace `my-release` with a name for your deployment.
+
+5.  **Access Your Application:**
+
+    The chart will create Ingress resources for the frontend and backend. You can get the URLs from the post-installation notes or by running:
+
+    ```bash
+    kubectl get ingress
+    ```
+
+### Uninstalling the Chart
+
+To uninstall the deployment, run:
+
+```bash
+helm uninstall my-release
+```
+
 ## API Documentation
 
 ### Health Check

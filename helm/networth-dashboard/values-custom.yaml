@@ -1,0 +1,59 @@
+# Default values for networth-dashboard.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+
+backend:
+  image:
+    repository: "image-registry.openshift-image-registry.svc:5000/networth-dashboard/backend"
+    pullPolicy: IfNotPresent
+    tag: "latest"
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 200m
+      memory: 512Mi
+
+  cors:
+    enabled: true
+    allowedOrigins: "frontend-networth-dashboard.apps.ocp.khary.net"
+
+frontend:
+  replicaCount: 1
+  image:
+    repository: "image-registry.openshift-image-registry.svc:5000/networth-dashboard/frontend"
+    pullPolicy: IfNotPresent
+    tag: "latest"
+
+  ingress:
+    annotations:
+      route.openshift.io/termination: edge
+      route.openshift.io/insecureEdgeTerminationPolicy: Redirect
+    hosts:
+      - host: frontend-networth-dashboard.apps.ocp.khary.net
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+    tls: []
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# PostgreSQL dependency configuration
+postgresql:
+  enabled: true
+  auth:
+    database: networth_dashboard
+    username: postgres
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
