@@ -11,9 +11,10 @@ interface SmartDynamicFormProps {
   initialData?: Record<string, any>
   submitText?: string
   onChange?: (fieldName: string, value: any, formData: Record<string, any>) => void
+  onSchemaChange?: (categoryId: number) => Promise<void>
 }
 
-export function SmartDynamicForm({ schema, onSubmit, loading = false, initialData = {}, submitText = 'Submit', onChange }: SmartDynamicFormProps) {
+export function SmartDynamicForm({ schema, onSubmit, loading = false, initialData = {}, submitText = 'Submit', onChange, onSchemaChange }: SmartDynamicFormProps) {
   const [formData, setFormData] = useState<Record<string, any>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const initializedRef = useRef<string | false>(false)
@@ -83,6 +84,16 @@ export function SmartDynamicForm({ schema, onSubmit, loading = false, initialDat
     // Call onChange callback if provided
     if (onChange) {
       onChange(fieldName, value, newFormData)
+    }
+    
+    // Handle asset category change for dynamic schema loading
+    if (fieldName === 'asset_category_id' && value && onSchemaChange) {
+      const categoryId = parseInt(value.toString())
+      if (categoryId > 0) {
+        onSchemaChange(categoryId).catch(err => {
+          console.error('Failed to load schema for category:', err)
+        })
+      }
     }
   }, [errors, formData, onChange])
 

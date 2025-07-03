@@ -378,6 +378,7 @@ export function GenericAssetPage<T extends { id: number }>({
                 schema={schema}
                 onSubmit={handleCreate}
                 loading={submitting}
+                onSchemaChange={actions.loadSchemaForCategory}
               />
             </div>
           </div>

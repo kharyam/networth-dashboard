@@ -377,6 +377,7 @@ const otherAssetsConfig: GenericAssetPageConfig<OtherAsset> = {
   update: otherAssetsApi.update,
   delete: otherAssetsApi.delete,
   fetchSchema: () => pluginsApi.getSchema('other_assets'),
+  fetchSchemaForCategory: (categoryId: number) => pluginsApi.getSchemaForCategory('other_assets', categoryId),
   transformData: (rawData: any) => transformOtherAssetsData(rawData).assets,
   
   // Page configuration

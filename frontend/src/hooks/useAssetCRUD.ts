@@ -10,6 +10,7 @@ export interface AssetCRUDConfig<T> {
   
   // Schema functions for forms
   fetchSchema?: () => Promise<any>
+  fetchSchemaForCategory?: (categoryId: number) => Promise<any>
   
   // Data transformation
   transformData?: (rawData: any[]) => T[]
@@ -58,6 +59,9 @@ export interface AssetCRUDActions<T> {
   handleCreate: (formData: any) => Promise<void>
   handleUpdate: (formData: any) => Promise<void>
   handleDelete: () => Promise<void>
+  
+  // Schema actions
+  loadSchemaForCategory: (categoryId: number) => Promise<void>
   
   // UI actions
   setViewMode: (mode: 'grid' | 'list' | 'charts') => void
@@ -136,6 +140,19 @@ export function useAssetCRUD<T extends { id: number }>(
         logger.log(`✅ Loaded schema for ${config.entityName}`)
       } catch (err: any) {
         logger.error(`❌ Failed to load schema for ${config.entityName}:`, err)
+      }
+    }
+  }, [config])
+
+  // Load schema for specific category
+  const loadSchemaForCategory = useCallback(async (categoryId: number) => {
+    if (config.fetchSchemaForCategory) {
+      try {
+        const schemaData = await config.fetchSchemaForCategory(categoryId)
+        setSchema(schemaData)
+        logger.log(`✅ Loaded schema for ${config.entityName} category ${categoryId}`)
+      } catch (err: any) {
+        logger.error(`❌ Failed to load schema for ${config.entityName} category ${categoryId}:`, err)
       }
     }
   }, [config])
@@ -289,6 +306,7 @@ export function useAssetCRUD<T extends { id: number }>(
     handleCreate,
     handleUpdate,
     handleDelete,
+    loadSchemaForCategory,
     setViewMode,
     clearMessage,
     clearError
