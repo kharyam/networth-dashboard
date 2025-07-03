@@ -138,6 +138,7 @@ func (s *Server) setupRouter() {
 		// Cash holdings endpoints
 		api.GET("/cash-holdings", s.getCashHoldings)
 		api.POST("/cash-holdings", s.createCashHolding)
+		api.PUT("/cash-holdings/bulk", s.bulkUpdateCashHoldings)
 		api.PUT("/cash-holdings/:id", s.updateCashHolding)
 		api.DELETE("/cash-holdings/:id", s.deleteCashHolding)
 

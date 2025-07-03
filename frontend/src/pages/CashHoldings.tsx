@@ -1,5 +1,5 @@
 import React, { Component, ErrorInfo, useMemo } from 'react'
-import { Wallet, Building, Eye, Edit2, Trash2, AlertTriangle, Shield, Globe, TrendingUp, Clock, DollarSign, Percent, Activity, Plus, RefreshCw, BarChart3, Grid3X3, List, X } from 'lucide-react'
+import { Wallet, Building, Eye, Edit2, Trash2, AlertTriangle, Shield, Globe, TrendingUp, Clock, DollarSign, Percent, Activity, Plus, RefreshCw, BarChart3, Grid3X3, List, Table, X } from 'lucide-react'
 import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { GenericAssetPageConfig } from '@/components/GenericAssetPage'
 import { useAssetCRUD } from '@/hooks/useAssetCRUD'
@@ -654,6 +654,269 @@ const CashHoldingCharts = (holdings: CashHolding[]): JSX.Element => {
   )
 }
 
+// Bulk edit component for spreadsheet-like editing
+const CashHoldingBulkEdit: React.FC<{
+  holdings: CashHolding[]
+  onBulkUpdate: (updates: Array<{ id: number, changes: Partial<CashHolding> }>) => Promise<void>
+}> = ({ holdings, onBulkUpdate }) => {
+  const [editedHoldings, setEditedHoldings] = React.useState<Map<number, Partial<CashHolding>>>(new Map())
+  const [saving, setSaving] = React.useState(false)
+  const [lastError, setLastError] = React.useState<string | null>(null)
+
+  // Group holdings by institution
+  const groupedHoldings = useMemo(() => {
+    const groups = holdings.reduce((acc, holding) => {
+      const key = holding.institution_name
+      if (!acc[key]) {
+        acc[key] = []
+      }
+      acc[key].push(holding)
+      return acc
+    }, {} as Record<string, CashHolding[]>)
+
+    return Object.entries(groups).map(([institutionName, institutionHoldings]) => ({
+      institutionName,
+      holdings: institutionHoldings,
+      totalValue: institutionHoldings.reduce((sum, h) => sum + h.current_balance, 0)
+    }))
+  }, [holdings])
+
+  const handleFieldChange = (holdingId: number, field: keyof CashHolding, value: any) => {
+    setEditedHoldings(prev => {
+      const newMap = new Map(prev)
+      const current = newMap.get(holdingId) || {}
+      newMap.set(holdingId, { ...current, [field]: value })
+      return newMap
+    })
+  }
+
+
+  const handleBulkSave = async () => {
+    if (editedHoldings.size === 0) return
+    
+    setSaving(true)
+    setLastError(null)
+    try {
+      const updates = Array.from(editedHoldings.entries()).map(([id, changes]) => ({
+        id,
+        changes
+      }))
+      await onBulkUpdate(updates)
+      setEditedHoldings(new Map())
+    } catch (error: any) {
+      console.error('Bulk update failed:', error)
+      setLastError(error.message || 'Failed to save changes. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const getDisplayValue = (holding: CashHolding, field: keyof CashHolding) => {
+    const edited = editedHoldings.get(holding.id)
+    return edited && field in edited ? edited[field] : holding[field]
+  }
+
+  const hasChanges = editedHoldings.size > 0
+
+  if (holdings.length === 0) {
+    return (
+      <div className="card bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-center py-12">
+        <Table className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No cash holdings for bulk edit</h3>
+        <p className="text-gray-600 dark:text-gray-400">
+          Add some cash holdings first to use bulk edit functionality.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Error Display */}
+      {lastError && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-4">
+          <div className="flex items-center">
+            <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 mr-2" />
+            <div>
+              <h4 className="font-medium text-red-800 dark:text-red-200">Save Failed</h4>
+              <p className="text-sm text-red-700 dark:text-red-300">{lastError}</p>
+            </div>
+            <button
+              onClick={() => setLastError(null)}
+              className="ml-auto text-red-400 hover:text-red-600 dark:hover:text-red-300"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Global Actions */}
+      <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+        <div className="flex items-center space-x-4">
+          <Table className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          <div>
+            <h3 className="font-medium text-blue-900 dark:text-blue-100">Bulk Edit Mode</h3>
+            <p className="text-sm text-blue-700 dark:text-blue-300">
+              Edit multiple cash holdings at once. Changes are highlighted and saved together.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center space-x-3">
+          {hasChanges && (
+            <span className="text-sm text-orange-600 dark:text-orange-400">
+              {editedHoldings.size} unsaved changes
+            </span>
+          )}
+          <button
+            onClick={() => {
+              setEditedHoldings(new Map())
+            }}
+            disabled={!hasChanges}
+            className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+          >
+            Reset All Changes
+          </button>
+          <button
+            onClick={handleBulkSave}
+            disabled={!hasChanges || saving}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : `Save All Changes (${editedHoldings.size})`}
+          </button>
+        </div>
+      </div>
+
+      {/* Institution Tables */}
+      {groupedHoldings.map(({ institutionName, holdings: institutionHoldings, totalValue }) => {
+        const institutionInfo = getInstitutionTypeInfo(institutionName)
+        const InstitutionIcon = institutionInfo.icon
+
+        return (
+          <div key={institutionName} className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700">
+            {/* Institution Header */}
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <InstitutionIcon className={`w-5 h-5 text-${institutionInfo.color}-500`} />
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {institutionName}
+                  </h3>
+                  <span className={`px-2 py-1 text-xs rounded-full bg-${institutionInfo.color}-100 text-${institutionInfo.color}-800 dark:bg-${institutionInfo.color}-900 dark:text-${institutionInfo.color}-200`}>
+                    {institutionInfo.type}
+                  </span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    {institutionHoldings.length} accounts • {formatCurrency(totalValue)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Editable Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 dark:bg-gray-700">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Account Name
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Type
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Balance
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Interest Rate (%)
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Monthly Contribution
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Notes
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                  {institutionHoldings.map((holding) => {
+                    const isEdited = editedHoldings.has(holding.id)
+                    const rowClass = isEdited ? 'bg-yellow-50 dark:bg-yellow-900/10' : ''
+                    
+                    return (
+                      <tr key={holding.id} className={rowClass}>
+                        <td className="px-4 py-3">
+                          <input
+                            type="text"
+                            value={getDisplayValue(holding, 'account_name') as string}
+                            onChange={(e) => handleFieldChange(holding.id, 'account_name', e.target.value)}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <select
+                            value={getDisplayValue(holding, 'account_type') as string}
+                            onChange={(e) => handleFieldChange(holding.id, 'account_type', e.target.value)}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          >
+                            <option value="checking">Checking</option>
+                            <option value="savings">Savings</option>
+                            <option value="money_market">Money Market</option>
+                            <option value="cd">CD</option>
+                            <option value="high_yield">High Yield</option>
+                            <option value="brokerage">Brokerage</option>
+                          </select>
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={getDisplayValue(holding, 'current_balance') as number}
+                            onChange={(e) => handleFieldChange(holding.id, 'current_balance', parseFloat(e.target.value) || 0)}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={getDisplayValue(holding, 'interest_rate') as number || ''}
+                            onChange={(e) => handleFieldChange(holding.id, 'interest_rate', parseFloat(e.target.value) || null)}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                            placeholder="0.00"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={getDisplayValue(holding, 'monthly_contribution') as number || ''}
+                            onChange={(e) => handleFieldChange(holding.id, 'monthly_contribution', parseFloat(e.target.value) || null)}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                            placeholder="0.00"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="text"
+                            value={getDisplayValue(holding, 'notes') as string || ''}
+                            onChange={(e) => handleFieldChange(holding.id, 'notes', e.target.value)}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                            placeholder="Add notes..."
+                          />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // Custom list renderer for institution-based grouping
 const CashHoldingListView: React.FC<{
   holdings: CashHolding[]
@@ -885,7 +1148,7 @@ const cashHoldingsConfig: GenericAssetPageConfig<CashHolding> = {
   renderSummaryCards: CashHoldingSummaryCards,
   renderCharts: CashHoldingCharts,
   // Feature configuration
-  supportedViewModes: ['grid', 'list', 'charts'],
+  supportedViewModes: ['grid', 'list', 'charts', 'bulk'],
   enableAdd: true,
   enableRefresh: true,
   
@@ -905,7 +1168,7 @@ const cashHoldingsConfig: GenericAssetPageConfig<CashHolding> = {
 }
 
 function CashHoldings() {
-  const [viewMode, setViewMode] = React.useState<'grid' | 'list' | 'charts'>('grid')
+  const [viewMode, setViewMode] = React.useState<'grid' | 'list' | 'charts' | 'bulk'>('grid')
   
   // Always call useAssetCRUD hook
   const [state, actions] = useAssetCRUD(cashHoldingsConfig)
@@ -950,8 +1213,43 @@ function CashHoldings() {
   const PageIcon = cashHoldingsConfig.icon
 
   // Create view mode handlers to avoid type narrowing issues
-  const handleViewModeChange = (mode: 'grid' | 'list' | 'charts') => {
+  const handleViewModeChange = (mode: 'grid' | 'list' | 'charts' | 'bulk') => {
     setViewMode(mode)
+  }
+
+  // Handle bulk update operations
+  const handleBulkUpdate = async (updates: Array<{ id: number, changes: Partial<CashHolding> }>) => {
+    try {
+      const result = await cashHoldingsApi.bulkUpdate(updates)
+      
+      // Refresh the data after bulk update
+      await refreshItems()
+      
+      // Show success/error feedback
+      if (result.failure_count > 0) {
+        console.error('Bulk update completed with some failures:', result.errors)
+        // Show detailed error information
+        result.errors?.forEach(error => {
+          console.error(`Failed to update holding ID ${error.id}:`, error.error)
+          console.error('Failed fields:', error.fields)
+        })
+        
+        // Throw an error with detailed information for the UI
+        const errorMessages = result.errors?.map(e => `ID ${e.id}: ${e.error}`).join('; ') || 'Unknown errors'
+        throw new Error(`${result.failure_count} of ${updates.length} updates failed: ${errorMessages}`)
+      }
+    } catch (error: any) {
+      console.error('Bulk update failed:', error)
+      
+      // Re-throw with better error message if it's a network/API error
+      if (error.response?.data?.error) {
+        throw new Error(error.response.data.error)
+      } else if (error.message) {
+        throw error
+      } else {
+        throw new Error('Failed to save changes. Please check your data and try again.')
+      }
+    }
   }
 
   // Always use custom implementation to ensure proper view mode control
@@ -994,13 +1292,24 @@ function CashHoldings() {
             </button>
             <button
               onClick={() => handleViewModeChange('charts')}
-              className={`px-3 py-2 text-sm font-medium rounded-r-lg ${
+              className={`px-3 py-2 text-sm font-medium ${
                 viewMode === 'charts'
                   ? 'bg-primary-600 text-white'
                   : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
               }`}
             >
               <BarChart3 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleViewModeChange('bulk')}
+              className={`px-3 py-2 text-sm font-medium rounded-r-lg ${
+                viewMode === 'bulk'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+              }`}
+              title="Bulk Edit"
+            >
+              <Table className="w-4 h-4" />
             </button>
           </div>
 
@@ -1059,6 +1368,8 @@ function CashHoldings() {
         </div>
       ) : viewMode === 'charts' && cashHoldingsConfig.renderCharts ? (
         cashHoldingsConfig.renderCharts(holdings)
+      ) : viewMode === 'bulk' ? (
+        <CashHoldingBulkEdit holdings={holdings} onBulkUpdate={handleBulkUpdate} />
       ) : viewMode === 'list' ? (
         <CashHoldingListView holdings={holdings} actions={listActions} />
       ) : (

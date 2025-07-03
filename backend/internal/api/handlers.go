@@ -681,18 +681,53 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 }
 
 // @Summary Create stock holding
-// @Description Create a new stock holding record (placeholder - to be implemented)
+// @Description Create a new stock holding using the stock holdings plugin
 // @Tags stocks
 // @Accept json
 // @Produce json
 // @Success 201 {object} map[string]interface{} "Stock holding created successfully"
-// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid data"
 // @Failure 500 {object} map[string]interface{} "Internal server error"
 // @Router /stocks [post]
 func (s *Server) createStockHolding(c *gin.Context) {
-	// TODO: Implement stock holding creation
+	var requestData map[string]interface{}
+	if err := c.ShouldBindJSON(&requestData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid JSON data",
+		})
+		return
+	}
+
+	// Get the stock holdings plugin
+	plugin, err := s.pluginManager.GetPlugin("stock_holding")
+	if err != nil || plugin == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Stock holdings plugin not found",
+		})
+		return
+	}
+
+	manualPlugin, ok := plugin.(interface {
+		ProcessManualEntry(data map[string]interface{}) error
+	})
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Plugin does not support manual entry",
+		})
+		return
+	}
+
+	// Process the manual entry
+	err = manualPlugin.ProcessManualEntry(requestData)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Failed to create stock holding: %v", err),
+		})
+		return
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
-		"message": "Create stock holding endpoint - to be implemented",
+		"message": "Stock holding created successfully",
 	})
 }
 
@@ -1395,6 +1430,95 @@ func (s *Server) updateCashHolding(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Cash holding updated successfully",
+	})
+}
+
+// @Summary Bulk update cash holdings
+// @Description Update multiple cash holdings in a single transaction
+// @Tags cash-holdings
+// @Accept json
+// @Produce json
+// @Param request body map[string]interface{} true "Bulk update request with updates array"
+// @Success 200 {object} map[string]interface{} "Bulk update results"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid data"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /cash-holdings/bulk [put]
+func (s *Server) bulkUpdateCashHoldings(c *gin.Context) {
+	var requestData struct {
+		Updates []struct {
+			ID      int                    `json:"id"`
+			Changes map[string]interface{} `json:"changes"`
+		} `json:"updates"`
+	}
+
+	if err := c.ShouldBindJSON(&requestData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid JSON data",
+		})
+		return
+	}
+
+	if len(requestData.Updates) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "No updates provided",
+		})
+		return
+	}
+
+	// Get the cash holdings plugin
+	plugin, err := s.pluginManager.GetPlugin("cash_holdings")
+	if err != nil || plugin == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Cash holdings plugin not found",
+		})
+		return
+	}
+
+	// Check if plugin supports bulk updates
+	bulkPlugin, ok := plugin.(interface {
+		BulkUpdateManualEntry(updates []plugins.BulkUpdateItem) error
+	})
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Plugin does not support bulk updates",
+		})
+		return
+	}
+
+	// Convert request data to plugin format
+	bulkUpdates := make([]plugins.BulkUpdateItem, len(requestData.Updates))
+	for i, update := range requestData.Updates {
+		bulkUpdates[i] = plugins.BulkUpdateItem{
+			ID:   update.ID,
+			Data: update.Changes,
+		}
+	}
+
+	// Perform bulk update
+	err = bulkPlugin.BulkUpdateManualEntry(bulkUpdates)
+	if err != nil {
+		// Check if it's a bulk update result with partial failures
+		if bulkResult, ok := err.(*plugins.BulkUpdateResult); ok {
+			c.JSON(http.StatusOK, gin.H{
+				"success_count": bulkResult.SuccessCount,
+				"failure_count": bulkResult.FailureCount,
+				"errors":        bulkResult.Errors,
+				"message":       "Bulk update completed with some failures",
+			})
+			return
+		}
+
+		// Regular error
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Bulk update failed: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success_count": len(requestData.Updates),
+		"failure_count": 0,
+		"message":       "All cash holdings updated successfully",
 	})
 }
 

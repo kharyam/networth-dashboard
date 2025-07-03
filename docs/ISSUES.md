@@ -1,5 +1,35 @@
 # Next Up
 
+IN PROGRESS For cash holdings, a bulk edit screen would be helpful.  For each institution, a table view similar to a spreadsheet where I can update values at once then submit them in bulk. Describe a good way to add this functionality to the UI, e.g., what the UI enhancements would look like.
+
+When I update holding on cash holding page I get: http-vendor-917b1704.js:3 
+ PUT https://frontend-networth-dashboard.apps.ocp.khary.net/api/v1/cash-holdings/4 404 (Not Found)
+(anonymous)	@	http-vendor-917b1704.js:3
+xhr	@	http-vendor-917b1704.js:3
+Ne	@	http-vendor-917b1704.js:5
+Promise.then		
+_request	@	http-vendor-917b1704.js:6
+request	@	http-vendor-917b1704.js:5
+(anonymous)	@	http-vendor-917b1704.js:6
+(anonymous)	@	http-vendor-917b1704.js:1
+update	@	api-2cfe0509.js:1
+(anonymous)	@	useAssetCRUD-71bbcb56.js:1
+e	@	EditEntryModal-9bea6e41.js:8
+$	@	EditEntryModal-9bea6e41.js:6
+df	@	react-vendor-2f6c3238.js:29
+hf	@	react-vendor-2f6c3238.js:29
+mf	@	react-vendor-2f6c3238.js:29
+xu	@	react-vendor-2f6c3238.js:29
+ya	@	react-vendor-2f6c3238.js:29
+(anonymous)	@	react-vendor-2f6c3238.js:29
+$o	@	react-vendor-2f6c3238.js:32
+Vs	@	react-vendor-2f6c3238.js:29
+Ql	@	react-vendor-2f6c3238.js:29
+po	@	react-vendor-2f6c3238.js:29
+Rf	@	react-vendor-2f6c3238.js:29
+
+The list view under real estate portfolio shows nothing valuable (null values). Fix this view to show valuable information for each property.
+
 DONE The real estate price estimate feature is causing more trouble than it is worth. Can you add a feature flag to turn this off and just use manual updates for now?  This feature should be turned of by default until we revisit it again in the future.
 
 DONE Get this error when editing a property from the real estate page validation failed: [{rental_income_monthly rental_income_monthly must be a valid number invalid_number}] On the manual entries page for real estate, when I edit, several fields are blank.  They are filled in on the real estate page when I hit edit.  Fix these inconsistencies

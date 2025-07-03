@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Edit2, Eye, Trash2, X } from 'lucide-react'
+import { Edit2, Eye, Trash2, X, Plus } from 'lucide-react'
 import { stocksApi, equityApi } from '../services/api'
 import { StockHolding, StockConsolidation, EquityGrant } from '../types'
 import MarketStatus from '../components/MarketStatus'
@@ -19,6 +19,7 @@ function Stocks() {
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [viewModalOpen, setViewModalOpen] = useState(false)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [addStockModalOpen, setAddStockModalOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<StockHolding | EquityGrant | null>(null)
   const [selectedItemType, setSelectedItemType] = useState<'stock_holding' | 'morgan_stanley' | null>(null)
 
@@ -73,6 +74,7 @@ function Stocks() {
     setEditModalOpen(false)
     setViewModalOpen(false)
     setDeleteModalOpen(false)
+    setAddStockModalOpen(false)
     setSelectedItem(null)
     setSelectedItemType(null)
   }
@@ -126,6 +128,17 @@ function Stocks() {
     } catch (err: any) {
       console.error('Failed to delete item:', err)
       setError(err.message || 'Failed to delete item. Please try again.')
+    }
+  }
+
+  const handleCreateStock = async (formData: Record<string, any>) => {
+    try {
+      await stocksApi.create(formData)
+      closeModals()
+      await loadAllData()
+    } catch (err: any) {
+      console.error('Failed to create stock holding:', err)
+      setError(err.message || 'Failed to create stock holding. Please try again.')
     }
   }
 
@@ -489,8 +502,29 @@ function Stocks() {
 
           {activeTab === 'individual' && (
             <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                  Individual Stock Holdings
+                </h3>
+                <button
+                  onClick={() => setAddStockModalOpen(true)}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Stock Holding
+                </button>
+              </div>
               {stockHoldings.length === 0 ? (
-                <p className="text-gray-600 dark:text-gray-400">No individual stock holdings found.</p>
+                <div className="text-center py-8">
+                  <p className="text-gray-600 dark:text-gray-400 mb-4">No individual stock holdings found.</p>
+                  <button
+                    onClick={() => setAddStockModalOpen(true)}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Your First Stock Holding
+                  </button>
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -807,6 +841,17 @@ function Stocks() {
           </div>
         </div>
       )}
+
+      {/* Add Stock Holding Modal */}
+      <EditEntryModal
+        entryType="stock_holding"
+        entryData={{}}
+        title="Add Stock Holding"
+        isOpen={addStockModalOpen}
+        onClose={closeModals}
+        onUpdate={handleCreateStock}
+        submitText="Add Stock Holding"
+      />
     </div>
   )
 }

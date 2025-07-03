@@ -165,6 +165,14 @@ export const cashHoldingsApi = {
   update: (id: number, holding: any): Promise<any> =>
     api.put(`/cash-holdings/${id}`, holding).then(res => res.data),
   
+  bulkUpdate: (updates: Array<{ id: number, changes: any }>): Promise<{
+    success_count: number
+    failure_count: number
+    errors?: Array<{ id: number, error: string, fields: any }>
+    message: string
+  }> =>
+    api.put('/cash-holdings/bulk', { updates }).then(res => res.data),
+  
   delete: (id: number): Promise<void> =>
     api.delete(`/cash-holdings/${id}`).then(() => undefined),
 }
