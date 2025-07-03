@@ -366,8 +366,25 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 	}
 
 	// Validate current_balance
-	if balanceStr, ok := data["current_balance"].(string); ok {
-		balance, err := strconv.ParseFloat(balanceStr, 64)
+	if balanceData, ok := data["current_balance"]; ok {
+		var balance float64
+		var err error
+		
+		switch v := balanceData.(type) {
+		case string:
+			balance, err = strconv.ParseFloat(v, 64)
+		case float64:
+			balance = v
+		case float32:
+			balance = float64(v)
+		case int:
+			balance = float64(v)
+		case int64:
+			balance = float64(v)
+		default:
+			err = fmt.Errorf("unsupported type: %T", v)
+		}
+		
 		if err != nil {
 			errors = append(errors, ValidationError{
 				Field:   "current_balance",
@@ -383,16 +400,6 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 		} else {
 			validatedData["current_balance"] = balance
 		}
-	} else if balanceFloat, ok := data["current_balance"].(float64); ok {
-		if balanceFloat < 0 {
-			errors = append(errors, ValidationError{
-				Field:   "current_balance",
-				Message: "Balance cannot be negative",
-				Code:    "min",
-			})
-		} else {
-			validatedData["current_balance"] = balanceFloat
-		}
 	} else {
 		errors = append(errors, ValidationError{
 			Field:   "current_balance",
@@ -403,8 +410,33 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 
 	// Validate optional interest_rate
 	if interestRateData, ok := data["interest_rate"]; ok && interestRateData != nil {
-		if interestRateStr, ok := interestRateData.(string); ok && interestRateStr != "" {
-			interestRate, err := strconv.ParseFloat(interestRateStr, 64)
+		// Skip empty strings
+		if str, isStr := interestRateData.(string); isStr && str == "" {
+			// Empty string means no interest rate, skip validation
+		} else {
+			var interestRate float64
+			var err error
+			
+			switch v := interestRateData.(type) {
+			case string:
+				if v != "" {
+					interestRate, err = strconv.ParseFloat(v, 64)
+				} else {
+					// Empty string, skip
+					goto skipInterestRate
+				}
+			case float64:
+				interestRate = v
+			case float32:
+				interestRate = float64(v)
+			case int:
+				interestRate = float64(v)
+			case int64:
+				interestRate = float64(v)
+			default:
+				err = fmt.Errorf("unsupported type: %T", v)
+			}
+			
 			if err != nil {
 				errors = append(errors, ValidationError{
 					Field:   "interest_rate",
@@ -420,23 +452,39 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 			} else {
 				validatedData["interest_rate"] = interestRate
 			}
-		} else if interestRateFloat, ok := interestRateData.(float64); ok {
-			if interestRateFloat < 0 || interestRateFloat > 100 {
-				errors = append(errors, ValidationError{
-					Field:   "interest_rate",
-					Message: "Interest rate must be between 0 and 100",
-					Code:    "range",
-				})
-			} else {
-				validatedData["interest_rate"] = interestRateFloat
-			}
 		}
+		skipInterestRate:
 	}
 
 	// Validate optional monthly_contribution
 	if monthlyContribData, ok := data["monthly_contribution"]; ok && monthlyContribData != nil {
-		if monthlyContribStr, ok := monthlyContribData.(string); ok && monthlyContribStr != "" {
-			monthlyContrib, err := strconv.ParseFloat(monthlyContribStr, 64)
+		// Skip empty strings
+		if str, isStr := monthlyContribData.(string); isStr && str == "" {
+			// Empty string means no monthly contribution, skip validation
+		} else {
+			var monthlyContrib float64
+			var err error
+			
+			switch v := monthlyContribData.(type) {
+			case string:
+				if v != "" {
+					monthlyContrib, err = strconv.ParseFloat(v, 64)
+				} else {
+					// Empty string, skip
+					goto skipMonthlyContrib
+				}
+			case float64:
+				monthlyContrib = v
+			case float32:
+				monthlyContrib = float64(v)
+			case int:
+				monthlyContrib = float64(v)
+			case int64:
+				monthlyContrib = float64(v)
+			default:
+				err = fmt.Errorf("unsupported type: %T", v)
+			}
+			
 			if err != nil {
 				errors = append(errors, ValidationError{
 					Field:   "monthly_contribution",
@@ -452,17 +500,8 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 			} else {
 				validatedData["monthly_contribution"] = monthlyContrib
 			}
-		} else if monthlyContribFloat, ok := monthlyContribData.(float64); ok {
-			if monthlyContribFloat < 0 {
-				errors = append(errors, ValidationError{
-					Field:   "monthly_contribution",
-					Message: "Monthly contribution cannot be negative",
-					Code:    "min",
-				})
-			} else {
-				validatedData["monthly_contribution"] = monthlyContribFloat
-			}
 		}
+		skipMonthlyContrib:
 	}
 
 	// Validate optional account_number_last4
@@ -615,7 +654,7 @@ func (p *CashHoldingsPlugin) UpdateManualEntry(id int, data map[string]interface
 			currency = $9,
 			notes = $10,
 			updated_at = $11
-		WHERE id = $1 AND account_id = $12
+		WHERE id = $1
 	`
 
 	now := time.Now()
@@ -632,7 +671,6 @@ func (p *CashHoldingsPlugin) UpdateManualEntry(id int, data map[string]interface
 		validation.Data["currency"],
 		validation.Data["notes"],
 		now,
-		p.accountID,
 	)
 
 	if err != nil {
@@ -649,6 +687,172 @@ func (p *CashHoldingsPlugin) UpdateManualEntry(id int, data map[string]interface
 	}
 
 	p.lastUpdated = now
+	return nil
+}
+
+// BulkUpdateManualEntry updates multiple manual entries in a single transaction
+func (p *CashHoldingsPlugin) BulkUpdateManualEntry(updates []BulkUpdateItem) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	// Start a transaction
+	tx, err := p.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	now := time.Now()
+	var successCount int
+	var failedUpdates []BulkUpdateError
+
+	for _, update := range updates {
+		// First, fetch the existing record to merge with changes
+		var existingData map[string]interface{}
+		query := `
+			SELECT institution_name, account_name, account_type, current_balance, 
+			       interest_rate, monthly_contribution, account_number_last4, currency, notes
+			FROM cash_holdings 
+			WHERE id = $1
+		`
+		
+		var institutionName, accountName, accountType, currency string
+		var currentBalance float64
+		var interestRate, monthlyContribution *float64
+		var accountNumberLast4, notes *string
+		
+		err := tx.QueryRow(query, update.ID).Scan(
+			&institutionName, &accountName, &accountType, &currentBalance,
+			&interestRate, &monthlyContribution, &accountNumberLast4, &currency, &notes,
+		)
+		
+		if err != nil {
+			failedUpdates = append(failedUpdates, BulkUpdateError{
+				ID:     update.ID,
+				Error:  fmt.Sprintf("record not found: %v", err),
+				Fields: update.Data,
+			})
+			continue
+		}
+		
+		// Create complete data by merging existing with changes
+		existingData = map[string]interface{}{
+			"institution_name":     institutionName,
+			"account_name":         accountName,
+			"account_type":         accountType,
+			"current_balance":      currentBalance,
+			"currency":             currency,
+		}
+		
+		if interestRate != nil {
+			existingData["interest_rate"] = *interestRate
+		}
+		if monthlyContribution != nil {
+			existingData["monthly_contribution"] = *monthlyContribution
+		}
+		if accountNumberLast4 != nil {
+			existingData["account_number_last4"] = *accountNumberLast4
+		}
+		if notes != nil {
+			existingData["notes"] = *notes
+		}
+		
+		// Merge changes into existing data
+		for key, value := range update.Data {
+			existingData[key] = value
+		}
+		
+		// Validate the complete merged data
+		validation := p.ValidateManualEntry(existingData)
+		if !validation.Valid {
+			failedUpdates = append(failedUpdates, BulkUpdateError{
+				ID:     update.ID,
+				Error:  fmt.Sprintf("validation failed: %v", validation.Errors),
+				Fields: update.Data,
+			})
+			continue
+		}
+
+		// Update the cash holding record
+		updateQuery := `
+			UPDATE cash_holdings SET
+				institution_name = $2,
+				account_name = $3,
+				account_type = $4,
+				current_balance = $5,
+				interest_rate = $6,
+				monthly_contribution = $7,
+				account_number_last4 = $8,
+				currency = $9,
+				notes = $10,
+				updated_at = $11
+			WHERE id = $1
+		`
+
+		result, err := tx.Exec(
+			updateQuery,
+			update.ID,
+			validation.Data["institution_name"],
+			validation.Data["account_name"],
+			validation.Data["account_type"],
+			validation.Data["current_balance"],
+			validation.Data["interest_rate"],
+			validation.Data["monthly_contribution"],
+			validation.Data["account_number_last4"],
+			validation.Data["currency"],
+			validation.Data["notes"],
+			now,
+		)
+
+		if err != nil {
+			failedUpdates = append(failedUpdates, BulkUpdateError{
+				ID:     update.ID,
+				Error:  fmt.Sprintf("database error: %v", err),
+				Fields: update.Data,
+			})
+			continue
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			failedUpdates = append(failedUpdates, BulkUpdateError{
+				ID:     update.ID,
+				Error:  fmt.Sprintf("failed to check rows affected: %v", err),
+				Fields: update.Data,
+			})
+			continue
+		}
+
+		if rowsAffected == 0 {
+			failedUpdates = append(failedUpdates, BulkUpdateError{
+				ID:     update.ID,
+				Error:  fmt.Sprintf("no cash holding found with id %d", update.ID),
+				Fields: update.Data,
+			})
+			continue
+		}
+
+		successCount++
+	}
+
+	// Commit the transaction if we have any successful updates
+	if successCount > 0 {
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
+		}
+		p.lastUpdated = now
+	}
+
+	// Return error if there were any failures
+	if len(failedUpdates) > 0 {
+		return &BulkUpdateResult{
+			SuccessCount: successCount,
+			FailureCount: len(failedUpdates),
+			Errors:       failedUpdates,
+		}
+	}
+
 	return nil
 }
 

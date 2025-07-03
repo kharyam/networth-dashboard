@@ -1,5 +1,35 @@
 # Next Up
 
+IN PROGRESS For cash holdings, a bulk edit screen would be helpful.  For each institution, a table view similar to a spreadsheet where I can update values at once then submit them in bulk. Describe a good way to add this functionality to the UI, e.g., what the UI enhancements would look like.
+
+When I update holding on cash holding page I get: http-vendor-917b1704.js:3 
+ PUT https://frontend-networth-dashboard.apps.ocp.khary.net/api/v1/cash-holdings/4 404 (Not Found)
+(anonymous)	@	http-vendor-917b1704.js:3
+xhr	@	http-vendor-917b1704.js:3
+Ne	@	http-vendor-917b1704.js:5
+Promise.then		
+_request	@	http-vendor-917b1704.js:6
+request	@	http-vendor-917b1704.js:5
+(anonymous)	@	http-vendor-917b1704.js:6
+(anonymous)	@	http-vendor-917b1704.js:1
+update	@	api-2cfe0509.js:1
+(anonymous)	@	useAssetCRUD-71bbcb56.js:1
+e	@	EditEntryModal-9bea6e41.js:8
+$	@	EditEntryModal-9bea6e41.js:6
+df	@	react-vendor-2f6c3238.js:29
+hf	@	react-vendor-2f6c3238.js:29
+mf	@	react-vendor-2f6c3238.js:29
+xu	@	react-vendor-2f6c3238.js:29
+ya	@	react-vendor-2f6c3238.js:29
+(anonymous)	@	react-vendor-2f6c3238.js:29
+$o	@	react-vendor-2f6c3238.js:32
+Vs	@	react-vendor-2f6c3238.js:29
+Ql	@	react-vendor-2f6c3238.js:29
+po	@	react-vendor-2f6c3238.js:29
+Rf	@	react-vendor-2f6c3238.js:29
+
+The list view under real estate portfolio shows nothing valuable (null values). Fix this view to show valuable information for each property.
+
 DONE The real estate price estimate feature is causing more trouble than it is worth. Can you add a feature flag to turn this off and just use manual updates for now?  This feature should be turned of by default until we revisit it again in the future.
 
 DONE Get this error when editing a property from the real estate page validation failed: [{rental_income_monthly rental_income_monthly must be a valid number invalid_number}] On the manual entries page for real estate, when I edit, several fields are blank.  They are filled in on the real estate page when I hit edit.  Fix these inconsistencies
@@ -35,13 +65,13 @@ DONE Other Assets
 Also give some type of visual confirmation of what stocks were loaded from the api and the prices that were fetched. Show how much the price went up or down since the last price in the cache. Continue with this as well as the other items in your todo list.  
 
 - Refactor exercise
-[DONE] Analyze the entire application, identify areas that could be made more efficient and maintainable.  Check if there is redundant code that can be consolidated.  Make sure things are modular and can be understood by a developer or AI taking ownership of the project.  Make a list of recommended updates and changes to address any of these shortcomings.  The preference should be to lessen the overall amount of code and make it more readable and understandable overall - more maintainable and extendable to allow new features to be easily added.
+DONE Analyze the entire application, identify areas that could be made more efficient and maintainable.  Check if there is redundant code that can be consolidated.  Make sure things are modular and can be understood by a developer or AI taking ownership of the project.  Make a list of recommended updates and changes to address any of these shortcomings.  The preference should be to lessen the overall amount of code and make it more readable and understandable overall - more maintainable and extendable to allow new features to be easily added.
 
 - Unit Tests
 ...
 
 - Helm Chart
-Create a helm chart that can deploy the application (frontend, backend and postgres database) to OpenShift.  It should create ingress objects for exposing the frontend and backend. The frontend should be configured to use the hostname of the backend ingress for its api calls.  Implement any CORS configuration that may be needed so that the frontend and backend can talk properly. Don't create any openshift specific features, it should work in kubernetes as well. Create the appropriate configuration items in the values.yml, including the items from the env file as parameters.  Sensitive things, like API keys, should be added to a secret. There should be a separate values file for secret information, document that this should never be added to version control. Define the helm chart under a "helm" directory, organize it as you see fit, make it highly maintainable and easy to understand. If you can use an existing helm chart as a dependency to deploy postgres, do that. Make sure a persistent volume claim is created for postgres storage, and we have the ability to specify storage size in the values (with a reasonable default in values.yaml).  We should also be able to specify cpu/memory requests and limtis for each pod, choose reasonable defaults for each.
+DONE Create a helm chart that can deploy the application (frontend, backend and postgres database) to OpenShift.  It should create ingress objects for exposing the frontend and backend. The frontend should be configured to use the hostname of the backend ingress for its api calls.  Implement any CORS configuration that may be needed so that the frontend and backend can talk properly. Don't create any openshift specific features, it should work in kubernetes as well. Create the appropriate configuration items in the values.yml, including the items from the env file as parameters.  Sensitive things, like API keys, should be added to a secret. There should be a separate values file for secret information, document that this should never be added to version control. Define the helm chart under a "helm" directory, organize it as you see fit, make it highly maintainable and easy to understand. If you can use an existing helm chart as a dependency to deploy postgres, do that. Make sure a persistent volume claim is created for postgres storage, and we have the ability to specify storage size in the values (with a reasonable default in values.yaml).  We should also be able to specify cpu/memory requests and limtis for each pod, choose reasonable defaults for each.
 
 At this point, we should be able to plan the implementation of prompt 3
 
@@ -63,8 +93,8 @@ DONE It looks like the crypto price history is kept in a database table. Create 
 DONE On the crypto price history graph, the lines for each crypto are disconnected.  Can they be made continuous? I would have expected this to be default behaviour of the line chart?
 
 
-## Cash holdings DONE
- The next thing I would like to do is add the ability to track cash holdings. There should probably be a new page for Cash, added to the sidebar navigation.  It will be manual now, but we'll add the ability to integrate with bank account APIs (e.g., Ally bank and Webster bank) later. There should be a manual plugin to handle bank account holdings.  Examples of information we need for each account is Institution Name, Bank account Name, account type (e.g., Savings, Checking), interest rate, current balance.  Add other fields you think are relevant. This plugin should be integrated using the same framework created for the other manaul accounts. The cash holdings will of course need to be added to total networth like everything else, and categorized in the pie chart on the dashboard page. Create relevant visualizations for this page.  One idea is a chart showing account growth over time based on the interest rate, using a user-provided monthly contribution to the account.  Plan this out and describe it to me.  The implementation should be robust, consistent with what we already have, and modular. 
+
+DONE The next thing I would like to do is add the ability to track cash holdings. There should probably be a new page for Cash, added to the sidebar navigation.  It will be manual now, but we'll add the ability to integrate with bank account APIs (e.g., Ally bank and Webster bank) later. There should be a manual plugin to handle bank account holdings.  Examples of information we need for each account is Institution Name, Bank account Name, account type (e.g., Savings, Checking), interest rate, current balance.  Add other fields you think are relevant. This plugin should be integrated using the same framework created for the other manaul accounts. The cash holdings will of course need to be added to total networth like everything else, and categorized in the pie chart on the dashboard page. Create relevant visualizations for this page.  One idea is a chart showing account growth over time based on the interest rate, using a user-provided monthly contribution to the account.  Plan this out and describe it to me.  The implementation should be robust, consistent with what we already have, and modular. 
 
 Future visualizations
  7. Interactive Growth Calculator

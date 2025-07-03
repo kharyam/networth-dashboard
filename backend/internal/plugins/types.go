@@ -222,3 +222,26 @@ func GetOrCreateUniquePluginAccount(db *sql.DB, baseAccountName, uniqueIdentifie
 	
 	return GetOrCreatePluginAccount(db, accountName, accountType, institution, dataSourceType)
 }
+
+// Bulk update types
+type BulkUpdateItem struct {
+	ID   int                    `json:"id"`
+	Data map[string]interface{} `json:"data"`
+}
+
+type BulkUpdateError struct {
+	ID     int                    `json:"id"`
+	Error  string                 `json:"error"`
+	Fields map[string]interface{} `json:"fields"`
+}
+
+type BulkUpdateResult struct {
+	SuccessCount int               `json:"success_count"`
+	FailureCount int               `json:"failure_count"`
+	Errors       []BulkUpdateError `json:"errors"`
+}
+
+// Error method to implement the error interface for BulkUpdateResult
+func (r *BulkUpdateResult) Error() string {
+	return fmt.Sprintf("bulk update completed with %d successes and %d failures", r.SuccessCount, r.FailureCount)
+}

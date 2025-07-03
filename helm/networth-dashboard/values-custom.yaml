@@ -6,7 +6,7 @@
 backend:
   image:
     repository: "image-registry.openshift-image-registry.svc:5000/networth-dashboard/backend"
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
     tag: "latest"
 
   resources:
@@ -25,7 +25,7 @@ frontend:
   replicaCount: 1
   image:
     repository: "image-registry.openshift-image-registry.svc:5000/networth-dashboard/frontend"
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
     tag: "latest"
 
   ingress:
