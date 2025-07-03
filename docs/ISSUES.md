@@ -1,8 +1,13 @@
 # Next Up
 
-IN PROGRESS For cash holdings, a bulk edit screen would be helpful.  For each institution, a table view similar to a spreadsheet where I can update values at once then submit them in bulk. Describe a good way to add this functionality to the UI, e.g., what the UI enhancements would look like.
+DONE For cash holdings, a bulk edit screen would be helpful.  For each institution, a table view similar to a spreadsheet where I can update values at once then submit them in bulk. Describe a good way to add this functionality to the UI, e.g., what the UI enhancements would look like.
 
-When I update holding on cash holding page I get: http-vendor-917b1704.js:3 
+DONE The stocks page has no way to enter new stock holdings.
+
+DONE The list view under real estate portfolio shows nothing valuable (null values). Fix this view to show valuable information for each property.
+
+
+DONE When I update holding on cash holding grid view page I get: http-vendor-917b1704.js:3 
  PUT https://frontend-networth-dashboard.apps.ocp.khary.net/api/v1/cash-holdings/4 404 (Not Found)
 (anonymous)	@	http-vendor-917b1704.js:3
 xhr	@	http-vendor-917b1704.js:3
@@ -28,7 +33,8 @@ Ql	@	react-vendor-2f6c3238.js:29
 po	@	react-vendor-2f6c3238.js:29
 Rf	@	react-vendor-2f6c3238.js:29
 
-The list view under real estate portfolio shows nothing valuable (null values). Fix this view to show valuable information for each property.
+
+
 
 DONE The real estate price estimate feature is causing more trouble than it is worth. Can you add a feature flag to turn this off and just use manual updates for now?  This feature should be turned of by default until we revisit it again in the future.
 
@@ -61,7 +67,7 @@ DONE Other Assets
 * Add another page for "other assets" for things like cars, jewelry, etc. where you can have fields for estimated value and amount owed and purchase price. Is that the point of the miscellaneous_assets table? The type of asset should be in a dropdown.  There should be a way to update the possible asset types (categories) of assets, store this in a database table. Can you create a simple / elegant way such that each asset type could potentially have custom features?  For example, for a "Car", we might want to allow additional fields like make, model, mileage and condition so we can reach out to an API to get estimated value.  This extended ability should be an option for all asset types, so we need a good, maintainable framework to enable this extensibility. Each asset should have the option of having its own visualization page to support its custom features - again, this should be implemented in a modular / pluggable way for simplified extensibility. Make sure the swagger documentation is updated for the newly added API endpoints. This doesn't need to be integrated with manual entries, it can be fully managed from the other assets page. Give me other potential ideas for this page as well as you see fit.
 
 
-[IN PROGRESS] When I force refresh the stock price, it is not updating and looks like it is still pulling price from the cache.
+DONE When I force refresh the stock price, it is not updating and looks like it is still pulling price from the cache.
 Also give some type of visual confirmation of what stocks were loaded from the api and the prices that were fetched. Show how much the price went up or down since the last price in the cache. Continue with this as well as the other items in your todo list.  
 
 - Refactor exercise
