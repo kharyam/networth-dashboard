@@ -242,8 +242,7 @@ func (s *Server) getPriceStatus() PriceStatus {
 	var lastCacheUpdate time.Time
 	cacheQuery := `
 		SELECT COALESCE(MAX(timestamp), '1970-01-01'::timestamp) as last_update
-		FROM stock_prices 
-		WHERE source = 'alphavantage'
+		FROM stock_prices
 	`
 	
 	err = s.db.QueryRow(cacheQuery).Scan(&lastCacheUpdate)
@@ -878,9 +877,64 @@ func (s *Server) getVestingSchedule(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{} "Internal server error"
 // @Router /equity [post]
 func (s *Server) createEquityGrant(c *gin.Context) {
-	// TODO: Implement equity grant creation
+	var request struct {
+		AccountID     int     `json:"account_id" binding:"required"`
+		GrantType     string  `json:"grant_type" binding:"required"`
+		CompanySymbol string  `json:"company_symbol" binding:"required"`
+		TotalShares   float64 `json:"total_shares" binding:"required"`
+		VestedShares  float64 `json:"vested_shares"`
+		StrikePrice   float64 `json:"strike_price"`
+		GrantDate     string  `json:"grant_date" binding:"required"`
+		VestStartDate string  `json:"vest_start_date" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Calculate unvested shares
+	unvestedShares := request.TotalShares - request.VestedShares
+
+	// Get current market price
+	currentPrice, priceErr := s.priceService.GetCurrentPrice(request.CompanySymbol)
+	if priceErr != nil {
+		// Log error but continue with 0 price
+		fmt.Printf("Warning: Could not fetch price for %s: %v\n", request.CompanySymbol, priceErr)
+		currentPrice = 0
+	}
+
+	// Insert equity grant
+	query := `
+		INSERT INTO equity_grants (
+			account_id, grant_type, company_symbol, total_shares, vested_shares, 
+			unvested_shares, strike_price, grant_date, vest_start_date, 
+			current_price, data_source, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		RETURNING id
+	`
+
+	var grantID int
+	err := s.db.QueryRow(
+		query,
+		request.AccountID, request.GrantType, request.CompanySymbol,
+		request.TotalShares, request.VestedShares, unvestedShares,
+		request.StrikePrice, request.GrantDate, request.VestStartDate,
+		currentPrice, "manual", time.Now(),
+	).Scan(&grantID)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to create equity grant",
+		})
+		return
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
-		"message": "Create equity grant endpoint - to be implemented",
+		"id":      grantID,
+		"message": "Equity grant created successfully",
 	})
 }
 
@@ -897,10 +951,88 @@ func (s *Server) createEquityGrant(c *gin.Context) {
 // @Router /equity/{id} [put]
 func (s *Server) updateEquityGrant(c *gin.Context) {
 	id := c.Param("id")
-	// TODO: Implement equity grant update
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Equity grant ID is required",
+		})
+		return
+	}
+
+	var request struct {
+		AccountID     int     `json:"account_id" binding:"required"`
+		GrantType     string  `json:"grant_type" binding:"required"`
+		CompanySymbol string  `json:"company_symbol" binding:"required"`
+		TotalShares   float64 `json:"total_shares" binding:"required"`
+		VestedShares  float64 `json:"vested_shares"`
+		StrikePrice   float64 `json:"strike_price"`
+		GrantDate     string  `json:"grant_date" binding:"required"`
+		VestStartDate string  `json:"vest_start_date" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Calculate unvested shares
+	unvestedShares := request.TotalShares - request.VestedShares
+
+	// Get current market price
+	currentPrice, priceErr := s.priceService.GetCurrentPrice(request.CompanySymbol)
+	if priceErr != nil {
+		// Log error but continue with existing price
+		fmt.Printf("Warning: Could not fetch price for %s: %v\n", request.CompanySymbol, priceErr)
+		// Get existing price from database
+		var existingPrice float64
+		priceQuery := "SELECT COALESCE(current_price, 0) FROM equity_grants WHERE id = $1"
+		s.db.QueryRow(priceQuery, id).Scan(&existingPrice)
+		currentPrice = existingPrice
+	}
+
+	// Update equity grant
+	query := `
+		UPDATE equity_grants 
+		SET account_id = $1, grant_type = $2, company_symbol = $3, total_shares = $4, 
+		    vested_shares = $5, unvested_shares = $6, strike_price = $7, current_price = $8, 
+		    grant_date = $9, vest_start_date = $10, updated_at = $11
+		WHERE id = $12
+	`
+
+	result, err := s.db.Exec(
+		query,
+		request.AccountID, request.GrantType, request.CompanySymbol,
+		request.TotalShares, request.VestedShares, unvestedShares,
+		request.StrikePrice, currentPrice, request.GrantDate, request.VestStartDate,
+		time.Now(), id,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update equity grant",
+		})
+		return
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check update result",
+		})
+		return
+	}
+
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Equity grant not found",
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"grant_id": id,
-		"message":  "Update equity grant endpoint - to be implemented",
+		"message":  "Equity grant updated successfully",
 	})
 }
 
@@ -916,10 +1048,41 @@ func (s *Server) updateEquityGrant(c *gin.Context) {
 // @Router /equity/{id} [delete]
 func (s *Server) deleteEquityGrant(c *gin.Context) {
 	id := c.Param("id")
-	// TODO: Implement equity grant deletion
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Equity grant ID is required",
+		})
+		return
+	}
+
+	// Delete the equity grant record
+	query := `DELETE FROM equity_grants WHERE id = $1`
+	result, err := s.db.Exec(query, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to delete equity grant",
+		})
+		return
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check delete result",
+		})
+		return
+	}
+
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Equity grant not found",
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"grant_id": id,
-		"message":  "Delete equity grant endpoint - to be implemented",
+		"message":  "Equity grant deleted successfully",
 	})
 }
 
