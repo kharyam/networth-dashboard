@@ -2957,7 +2957,7 @@ func (s *Server) getCryptoPrice(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{} "Internal server error during refresh"
 // @Router /crypto/prices/refresh [post]
 func (s *Server) refreshCryptoPrices(c *gin.Context) {
-	err := s.cryptoService.RefreshAllCryptoPrices()
+	summary, err := s.cryptoService.RefreshAllCryptoPrices()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": fmt.Sprintf("Failed to refresh crypto prices: %v", err),
@@ -2965,9 +2965,7 @@ func (s *Server) refreshCryptoPrices(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Crypto prices refreshed successfully",
-	})
+	c.JSON(http.StatusOK, summary)
 }
 
 // @Summary Refresh specific crypto price
