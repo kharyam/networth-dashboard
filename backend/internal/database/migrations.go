@@ -330,6 +330,39 @@ const (
 		ALTER TABLE miscellaneous_assets ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 	`
 
+	// Schema update to add dividend tracking to stock holdings
+	updateStockHoldingsDividend = `
+		-- Add dividend tracking field to stock_holdings table
+		ALTER TABLE stock_holdings ADD COLUMN IF NOT EXISTS estimated_quarterly_dividend DECIMAL(10,4);
+		
+		-- Add index for dividend queries
+		CREATE INDEX IF NOT EXISTS idx_stock_holdings_dividend ON stock_holdings(estimated_quarterly_dividend) WHERE estimated_quarterly_dividend IS NOT NULL AND estimated_quarterly_dividend > 0;
+	`
+
+	// Schema update to add purchase date and DRIP fields to stock holdings
+	updateStockHoldingsAdditionalFields = `
+		-- Add purchase_date field to stock_holdings table
+		ALTER TABLE stock_holdings ADD COLUMN IF NOT EXISTS purchase_date DATE;
+		
+		-- Add drip_enabled field to stock_holdings table
+		ALTER TABLE stock_holdings ADD COLUMN IF NOT EXISTS drip_enabled VARCHAR(10) DEFAULT 'unknown';
+		
+		-- Add last_manual_update field to stock_holdings table
+		ALTER TABLE stock_holdings ADD COLUMN IF NOT EXISTS last_manual_update TIMESTAMP;
+		
+		-- Add index for purchase date queries
+		CREATE INDEX IF NOT EXISTS idx_stock_holdings_purchase_date ON stock_holdings(purchase_date) WHERE purchase_date IS NOT NULL;
+	`
+
+	// Schema update to add staking percentage to crypto holdings
+	updateCryptoHoldingsStaking = `
+		-- Add staking_annual_percentage field to crypto_holdings table
+		ALTER TABLE crypto_holdings ADD COLUMN IF NOT EXISTS staking_annual_percentage DECIMAL(5,2) DEFAULT 0;
+		
+		-- Add index for staking queries where percentage > 0
+		CREATE INDEX IF NOT EXISTS idx_crypto_holdings_staking ON crypto_holdings(staking_annual_percentage) WHERE staking_annual_percentage > 0;
+	`
+
 	createIndices = `
 		CREATE INDEX IF NOT EXISTS idx_accounts_data_source ON accounts(data_source_id);
 		CREATE INDEX IF NOT EXISTS idx_account_balances_account ON account_balances(account_id);

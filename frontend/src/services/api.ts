@@ -12,7 +12,8 @@ import type {
   ManualEntrySchema,
   Plugin,
   ApiResponse,
-  CryptoPriceRefreshSummary
+  CryptoPriceRefreshSummary,
+  PassiveIncomeData
 } from '@/types'
 
 const api = axios.create({
@@ -75,6 +76,9 @@ export const netWorthApi = {
   
   getHistory: (period: string = '1Y'): Promise<any[]> =>
     api.get(`/net-worth/history?period=${period}`).then(res => res.data),
+    
+  getPassiveIncome: (): Promise<PassiveIncomeData> =>
+    api.get('/passive-income').then(res => res.data),
 }
 
 // Accounts API

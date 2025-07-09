@@ -103,6 +103,7 @@ func (s *Server) setupRouter() {
 		// Net worth endpoints
 		api.GET("/net-worth", s.getNetWorth)
 		api.GET("/net-worth/history", s.getNetWorthHistory)
+		api.GET("/passive-income", s.getPassiveIncome)
 
 		// Account endpoints
 		api.GET("/accounts", s.getAccounts)

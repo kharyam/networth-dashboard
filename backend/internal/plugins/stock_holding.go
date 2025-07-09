@@ -212,6 +212,17 @@ func (p *StockHoldingPlugin) GetManualEntrySchema() ManualEntrySchema {
 				Required:    false,
 			},
 			{
+				Name:        "estimated_quarterly_dividend",
+				Type:        "number",
+				Label:       "Estimated Quarterly Dividend per Share",
+				Description: "Estimated dividend payment per share per quarter (optional, for passive income calculations)",
+				Required:    false,
+				Validation: FieldValidation{
+					Min: func(f float64) *float64 { return &f }(0),
+				},
+				Placeholder: "1.50",
+			},
+			{
 				Name:        "drip_enabled",
 				Type:        "select",
 				Label:       "DRIP Enabled",
@@ -269,22 +280,38 @@ func (p *StockHoldingPlugin) ValidateManualEntry(data map[string]interface{}) Va
 	}
 
 	// Validate shares owned
-	if sharesRaw, exists := data["shares_owned"]; exists {
+	if sharesData, exists := data["shares_owned"]; exists && sharesData != nil {
 		var shares float64
-		switch v := sharesRaw.(type) {
-		case float64:
-			shares = v
+		var err error
+		
+		switch v := sharesData.(type) {
 		case string:
-			var err error
-			shares, err = strconv.ParseFloat(v, 64)
-			if err != nil {
+			if v == "" {
 				result.Valid = false
 				result.Errors = append(result.Errors, ValidationError{
 					Field:   "shares_owned",
-					Message: "Shares owned must be a valid number",
-					Code:    "invalid_number",
+					Message: "Shares owned is required",
+					Code:    "required",
 				})
+			} else {
+				shares, err = strconv.ParseFloat(v, 64)
+				if err != nil {
+					result.Valid = false
+					result.Errors = append(result.Errors, ValidationError{
+						Field:   "shares_owned",
+						Message: "Shares owned must be a valid number",
+						Code:    "invalid_number",
+					})
+				}
 			}
+		case float64:
+			shares = v
+		case float32:
+			shares = float64(v)
+		case int:
+			shares = float64(v)
+		case int64:
+			shares = float64(v)
 		default:
 			result.Valid = false
 			result.Errors = append(result.Errors, ValidationError{
@@ -294,15 +321,16 @@ func (p *StockHoldingPlugin) ValidateManualEntry(data map[string]interface{}) Va
 			})
 		}
 
-		if shares <= 0 {
+		if err == nil && shares <= 0 {
 			result.Valid = false
 			result.Errors = append(result.Errors, ValidationError{
 				Field:   "shares_owned",
 				Message: "Shares owned must be greater than 0",
 				Code:    "invalid_range",
 			})
+		} else if err == nil {
+			data["shares_owned"] = shares
 		}
-		data["shares_owned"] = shares
 	} else {
 		result.Valid = false
 		result.Errors = append(result.Errors, ValidationError{
@@ -313,35 +341,103 @@ func (p *StockHoldingPlugin) ValidateManualEntry(data map[string]interface{}) Va
 	}
 
 	// Validate cost basis if provided
-	if costBasisRaw, exists := data["cost_basis"]; exists && costBasisRaw != nil {
-		var costBasis float64
-		switch v := costBasisRaw.(type) {
-		case float64:
-			costBasis = v
-		case string:
-			if v != "" {
-				var err error
-				costBasis, err = strconv.ParseFloat(v, 64)
-				if err != nil {
-					result.Valid = false
-					result.Errors = append(result.Errors, ValidationError{
-						Field:   "cost_basis",
-						Message: "Cost basis must be a valid number",
-						Code:    "invalid_number",
-					})
+	if costBasisData, exists := data["cost_basis"]; exists && costBasisData != nil {
+		// Skip empty strings for optional fields
+		if str, isStr := costBasisData.(string); isStr && str == "" {
+			// Empty string means no cost basis, skip validation
+		} else {
+			var costBasis float64
+			var err error
+			
+			switch v := costBasisData.(type) {
+			case string:
+				if v != "" {
+					costBasis, err = strconv.ParseFloat(v, 64)
+				} else {
+					// Empty string, skip
+					goto skipCostBasis
 				}
+			case float64:
+				costBasis = v
+			case float32:
+				costBasis = float64(v)
+			case int:
+				costBasis = float64(v)
+			case int64:
+				costBasis = float64(v)
+			default:
+				err = fmt.Errorf("unsupported type: %T", v)
+			}
+			
+			if err != nil {
+				result.Valid = false
+				result.Errors = append(result.Errors, ValidationError{
+					Field:   "cost_basis",
+					Message: "Cost basis must be a valid number",
+					Code:    "invalid_number",
+				})
+			} else if costBasis < 0 {
+				result.Valid = false
+				result.Errors = append(result.Errors, ValidationError{
+					Field:   "cost_basis",
+					Message: "Cost basis cannot be negative",
+					Code:    "invalid_range",
+				})
+			} else {
+				data["cost_basis"] = costBasis
 			}
 		}
+		skipCostBasis:
+	}
 
-		if costBasis < 0 {
-			result.Valid = false
-			result.Errors = append(result.Errors, ValidationError{
-				Field:   "cost_basis",
-				Message: "Cost basis cannot be negative",
-				Code:    "invalid_range",
-			})
+	// Validate estimated_quarterly_dividend if provided
+	if dividendData, exists := data["estimated_quarterly_dividend"]; exists && dividendData != nil {
+		// Skip empty strings for optional fields
+		if str, isStr := dividendData.(string); isStr && str == "" {
+			// Empty string means no dividend, skip validation
+		} else {
+			var dividend float64
+			var err error
+			
+			switch v := dividendData.(type) {
+			case string:
+				if v != "" {
+					dividend, err = strconv.ParseFloat(v, 64)
+				} else {
+					// Empty string, skip
+					goto skipDividend
+				}
+			case float64:
+				dividend = v
+			case float32:
+				dividend = float64(v)
+			case int:
+				dividend = float64(v)
+			case int64:
+				dividend = float64(v)
+			default:
+				err = fmt.Errorf("unsupported type: %T", v)
+			}
+			
+			if err != nil {
+				result.Valid = false
+				result.Errors = append(result.Errors, ValidationError{
+					Field:   "estimated_quarterly_dividend",
+					Message: "Estimated quarterly dividend must be a valid number",
+					Code:    "invalid_number",
+				})
+			} else if dividend < 0 {
+				result.Valid = false
+				result.Errors = append(result.Errors, ValidationError{
+					Field:   "estimated_quarterly_dividend",
+					Message: "Estimated quarterly dividend cannot be negative",
+					Code:    "invalid_range",
+				})
+			} else {
+				data["estimated_quarterly_dividend"] = dividend
+			}
 		}
-		data["cost_basis"] = costBasis
+		skipDividend:
 	}
 
 	result.Data = data
@@ -362,6 +458,27 @@ func (p *StockHoldingPlugin) ProcessManualEntry(data map[string]interface{}) err
 	var companyName string
 	if cn, exists := data["company_name"]; exists && cn != nil {
 		companyName = cn.(string)
+	}
+
+	var estimatedQuarterlyDividend float64
+	if div, exists := data["estimated_quarterly_dividend"]; exists && div != nil {
+		estimatedQuarterlyDividend = div.(float64)
+	}
+
+	var purchaseDate *time.Time
+	if pd, exists := data["purchase_date"]; exists && pd != nil {
+		if pdStr, ok := pd.(string); ok && pdStr != "" {
+			if parsedDate, err := time.Parse("2006-01-02", pdStr); err == nil {
+				purchaseDate = &parsedDate
+			}
+		}
+	}
+
+	var dripEnabled string = "unknown"
+	if drip, exists := data["drip_enabled"]; exists && drip != nil {
+		if dripStr, ok := drip.(string); ok && dripStr != "" {
+			dripEnabled = dripStr
+		}
 	}
 
 	// Get current market price from price service
@@ -391,13 +508,15 @@ func (p *StockHoldingPlugin) ProcessManualEntry(data map[string]interface{}) err
 	query := `
 		INSERT INTO stock_holdings (
 			account_id, symbol, company_name, shares_owned, cost_basis, 
-			current_price, institution_name, data_source
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			current_price, institution_name, data_source, estimated_quarterly_dividend,
+			purchase_date, drip_enabled, last_manual_update
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 
 	_, execErr := p.db.Exec(query,
 		uniqueAccountID, symbol, companyName, shares, costBasis,
-		currentPrice, institutionName, "stock_holding",
+		currentPrice, institutionName, "stock_holding", estimatedQuarterlyDividend,
+		purchaseDate, dripEnabled, time.Now(),
 	)
 
 	if execErr != nil {
@@ -430,6 +549,27 @@ func (p *StockHoldingPlugin) UpdateManualEntry(id int, data map[string]interface
 		companyName = cn.(string)
 	}
 
+	var estimatedQuarterlyDividend float64
+	if div, exists := data["estimated_quarterly_dividend"]; exists && div != nil {
+		estimatedQuarterlyDividend = div.(float64)
+	}
+
+	var purchaseDate *time.Time
+	if pd, exists := data["purchase_date"]; exists && pd != nil {
+		if pdStr, ok := pd.(string); ok && pdStr != "" {
+			if parsedDate, err := time.Parse("2006-01-02", pdStr); err == nil {
+				purchaseDate = &parsedDate
+			}
+		}
+	}
+
+	var dripEnabled string = "unknown"
+	if drip, exists := data["drip_enabled"]; exists && drip != nil {
+		if dripStr, ok := drip.(string); ok && dripStr != "" {
+			dripEnabled = dripStr
+		}
+	}
+
 	// Get current market price from price service
 	priceService := services.NewPriceService()
 	currentPrice, err := priceService.GetCurrentPrice(symbol)
@@ -447,13 +587,15 @@ func (p *StockHoldingPlugin) UpdateManualEntry(id int, data map[string]interface
 	query := `
 		UPDATE stock_holdings 
 		SET symbol = $1, company_name = $2, shares_owned = $3, cost_basis = $4, 
-		    current_price = $5, institution_name = $6, last_updated = $7
-		WHERE id = $8 AND data_source = 'stock_holding'
+		    current_price = $5, institution_name = $6, last_updated = $7, estimated_quarterly_dividend = $8,
+		    purchase_date = $9, drip_enabled = $10, last_manual_update = $11
+		WHERE id = $12 AND data_source = 'stock_holding'
 	`
 
 	result, err := p.db.Exec(query,
 		symbol, companyName, shares, costBasis,
-		currentPrice, institutionName, time.Now(), id,
+		currentPrice, institutionName, time.Now(), estimatedQuarterlyDividend,
+		purchaseDate, dripEnabled, time.Now(), id,
 	)
 
 	if err != nil {

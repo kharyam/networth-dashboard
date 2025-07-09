@@ -106,3 +106,10 @@ postgresql:
       enabled: false
     podSecurityContext:
       enabled: false
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "2"

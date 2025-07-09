@@ -252,6 +252,19 @@ func (p *CryptoHoldingsPlugin) GetManualEntrySchema() ManualEntrySchema {
 				Placeholder: "...a1b2c3d4",
 			},
 			{
+				Name:        "staking_annual_percentage",
+				Type:        "number",
+				Label:       "Annual Staking Percentage",
+				Description: "Annual percentage earned from staking (0 means not staked)",
+				Required:    false,
+				Validation: FieldValidation{
+					Min: func(f float64) *float64 { return &f }(0),
+					Max: func(f float64) *float64 { return &f }(100),
+				},
+				DefaultValue: 0,
+				Placeholder: "5.0",
+			},
+			{
 				Name:        "notes",
 				Type:        "textarea",
 				Label:       "Notes",
@@ -324,32 +337,52 @@ func (p *CryptoHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) 
 	}
 
 	// Validate balance_tokens
-	if balanceStr, ok := data["balance_tokens"].(string); ok {
-		balance, err := strconv.ParseFloat(balanceStr, 64)
-		if err != nil {
+	if balanceData, exists := data["balance_tokens"]; exists && balanceData != nil {
+		var balance float64
+		var err error
+		
+		switch v := balanceData.(type) {
+		case string:
+			if v == "" {
+				errors = append(errors, ValidationError{
+					Field:   "balance_tokens",
+					Message: "Balance is required",
+					Code:    "required",
+				})
+			} else {
+				balance, err = strconv.ParseFloat(v, 64)
+				if err != nil {
+					errors = append(errors, ValidationError{
+						Field:   "balance_tokens",
+						Message: "Invalid balance amount",
+						Code:    "invalid",
+					})
+				}
+			}
+		case float64:
+			balance = v
+		case float32:
+			balance = float64(v)
+		case int:
+			balance = float64(v)
+		case int64:
+			balance = float64(v)
+		default:
 			errors = append(errors, ValidationError{
 				Field:   "balance_tokens",
 				Message: "Invalid balance amount",
 				Code:    "invalid",
 			})
-		} else if balance < 0 {
-			errors = append(errors, ValidationError{
-				Field:   "balance_tokens",
-				Message: "Balance cannot be negative",
-				Code:    "min",
-			})
-		} else {
-			validatedData["balance_tokens"] = balance
 		}
-	} else if balanceFloat, ok := data["balance_tokens"].(float64); ok {
-		if balanceFloat < 0 {
+		
+		if err == nil && balance < 0 {
 			errors = append(errors, ValidationError{
 				Field:   "balance_tokens",
 				Message: "Balance cannot be negative",
 				Code:    "min",
 			})
-		} else {
-			validatedData["balance_tokens"] = balanceFloat
+		} else if err == nil {
+			validatedData["balance_tokens"] = balance
 		}
 	} else {
 		errors = append(errors, ValidationError{
@@ -360,9 +393,34 @@ func (p *CryptoHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) 
 	}
 
 	// Validate optional purchase_price_usd
-	if purchasePriceData, ok := data["purchase_price_usd"]; ok && purchasePriceData != nil {
-		if purchasePriceStr, ok := purchasePriceData.(string); ok && purchasePriceStr != "" {
-			purchasePrice, err := strconv.ParseFloat(purchasePriceStr, 64)
+	if purchasePriceData, exists := data["purchase_price_usd"]; exists && purchasePriceData != nil {
+		// Skip empty strings for optional fields
+		if str, isStr := purchasePriceData.(string); isStr && str == "" {
+			// Empty string means no purchase price, skip validation
+		} else {
+			var purchasePrice float64
+			var err error
+			
+			switch v := purchasePriceData.(type) {
+			case string:
+				if v != "" {
+					purchasePrice, err = strconv.ParseFloat(v, 64)
+				} else {
+					// Empty string, skip
+					goto skipPurchasePrice
+				}
+			case float64:
+				purchasePrice = v
+			case float32:
+				purchasePrice = float64(v)
+			case int:
+				purchasePrice = float64(v)
+			case int64:
+				purchasePrice = float64(v)
+			default:
+				err = fmt.Errorf("unsupported type: %T", v)
+			}
+			
 			if err != nil {
 				errors = append(errors, ValidationError{
 					Field:   "purchase_price_usd",
@@ -378,17 +436,8 @@ func (p *CryptoHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) 
 			} else {
 				validatedData["purchase_price_usd"] = purchasePrice
 			}
-		} else if purchasePriceFloat, ok := purchasePriceData.(float64); ok {
-			if purchasePriceFloat < 0 {
-				errors = append(errors, ValidationError{
-					Field:   "purchase_price_usd",
-					Message: "Purchase price cannot be negative",
-					Code:    "min",
-				})
-			} else {
-				validatedData["purchase_price_usd"] = purchasePriceFloat
-			}
 		}
+		skipPurchasePrice:
 	}
 
 	// Validate optional purchase_date
@@ -421,6 +470,63 @@ func (p *CryptoHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) 
 				validatedData["wallet_address"] = walletAddressStr
 			}
 		}
+	}
+
+	// Validate optional staking_annual_percentage
+	if stakingData, exists := data["staking_annual_percentage"]; exists && stakingData != nil {
+		// Skip empty strings for optional fields
+		if str, isStr := stakingData.(string); isStr && str == "" {
+			// Empty string means no staking, set to default 0
+			validatedData["staking_annual_percentage"] = 0.0
+		} else {
+			var stakingPercentage float64
+			var err error
+			
+			switch v := stakingData.(type) {
+			case string:
+				if v != "" {
+					stakingPercentage, err = strconv.ParseFloat(v, 64)
+				} else {
+					// Empty string, set to 0
+					stakingPercentage = 0.0
+				}
+			case float64:
+				stakingPercentage = v
+			case float32:
+				stakingPercentage = float64(v)
+			case int:
+				stakingPercentage = float64(v)
+			case int64:
+				stakingPercentage = float64(v)
+			default:
+				err = fmt.Errorf("unsupported type: %T", v)
+			}
+			
+			if err != nil {
+				errors = append(errors, ValidationError{
+					Field:   "staking_annual_percentage",
+					Message: "Invalid staking percentage",
+					Code:    "invalid",
+				})
+			} else if stakingPercentage < 0 {
+				errors = append(errors, ValidationError{
+					Field:   "staking_annual_percentage",
+					Message: "Staking percentage cannot be negative",
+					Code:    "min",
+				})
+			} else if stakingPercentage > 100 {
+				errors = append(errors, ValidationError{
+					Field:   "staking_annual_percentage",
+					Message: "Staking percentage cannot exceed 100%",
+					Code:    "max",
+				})
+			} else {
+				validatedData["staking_annual_percentage"] = stakingPercentage
+			}
+		}
+	} else {
+		// Field not provided, set default value
+		validatedData["staking_annual_percentage"] = 0.0
 	}
 
 	// Validate optional notes
@@ -476,8 +582,8 @@ func (p *CryptoHoldingsPlugin) ProcessManualEntry(data map[string]interface{}) e
 		INSERT INTO crypto_holdings (
 			account_id, institution_name, crypto_symbol, balance_tokens,
 			purchase_price_usd, purchase_date, wallet_address, notes,
-			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			staking_annual_percentage, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
 	now := time.Now()
@@ -491,6 +597,7 @@ func (p *CryptoHoldingsPlugin) ProcessManualEntry(data map[string]interface{}) e
 		validation.Data["purchase_date"],
 		validation.Data["wallet_address"],
 		validation.Data["notes"],
+		validation.Data["staking_annual_percentage"],
 		now,
 		now,
 	)
@@ -529,8 +636,9 @@ func (p *CryptoHoldingsPlugin) UpdateManualEntry(id int, data map[string]interfa
 			purchase_date = $6,
 			wallet_address = $7,
 			notes = $8,
-			updated_at = $9
-		WHERE id = $1 AND account_id = $10
+			staking_annual_percentage = $9,
+			updated_at = $10
+		WHERE id = $1
 	`
 
 	now := time.Now()
@@ -544,8 +652,8 @@ func (p *CryptoHoldingsPlugin) UpdateManualEntry(id int, data map[string]interfa
 		validation.Data["purchase_date"],
 		validation.Data["wallet_address"],
 		validation.Data["notes"],
+		validation.Data["staking_annual_percentage"],
 		now,
-		actualAccountID,
 	)
 
 	if err != nil {
