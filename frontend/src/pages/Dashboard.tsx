@@ -48,7 +48,7 @@ const generateAllocationData = (netWorth: NetWorthSummary | null) => {
   
   const allocation = [
     {
-      name: 'Direct Stocks',
+      name: 'Securities',
       value: stockValue,
       color: '#3b82f6',
       percentage: totalAssets > 0 ? Math.round((stockValue / totalAssets) * 100) : 0

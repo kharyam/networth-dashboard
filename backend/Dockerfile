@@ -26,7 +26,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 FROM docker.io/alpine:latest
 
 # Install ca-certificates and wget for health checks
-RUN apk --no-cache add ca-certificates wget
+RUN apk --no-cache add ca-certificates wget tzdata
 
 # Create non-root user
 RUN adduser -D -g '' appuser
@@ -52,6 +52,8 @@ EXPOSE 8080
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+
+ENV TZ=America/New_York
 
 # Run the application
 CMD ["./main"]

@@ -210,3 +210,29 @@ export interface CryptoPriceHistoryResponse {
   total_symbols: number
   disclaimer: string
 }
+
+export interface CryptoPriceUpdateResult {
+  symbol: string
+  old_price_usd: number
+  new_price_usd: number
+  old_price_btc: number
+  new_price_btc: number
+  updated: boolean
+  error?: string
+  error_type?: string // "rate_limited", "api_error", "invalid_symbol", "cache_error"
+  timestamp: string
+  source: string // "api", "cache"
+  price_change_usd: number // Absolute change in USD
+  price_change_pct: number // Percentage change in USD
+  cache_age?: string // How old the previous cached price was
+}
+
+export interface CryptoPriceRefreshSummary {
+  total_symbols: number
+  updated_symbols: number
+  failed_symbols: number
+  results: CryptoPriceUpdateResult[]
+  provider_name: string
+  timestamp: string
+  duration_ms: number
+}

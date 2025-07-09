@@ -21,10 +21,11 @@ import {
   Tooltip, ResponsiveContainer 
 } from 'recharts'
 import { pluginsApi, cryptoHoldingsApi } from '@/services/api'
-import { ManualEntrySchema } from '@/types'
+import { ManualEntrySchema, CryptoPriceRefreshSummary } from '@/types'
 import SmartDynamicForm from '@/components/SmartDynamicForm'
 import EditEntryModal from '@/components/EditEntryModal'
-import { formatCurrency, formatNumber } from '@/utils/formatting'
+import CryptoPriceDisplay from '@/components/CryptoPriceDisplay'
+import { formatCurrency, formatCrypto } from '@/utils/formatting'
 
 interface CryptoHolding {
   id: number
@@ -98,6 +99,10 @@ function CryptoHoldings() {
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [viewModalOpen, setViewModalOpen] = useState(false)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [refreshResultsModalOpen, setRefreshResultsModalOpen] = useState(false)
+  
+  // Refresh results state
+  const [refreshResults, setRefreshResults] = useState<CryptoPriceRefreshSummary | null>(null)
   const [selectedHolding, setSelectedHolding] = useState<CryptoHolding | null>(null)
   
   // Form states
@@ -117,12 +122,17 @@ function CryptoHoldings() {
 
   const refreshPrices = async () => {
     try {
-      await cryptoHoldingsApi.refreshAllPrices()
+      setRefreshing(true)
+      const summary = await cryptoHoldingsApi.refreshAllPrices()
+      setRefreshResults(summary)
+      setRefreshResultsModalOpen(true)
       // Reload holdings after price refresh to get updated data
       await loadHoldings()
     } catch (err) {
       console.error('Failed to refresh crypto prices:', err)
       // Don't set error state since this is background refresh
+    } finally {
+      setRefreshing(false)
     }
   }
 
@@ -144,8 +154,10 @@ function CryptoHoldings() {
     try {
       setRefreshing(true)
       setError(null)
-      // First refresh all crypto prices
-      await cryptoHoldingsApi.refreshAllPrices()
+      // First refresh all crypto prices and capture results
+      const summary = await cryptoHoldingsApi.refreshAllPrices()
+      setRefreshResults(summary)
+      setRefreshResultsModalOpen(true)
       // Then reload holdings with updated prices
       const data = await cryptoHoldingsApi.getAll()
       setHoldings(data)
@@ -256,9 +268,6 @@ function CryptoHoldings() {
   }
 
   // Helper functions
-  const formatCrypto = (amount: number, symbol: string) => {
-    return `${formatNumber(amount)} ${symbol}`
-  }
 
   const convertToBTC = (usdAmount: number): number => {
     const btcPrice = holdings.find(h => h.crypto_symbol === 'BTC')?.current_price_usd || 50000
@@ -345,14 +354,29 @@ function CryptoHoldings() {
     }))
   }, [holdings])
 
-  // Charts data
-  const pieData = holdings
-    .filter(h => h.current_value_usd && h.current_value_usd > 0)
-    .map(holding => ({
-      name: holding.crypto_symbol,
-      value: holding.current_value_usd || 0,
-      valueBTC: convertToBTC(holding.current_value_usd || 0)
+  // Charts data - combine holdings by crypto symbol
+  const pieData = useMemo(() => {
+    const symbolMap = new Map<string, { value: number, valueBTC: number }>()
+    
+    holdings
+      .filter(h => h.current_value_usd && h.current_value_usd > 0)
+      .forEach(holding => {
+        const symbol = holding.crypto_symbol
+        const currentData = symbolMap.get(symbol) || { value: 0, valueBTC: 0 }
+        const valueUSD = holding.current_value_usd || 0
+        
+        symbolMap.set(symbol, {
+          value: currentData.value + valueUSD,
+          valueBTC: currentData.valueBTC + convertToBTC(valueUSD)
+        })
+      })
+    
+    return Array.from(symbolMap.entries()).map(([symbol, data]) => ({
+      name: symbol,
+      value: data.value,
+      valueBTC: data.valueBTC
     }))
+  }, [holdings])
 
   // Institution-based pie chart data
   const institutionPieData = useMemo(() => {
@@ -577,6 +601,16 @@ function CryptoHoldings() {
             </p>
           </div>
         </div>
+      )}
+
+      {/* Crypto Price Display */}
+      {holdings.length > 0 && (
+        <CryptoPriceDisplay
+          holdings={holdings}
+          priceMode={priceMode}
+          onRefreshPrices={refreshHoldings}
+          loading={refreshing}
+        />
       )}
 
       {/* Main Content */}
@@ -1040,6 +1074,125 @@ function CryptoHoldings() {
                 >
                   Delete
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Refresh Results Modal */}
+      {refreshResultsModalOpen && refreshResults && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Crypto Price Refresh Results
+              </h3>
+              <button
+                onClick={() => setRefreshResultsModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              {/* Summary */}
+              <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Total Symbols:</span>
+                    <span className="ml-2 font-semibold text-gray-900 dark:text-white">
+                      {refreshResults.total_symbols}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Updated:</span>
+                    <span className="ml-2 font-semibold text-green-600 dark:text-green-400">
+                      {refreshResults.updated_symbols}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Failed:</span>
+                    <span className="ml-2 font-semibold text-red-600 dark:text-red-400">
+                      {refreshResults.failed_symbols}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Duration:</span>
+                    <span className="ml-2 font-semibold text-gray-900 dark:text-white">
+                      {refreshResults.duration_ms}ms
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                  Provider: {refreshResults.provider_name} • Updated: {new Date(refreshResults.timestamp).toLocaleString()}
+                </div>
+              </div>
+
+              {/* Results Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-gray-900 dark:text-white">Symbol</th>
+                      <th className="px-4 py-2 text-left text-gray-900 dark:text-white">Old Price (USD)</th>
+                      <th className="px-4 py-2 text-left text-gray-900 dark:text-white">New Price (USD)</th>
+                      <th className="px-4 py-2 text-left text-gray-900 dark:text-white">Change</th>
+                      <th className="px-4 py-2 text-left text-gray-900 dark:text-white">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {refreshResults.results.map((result, index) => (
+                      <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">
+                          {result.symbol}
+                        </td>
+                        <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
+                          {result.old_price_usd > 0 ? formatCurrency(result.old_price_usd, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                        </td>
+                        <td className="px-4 py-2 text-gray-900 dark:text-white">
+                          {result.updated ? formatCurrency(result.new_price_usd, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                        </td>
+                        <td className="px-4 py-2">
+                          {result.updated && result.old_price_usd > 0 ? (
+                            <div className="flex items-center space-x-1">
+                              {result.price_change_pct > 0 ? (
+                                <TrendingUp className="w-4 h-4 text-green-500" />
+                              ) : result.price_change_pct < 0 ? (
+                                <TrendingDown className="w-4 h-4 text-red-500" />
+                              ) : null}
+                              <span className={`${
+                                result.price_change_pct > 0 ? 'text-green-600 dark:text-green-400' :
+                                result.price_change_pct < 0 ? 'text-red-600 dark:text-red-400' :
+                                'text-gray-600 dark:text-gray-400'
+                              }`}>
+                                {result.price_change_pct > 0 ? '+' : ''}{result.price_change_pct.toFixed(2)}%
+                              </span>
+                            </div>
+                          ) : '-'}
+                        </td>
+                        <td className="px-4 py-2">
+                          {result.updated ? (
+                            <span className="flex items-center space-x-1">
+                              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                              <span className="text-green-600 dark:text-green-400">Updated</span>
+                              {result.cache_age && (
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                  ({result.cache_age} old)
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="flex items-center space-x-1">
+                              <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                              <span className="text-red-600 dark:text-red-400">Failed</span>
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>

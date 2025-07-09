@@ -11,7 +11,8 @@ import type {
   RealEstate,
   ManualEntrySchema,
   Plugin,
-  ApiResponse 
+  ApiResponse,
+  CryptoPriceRefreshSummary
 } from '@/types'
 
 const api = axios.create({
@@ -200,7 +201,7 @@ export const cryptoHoldingsApi = {
   refreshPrice: (symbol: string): Promise<any> =>
     api.post(`/crypto/prices/refresh/${symbol}`).then(res => res.data),
   
-  refreshAllPrices: (): Promise<any> =>
+  refreshAllPrices: (): Promise<CryptoPriceRefreshSummary> =>
     api.post('/crypto/prices/refresh').then(res => res.data),
 }
 

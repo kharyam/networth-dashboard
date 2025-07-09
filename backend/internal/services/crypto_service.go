@@ -41,6 +41,34 @@ type CryptoPriceData struct {
 	LastUpdated    time.Time `json:"last_updated"`
 }
 
+// CryptoPriceUpdateResult represents the result of a crypto price update operation
+type CryptoPriceUpdateResult struct {
+	Symbol         string    `json:"symbol"`
+	OldPriceUSD    float64   `json:"old_price_usd"`
+	NewPriceUSD    float64   `json:"new_price_usd"`
+	OldPriceBTC    float64   `json:"old_price_btc"`
+	NewPriceBTC    float64   `json:"new_price_btc"`
+	Updated        bool      `json:"updated"`
+	Error          string    `json:"error,omitempty"`
+	ErrorType      string    `json:"error_type,omitempty"` // "rate_limited", "api_error", "invalid_symbol", "cache_error"
+	Timestamp      time.Time `json:"timestamp"`
+	Source         string    `json:"source"`        // "api", "cache"
+	PriceChangeUSD float64   `json:"price_change_usd"`  // Absolute change in USD
+	PriceChangePct float64   `json:"price_change_pct"` // Percentage change in USD
+	CacheAge       string    `json:"cache_age,omitempty"` // How old the previous cached price was
+}
+
+// CryptoPriceRefreshSummary summarizes a bulk crypto price refresh operation
+type CryptoPriceRefreshSummary struct {
+	TotalSymbols   int                       `json:"total_symbols"`
+	UpdatedSymbols int                       `json:"updated_symbols"`
+	FailedSymbols  int                       `json:"failed_symbols"`
+	Results        []CryptoPriceUpdateResult `json:"results"`
+	ProviderName   string                    `json:"provider_name"`
+	Timestamp      time.Time                 `json:"timestamp"`
+	DurationMs     int64                     `json:"duration_ms"`
+}
+
 // NewCryptoService creates a new cryptocurrency service
 func NewCryptoService(db *sql.DB) *CryptoService {
 	return &CryptoService{
@@ -192,12 +220,14 @@ func (cs *CryptoService) GetMultiplePrices(symbols []string) (map[string]*Crypto
 }
 
 // RefreshAllCryptoPrices refreshes prices for all crypto holdings in the database
-func (cs *CryptoService) RefreshAllCryptoPrices() error {
+func (cs *CryptoService) RefreshAllCryptoPrices() (*CryptoPriceRefreshSummary, error) {
+	startTime := time.Now()
+	
 	// Get all unique crypto symbols from holdings
 	query := `SELECT DISTINCT crypto_symbol FROM crypto_holdings`
 	rows, err := cs.db.Query(query)
 	if err != nil {
-		return fmt.Errorf("failed to get crypto symbols: %w", err)
+		return nil, fmt.Errorf("failed to get crypto symbols: %w", err)
 	}
 	defer rows.Close()
 
@@ -211,12 +241,88 @@ func (cs *CryptoService) RefreshAllCryptoPrices() error {
 	}
 
 	if len(symbols) == 0 {
-		return nil // No crypto holdings to update
+		return &CryptoPriceRefreshSummary{
+			TotalSymbols:   0,
+			UpdatedSymbols: 0,
+			FailedSymbols:  0,
+			Results:        []CryptoPriceUpdateResult{},
+			ProviderName:   "CoinGecko",
+			Timestamp:      time.Now(),
+			DurationMs:     time.Since(startTime).Milliseconds(),
+		}, nil
 	}
 
-	// Fetch prices for all symbols
-	_, err = cs.GetMultiplePrices(symbols)
-	return err
+	// Get old prices for comparison
+	oldPrices := make(map[string]*CryptoPriceData)
+	for _, symbol := range symbols {
+		if oldPrice, err := cs.getCachedPrice(symbol); err == nil && oldPrice != nil {
+			oldPrices[symbol] = oldPrice
+		}
+	}
+
+	// Fetch new prices for all symbols
+	newPrices, err := cs.GetMultiplePrices(symbols)
+	
+	// Build results
+	results := make([]CryptoPriceUpdateResult, 0, len(symbols))
+	updatedCount := 0
+	failedCount := 0
+
+	for _, symbol := range symbols {
+		result := CryptoPriceUpdateResult{
+			Symbol:    symbol,
+			Timestamp: time.Now(),
+			Source:    "api",
+		}
+
+		// Get old price if available
+		if oldPrice, exists := oldPrices[symbol]; exists {
+			result.OldPriceUSD = oldPrice.PriceUSD
+			result.OldPriceBTC = oldPrice.PriceBTC
+			result.CacheAge = fmt.Sprintf("%.0fm", time.Since(oldPrice.LastUpdated).Minutes())
+		}
+
+		// Check if we got new price
+		if newPrice, exists := newPrices[symbol]; exists {
+			result.NewPriceUSD = newPrice.PriceUSD
+			result.NewPriceBTC = newPrice.PriceBTC
+			result.Updated = true
+			updatedCount++
+
+			// Calculate price changes
+			if result.OldPriceUSD > 0 {
+				result.PriceChangeUSD = result.NewPriceUSD - result.OldPriceUSD
+				result.PriceChangePct = (result.PriceChangeUSD / result.OldPriceUSD) * 100
+			}
+		} else {
+			result.Updated = false
+			failedCount++
+			result.Error = "Failed to fetch price"
+			result.ErrorType = "api_error"
+		}
+
+		results = append(results, result)
+	}
+
+	// Handle global error if GetMultiplePrices failed
+	if err != nil {
+		for i := range results {
+			if !results[i].Updated {
+				results[i].Error = err.Error()
+				results[i].ErrorType = "api_error"
+			}
+		}
+	}
+
+	return &CryptoPriceRefreshSummary{
+		TotalSymbols:   len(symbols),
+		UpdatedSymbols: updatedCount,
+		FailedSymbols:  failedCount,
+		Results:        results,
+		ProviderName:   "CoinGecko",
+		Timestamp:      time.Now(),
+		DurationMs:     time.Since(startTime).Milliseconds(),
+	}, nil
 }
 
 // getCachedPrice retrieves cached price data from database
