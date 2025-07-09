@@ -23,7 +23,7 @@ RUN npm run build
 FROM docker.io/nginx:alpine
 
 # Install wget for health checks
-RUN apk add --no-cache wget
+RUN apk add --no-cache wget tzdata
 
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf

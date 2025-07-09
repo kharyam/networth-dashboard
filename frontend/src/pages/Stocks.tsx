@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Edit2, Eye, Trash2, X, Plus } from 'lucide-react'
-import { stocksApi, equityApi } from '../services/api'
+import { stocksApi, equityApi, cashHoldingsApi } from '../services/api'
 import { StockHolding, StockConsolidation, EquityGrant } from '../types'
 import MarketStatus from '../components/MarketStatus'
 import PriceRefreshControls from '../components/PriceRefreshControls'
@@ -11,8 +11,9 @@ function Stocks() {
   const [stockHoldings, setStockHoldings] = useState<StockHolding[]>([])
   const [consolidatedStocks, setConsolidatedStocks] = useState<StockConsolidation[]>([])
   const [equityGrants, setEquityGrants] = useState<EquityGrant[]>([])
+  const [brokerageAccounts, setBrokerageAccounts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'individual' | 'consolidated' | 'equity' | 'institutions'>('consolidated')
+  const [activeTab, setActiveTab] = useState<'individual' | 'consolidated' | 'equity' | 'institutions' | 'brokerage'>('consolidated')
   const [error, setError] = useState<string | null>(null)
   
   // Modal states
@@ -32,15 +33,19 @@ function Stocks() {
       setLoading(true)
       setError(null)
       
-      const [stocks, consolidated, equity] = await Promise.all([
+      const [stocks, consolidated, equity, brokerage] = await Promise.all([
         stocksApi.getAll(),
         stocksApi.getConsolidated(),
-        equityApi.getAll()
+        equityApi.getAll(),
+        // Fetch brokerage accounts from cash holdings API
+        cashHoldingsApi.getAll()
+          .then(data => data.filter((account: any) => account.account_type === 'brokerage'))
       ])
       
       setStockHoldings(stocks)
       setConsolidatedStocks(consolidated)
       setEquityGrants(equity)
+      setBrokerageAccounts(brokerage)
     } catch (error) {
       console.error('Failed to load stock data:', error)
       setError('Failed to load stock data. Please try again.')
@@ -443,6 +448,16 @@ function Stocks() {
             >
               By Institution ({stocksByInstitution.length})
             </button>
+            <button
+              onClick={() => setActiveTab('brokerage')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'brokerage'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+              }`}
+            >
+              Brokerage Accounts ({brokerageAccounts.length})
+            </button>
           </nav>
         </div>
 
@@ -761,6 +776,42 @@ function Stocks() {
                     </div>
                   </div>
                 ))
+              )}
+            </div>
+          )}
+
+          {activeTab === 'brokerage' && (
+            <div className="space-y-4">
+              {brokerageAccounts.length === 0 ? (
+                <p className="text-gray-600 dark:text-gray-400">No brokerage accounts found.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {brokerageAccounts.map((account) => (
+                    <div key={account.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
+                          {account.account_name}
+                        </h4>
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                          {account.institution_name}
+                        </span>
+                      </div>
+                      <div className="text-2xl font-bold text-green-600 dark:text-green-400 mb-2">
+                        ${account.current_balance.toLocaleString()}
+                      </div>
+                      {account.interest_rate && (
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          Average Return: {account.interest_rate}%
+                        </div>
+                      )}
+                      {account.notes && (
+                        <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                          {account.notes}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}

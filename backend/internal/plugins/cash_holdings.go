@@ -202,14 +202,15 @@ func (p *CashHoldingsPlugin) GetManualEntrySchema() ManualEntrySchema {
 					{Value: "money_market", Label: "Money Market"},
 					{Value: "cd", Label: "Certificate of Deposit (CD)"},
 					{Value: "high_yield_savings", Label: "High Yield Savings"},
+					{Value: "brokerage", Label: "Brokerage Account"},
 					{Value: "other", Label: "Other"},
 				},
 			},
 			{
 				Name:        "current_balance",
 				Type:        "number",
-				Label:       "Current Balance",
-				Description: "Current balance in the account",
+				Label:       "Current Balance / Total Value",
+				Description: "Current balance (for cash accounts) or total value (for brokerage accounts)",
 				Required:    true,
 				Validation: FieldValidation{
 					Min: func(f float64) *float64 { return &f }(0),
@@ -219,11 +220,11 @@ func (p *CashHoldingsPlugin) GetManualEntrySchema() ManualEntrySchema {
 			{
 				Name:        "interest_rate",
 				Type:        "number",
-				Label:       "Interest Rate (%)",
-				Description: "Annual interest rate (if applicable)",
+				Label:       "Interest Rate / Average Return (%)",
+				Description: "Annual interest rate (for cash accounts) or average return (for brokerage accounts)",
 				Required:    false,
 				Validation: FieldValidation{
-					Min: func(f float64) *float64 { return &f }(0),
+					Min: func(f float64) *float64 { return &f }(-100),
 					Max: func(f float64) *float64 { return &f }(100),
 				},
 				Placeholder: "2.5",
@@ -339,7 +340,7 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 	}
 
 	// Validate account_type
-	validAccountTypes := []string{"checking", "savings", "money_market", "cd", "high_yield_savings", "other"}
+	validAccountTypes := []string{"checking", "savings", "money_market", "cd", "high_yield_savings", "brokerage", "other"}
 	if accountType, ok := data["account_type"].(string); ok {
 		found := false
 		for _, validType := range validAccountTypes {
@@ -443,10 +444,10 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 					Message: "Invalid interest rate",
 					Code:    "invalid",
 				})
-			} else if interestRate < 0 || interestRate > 100 {
+			} else if interestRate < -100 || interestRate > 100 {
 				errors = append(errors, ValidationError{
 					Field:   "interest_rate",
-					Message: "Interest rate must be between 0 and 100",
+					Message: "Interest rate/return must be between -100 and 100",
 					Code:    "range",
 				})
 			} else {

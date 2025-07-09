@@ -24,7 +24,8 @@ import { pluginsApi, cryptoHoldingsApi } from '@/services/api'
 import { ManualEntrySchema, CryptoPriceRefreshSummary } from '@/types'
 import SmartDynamicForm from '@/components/SmartDynamicForm'
 import EditEntryModal from '@/components/EditEntryModal'
-import { formatCurrency, formatNumber } from '@/utils/formatting'
+import CryptoPriceDisplay from '@/components/CryptoPriceDisplay'
+import { formatCurrency, formatCrypto } from '@/utils/formatting'
 
 interface CryptoHolding {
   id: number
@@ -267,9 +268,6 @@ function CryptoHoldings() {
   }
 
   // Helper functions
-  const formatCrypto = (amount: number, symbol: string) => {
-    return `${formatNumber(amount)} ${symbol}`
-  }
 
   const convertToBTC = (usdAmount: number): number => {
     const btcPrice = holdings.find(h => h.crypto_symbol === 'BTC')?.current_price_usd || 50000
@@ -603,6 +601,16 @@ function CryptoHoldings() {
             </p>
           </div>
         </div>
+      )}
+
+      {/* Crypto Price Display */}
+      {holdings.length > 0 && (
+        <CryptoPriceDisplay
+          holdings={holdings}
+          priceMode={priceMode}
+          onRefreshPrices={refreshHoldings}
+          loading={refreshing}
+        />
       )}
 
       {/* Main Content */}

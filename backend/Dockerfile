@@ -26,7 +26,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 FROM docker.io/alpine:latest
 
 # Install ca-certificates and wget for health checks
-RUN apk --no-cache add ca-certificates wget
+RUN apk --no-cache add ca-certificates wget tzdata
 
 # Create non-root user
 RUN adduser -D -g '' appuser

@@ -80,17 +80,30 @@ func (s *Server) getNetWorth(c *gin.Context) {
 
 // Helper functions for net worth calculation
 func (s *Server) calculateStockHoldingsValue() float64 {
-	var value float64
+	var stockValue float64
 	query := `
 		SELECT COALESCE(SUM(shares_owned * COALESCE(current_price, 0)), 0) 
 		FROM stock_holdings
 		WHERE current_price > 0
 	`
-	err := s.db.QueryRow(query).Scan(&value)
+	err := s.db.QueryRow(query).Scan(&stockValue)
 	if err != nil {
-		return 0.0
+		stockValue = 0.0
 	}
-	return value
+	
+	// Add brokerage account values from cash_holdings
+	var brokerageValue float64
+	brokerageQuery := `
+		SELECT COALESCE(SUM(current_balance), 0) 
+		FROM cash_holdings
+		WHERE account_type = 'brokerage'
+	`
+	err = s.db.QueryRow(brokerageQuery).Scan(&brokerageValue)
+	if err != nil {
+		brokerageValue = 0.0
+	}
+	
+	return stockValue + brokerageValue
 }
 
 func (s *Server) calculateVestedEquityValue() float64 {
@@ -139,6 +152,7 @@ func (s *Server) calculateCashHoldingsValue() float64 {
 	query := `
 		SELECT COALESCE(SUM(current_balance), 0) 
 		FROM cash_holdings
+		WHERE account_type != 'brokerage'
 	`
 	err := s.db.QueryRow(query).Scan(&value)
 	if err != nil {
