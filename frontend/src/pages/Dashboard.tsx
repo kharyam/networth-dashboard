@@ -6,6 +6,7 @@ import { useTheme } from '@/contexts/ThemeContext'
 import type { NetWorthSummary } from '@/types'
 import MarketStatus from '@/components/MarketStatus'
 import PriceRefreshControls from '@/components/PriceRefreshControls'
+import PassiveIncomeSection from '@/components/PassiveIncomeSection'
 
 // Generate realistic trend data based on current net worth
 const generateTrendData = (currentNetWorth: number) => {
@@ -332,6 +333,9 @@ function Dashboard() {
           />
         </div>
       </div>
+
+      {/* Passive Income Section */}
+      <PassiveIncomeSection />
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

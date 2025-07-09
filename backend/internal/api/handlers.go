@@ -210,6 +210,189 @@ func (s *Server) calculateTotalLiabilities() float64 {
 	return 0.0
 }
 
+// @Summary Get passive income breakdown
+// @Description Calculate and return monthly passive income from various sources including dividends, interest, and rental income
+// @Tags passive-income
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Monthly passive income breakdown with pie chart data"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /passive-income [get]
+func (s *Server) getPassiveIncome(c *gin.Context) {
+	// Calculate passive income from different sources
+	
+	// 1. Cash holdings interest (monthly)
+	cashInterestMonthly := s.calculateCashInterestMonthly()
+	
+	// 2. Stock dividends (monthly average from quarterly)
+	stockDividendsMonthly := s.calculateStockDividendsMonthly()
+	
+	// 3. Real estate rental income (already monthly)
+	realEstateIncomeMonthly := s.calculateRealEstateIncomeMonthly()
+	
+	// 4. Crypto staking income (monthly)
+	cryptoStakingMonthly := s.calculateCryptoStakingMonthly()
+	
+	// Calculate total monthly passive income
+	totalMonthly := cashInterestMonthly + stockDividendsMonthly + realEstateIncomeMonthly + cryptoStakingMonthly
+	
+	// Create income source breakdown for pie chart
+	incomeBreakdown := []gin.H{}
+	
+	if cashInterestMonthly > 0 {
+		incomeBreakdown = append(incomeBreakdown, gin.H{
+			"source": "Cash Interest",
+			"monthly_amount": cashInterestMonthly,
+			"annual_amount": cashInterestMonthly * 12,
+			"percentage": (cashInterestMonthly / totalMonthly) * 100,
+		})
+	}
+	
+	if stockDividendsMonthly > 0 {
+		incomeBreakdown = append(incomeBreakdown, gin.H{
+			"source": "Stock Dividends",
+			"monthly_amount": stockDividendsMonthly,
+			"annual_amount": stockDividendsMonthly * 12,
+			"percentage": (stockDividendsMonthly / totalMonthly) * 100,
+		})
+	}
+	
+	if realEstateIncomeMonthly > 0 {
+		incomeBreakdown = append(incomeBreakdown, gin.H{
+			"source": "Real Estate",
+			"monthly_amount": realEstateIncomeMonthly,
+			"annual_amount": realEstateIncomeMonthly * 12,
+			"percentage": (realEstateIncomeMonthly / totalMonthly) * 100,
+		})
+	}
+	
+	if cryptoStakingMonthly > 0 {
+		incomeBreakdown = append(incomeBreakdown, gin.H{
+			"source": "Crypto Staking",
+			"monthly_amount": cryptoStakingMonthly,
+			"annual_amount": cryptoStakingMonthly * 12,
+			"percentage": (cryptoStakingMonthly / totalMonthly) * 100,
+		})
+	}
+	
+	data := gin.H{
+		"total_monthly_income": totalMonthly,
+		"total_annual_income": totalMonthly * 12,
+		"income_breakdown": incomeBreakdown,
+		"summary": gin.H{
+			"cash_interest_monthly": cashInterestMonthly,
+			"stock_dividends_monthly": stockDividendsMonthly,
+			"real_estate_income_monthly": realEstateIncomeMonthly,
+			"crypto_staking_monthly": cryptoStakingMonthly,
+		},
+		"last_updated": time.Now().Format(time.RFC3339),
+	}
+	
+	c.JSON(http.StatusOK, data)
+}
+
+// Helper functions for passive income calculation
+func (s *Server) calculateCashInterestMonthly() float64 {
+	var totalInterest float64
+	query := `
+		SELECT COALESCE(SUM(current_balance * COALESCE(interest_rate, 0) / 100 / 12), 0)
+		FROM cash_holdings
+		WHERE account_type != 'brokerage' AND interest_rate > 0
+	`
+	err := s.db.QueryRow(query).Scan(&totalInterest)
+	if err != nil {
+		return 0.0
+	}
+	return totalInterest
+}
+
+func (s *Server) calculateStockDividendsMonthly() float64 {
+	var totalDividends float64
+	query := `
+		SELECT COALESCE(SUM(shares_owned * COALESCE(estimated_quarterly_dividend, 0) / 3), 0)
+		FROM stock_holdings
+		WHERE estimated_quarterly_dividend > 0
+	`
+	err := s.db.QueryRow(query).Scan(&totalDividends)
+	if err != nil {
+		return 0.0
+	}
+	return totalDividends
+}
+
+func (s *Server) calculateRealEstateIncomeMonthly() float64 {
+	var totalRentalIncome float64
+	query := `
+		SELECT COALESCE(SUM(rental_income_monthly), 0)
+		FROM real_estate_properties
+		WHERE rental_income_monthly > 0
+	`
+	err := s.db.QueryRow(query).Scan(&totalRentalIncome)
+	if err != nil {
+		return 0.0
+	}
+	return totalRentalIncome
+}
+
+func (s *Server) calculateCryptoStakingMonthly() float64 {
+	var totalStakingIncome float64
+	
+	// Calculation: (balance_tokens * price_usd * staking_annual_percentage / 100 / 12)
+	// Example: 10 ETH * $3,400 * 3.43% / 12 = $34,000 * 0.0343 / 12 = $97.27/month
+	
+	// Debug query to show individual calculations
+	debugQuery := `
+		SELECT ch.crypto_symbol, ch.balance_tokens, COALESCE(cp.price_usd, 0) as price_usd, 
+		       ch.staking_annual_percentage,
+		       (ch.balance_tokens * COALESCE(cp.price_usd, 0) * ch.staking_annual_percentage / 100 / 12) as monthly_income
+		FROM crypto_holdings ch
+		LEFT JOIN crypto_prices cp ON ch.crypto_symbol = cp.symbol
+		AND cp.last_updated = (
+			SELECT MAX(last_updated)
+			FROM crypto_prices cp2
+			WHERE cp2.symbol = ch.crypto_symbol
+		)
+		WHERE ch.staking_annual_percentage > 0
+	`
+	
+	// Log debug information
+	rows, err := s.db.Query(debugQuery)
+	if err == nil {
+		defer rows.Close()
+		fmt.Printf("DEBUG: Crypto staking calculations:\n")
+		for rows.Next() {
+			var symbol string
+			var tokens, price, percentage, monthlyIncome float64
+			if err := rows.Scan(&symbol, &tokens, &price, &percentage, &monthlyIncome); err == nil {
+				fmt.Printf("  %s: %.6f tokens * $%.2f * %.2f%% / 12 = $%.2f/month\n", 
+					symbol, tokens, price, percentage, monthlyIncome)
+			}
+		}
+	}
+	
+	// Main calculation query
+	query := `
+		SELECT COALESCE(SUM(
+			ch.balance_tokens * COALESCE(cp.price_usd, 0) * ch.staking_annual_percentage / 100 / 12
+		), 0)
+		FROM crypto_holdings ch
+		LEFT JOIN crypto_prices cp ON ch.crypto_symbol = cp.symbol
+		AND cp.last_updated = (
+			SELECT MAX(last_updated)
+			FROM crypto_prices cp2
+			WHERE cp2.symbol = ch.crypto_symbol
+		)
+		WHERE ch.staking_annual_percentage > 0
+	`
+	err = s.db.QueryRow(query).Scan(&totalStakingIncome)
+	if err != nil {
+		return 0.0
+	}
+	
+	fmt.Printf("DEBUG: Total crypto staking monthly income: $%.2f\n", totalStakingIncome)
+	return totalStakingIncome
+}
+
 // PriceStatus represents the current status of price data
 type PriceStatus struct {
 	LastUpdated       string `json:"last_updated"`
@@ -459,7 +642,8 @@ func (s *Server) getStockHoldings(c *gin.Context) {
 	query := `
 		SELECT h.id, h.account_id, h.symbol, h.company_name, h.shares_owned, 
 		       h.cost_basis, h.current_price, h.institution_name, h.data_source, h.created_at,
-		       COALESCE(h.shares_owned * h.current_price, 0) as market_value
+		       COALESCE(h.shares_owned * h.current_price, 0) as market_value,
+		       h.estimated_quarterly_dividend, h.purchase_date, h.drip_enabled, h.last_manual_update
 		FROM stock_holdings h
 		ORDER BY h.institution_name, h.symbol
 	`
@@ -476,23 +660,28 @@ func (s *Server) getStockHoldings(c *gin.Context) {
 	holdings := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var holding struct {
-			ID              int      `json:"id"`
-			AccountID       int      `json:"account_id"`
-			Symbol          string   `json:"symbol"`
-			CompanyName     *string  `json:"company_name"`
-			SharesOwned     float64  `json:"shares_owned"`
-			CostBasis       *float64 `json:"cost_basis"`
-			CurrentPrice    *float64 `json:"current_price"`
-			InstitutionName string   `json:"institution_name"`
-			MarketValue     float64  `json:"market_value"`
-			DataSource      string   `json:"data_source"`
-			CreatedAt       string   `json:"created_at"`
+			ID                        int      `json:"id"`
+			AccountID                 int      `json:"account_id"`
+			Symbol                    string   `json:"symbol"`
+			CompanyName               *string  `json:"company_name"`
+			SharesOwned               float64  `json:"shares_owned"`
+			CostBasis                 *float64 `json:"cost_basis"`
+			CurrentPrice              *float64 `json:"current_price"`
+			InstitutionName           string   `json:"institution_name"`
+			MarketValue               float64  `json:"market_value"`
+			DataSource                string   `json:"data_source"`
+			CreatedAt                 string   `json:"created_at"`
+			EstimatedQuarterlyDividend *float64 `json:"estimated_quarterly_dividend"`
+			PurchaseDate              *string  `json:"purchase_date"`
+			DripEnabled               *string  `json:"drip_enabled"`
+			LastManualUpdate          *string  `json:"last_manual_update"`
 		}
 
 		err := rows.Scan(
 			&holding.ID, &holding.AccountID, &holding.Symbol, &holding.CompanyName,
 			&holding.SharesOwned, &holding.CostBasis, &holding.CurrentPrice,
 			&holding.InstitutionName, &holding.DataSource, &holding.CreatedAt, &holding.MarketValue,
+			&holding.EstimatedQuarterlyDividend, &holding.PurchaseDate, &holding.DripEnabled, &holding.LastManualUpdate,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -502,17 +691,21 @@ func (s *Server) getStockHoldings(c *gin.Context) {
 		}
 
 		holdingMap := map[string]interface{}{
-			"id":               holding.ID,
-			"account_id":       holding.AccountID,
-			"symbol":           holding.Symbol,
-			"company_name":     holding.CompanyName,
-			"shares_owned":     holding.SharesOwned,
-			"cost_basis":       holding.CostBasis,
-			"current_price":    holding.CurrentPrice,
-			"institution_name": holding.InstitutionName,
-			"market_value":     holding.MarketValue,
-			"data_source":      holding.DataSource,
-			"created_at":       holding.CreatedAt,
+			"id":                          holding.ID,
+			"account_id":                  holding.AccountID,
+			"symbol":                      holding.Symbol,
+			"company_name":                holding.CompanyName,
+			"shares_owned":                holding.SharesOwned,
+			"cost_basis":                  holding.CostBasis,
+			"current_price":               holding.CurrentPrice,
+			"institution_name":            holding.InstitutionName,
+			"market_value":                holding.MarketValue,
+			"data_source":                 holding.DataSource,
+			"created_at":                  holding.CreatedAt,
+			"estimated_quarterly_dividend": holding.EstimatedQuarterlyDividend,
+			"purchase_date":               holding.PurchaseDate,
+			"drip_enabled":                holding.DripEnabled,
+			"last_manual_update":          holding.LastManualUpdate,
 		}
 		holdings = append(holdings, holdingMap)
 	}
@@ -752,16 +945,66 @@ func (s *Server) createStockHolding(c *gin.Context) {
 // @Produce json
 // @Param id path string true "Stock Holding ID"
 // @Success 200 {object} map[string]interface{} "Stock holding updated successfully"
-// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Summary Update stock holding
+// @Description Update an existing stock holding record
+// @Tags stocks
+// @Accept json
+// @Produce json
+// @Param id path int true "Stock holding ID"
+// @Param holding body map[string]interface{} true "Stock holding data"
+// @Success 200 {object} map[string]interface{} "Updated stock holding"
+// @Failure 400 {object} map[string]interface{} "Invalid request"
 // @Failure 404 {object} map[string]interface{} "Stock holding not found"
 // @Failure 500 {object} map[string]interface{} "Internal server error"
 // @Router /stocks/{id} [put]
 func (s *Server) updateStockHolding(c *gin.Context) {
-	id := c.Param("id")
-	// TODO: Implement stock holding update
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid stock holding ID"})
+		return
+	}
+
+	var updateData map[string]interface{}
+	if err := c.ShouldBindJSON(&updateData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON data"})
+		return
+	}
+
+	// Get the stock holding plugin
+	plugin, err := s.pluginManager.GetPlugin("stock_holding")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Stock holding plugin not available"})
+		return
+	}
+
+	stockPlugin, ok := plugin.(*plugins.StockHoldingPlugin)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid plugin type"})
+		return
+	}
+
+	// Validate the data
+	validation := stockPlugin.ValidateManualEntry(updateData)
+	if !validation.Valid {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Validation failed",
+			"validation_errors": validation.Errors,
+		})
+		return
+	}
+
+	// Update the stock holding
+	err = stockPlugin.UpdateManualEntry(id, validation.Data)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to update stock holding: %v", err)})
+		return
+	}
+
+	// Return updated stock holding
 	c.JSON(http.StatusOK, gin.H{
+		"message": "Stock holding updated successfully",
 		"stock_id": id,
-		"message":  "Update stock holding endpoint - to be implemented",
 	})
 }
 
@@ -1598,7 +1841,7 @@ func (s *Server) getCryptoHoldings(c *gin.Context) {
 	query := `
 		SELECT ch.id, ch.account_id, ch.institution_name, ch.crypto_symbol, 
 		       ch.balance_tokens, ch.purchase_price_usd, ch.purchase_date,
-		       ch.wallet_address, ch.notes, ch.created_at, ch.updated_at,
+		       ch.wallet_address, ch.notes, ch.staking_annual_percentage, ch.created_at, ch.updated_at,
 		       cp.price_usd, cp.price_btc, cp.price_change_24h, cp.last_updated
 		FROM crypto_holdings ch
 		LEFT JOIN crypto_prices cp ON ch.crypto_symbol = cp.symbol
@@ -1622,27 +1865,28 @@ func (s *Server) getCryptoHoldings(c *gin.Context) {
 	holdings := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var holding struct {
-			ID               int      `json:"id"`
-			AccountID        int      `json:"account_id"`
-			InstitutionName  string   `json:"institution_name"`
-			CryptoSymbol     string   `json:"crypto_symbol"`
-			BalanceTokens    float64  `json:"balance_tokens"`
-			PurchasePriceUSD *float64 `json:"purchase_price_usd"`
-			PurchaseDate     *string  `json:"purchase_date"`
-			WalletAddress    *string  `json:"wallet_address"`
-			Notes            *string  `json:"notes"`
-			CreatedAt        string   `json:"created_at"`
-			UpdatedAt        string   `json:"updated_at"`
-			PriceUSD         *float64 `json:"current_price_usd"`
-			PriceBTC         *float64 `json:"current_price_btc"`
-			PriceChange24h   *float64 `json:"price_change_24h"`
-			PriceLastUpdated *string  `json:"price_last_updated"`
+			ID                      int      `json:"id"`
+			AccountID               int      `json:"account_id"`
+			InstitutionName         string   `json:"institution_name"`
+			CryptoSymbol            string   `json:"crypto_symbol"`
+			BalanceTokens           float64  `json:"balance_tokens"`
+			PurchasePriceUSD        *float64 `json:"purchase_price_usd"`
+			PurchaseDate            *string  `json:"purchase_date"`
+			WalletAddress           *string  `json:"wallet_address"`
+			Notes                   *string  `json:"notes"`
+			StakingAnnualPercentage *float64 `json:"staking_annual_percentage"`
+			CreatedAt               string   `json:"created_at"`
+			UpdatedAt               string   `json:"updated_at"`
+			PriceUSD                *float64 `json:"current_price_usd"`
+			PriceBTC                *float64 `json:"current_price_btc"`
+			PriceChange24h          *float64 `json:"price_change_24h"`
+			PriceLastUpdated        *string  `json:"price_last_updated"`
 		}
 
 		err := rows.Scan(
 			&holding.ID, &holding.AccountID, &holding.InstitutionName, &holding.CryptoSymbol,
 			&holding.BalanceTokens, &holding.PurchasePriceUSD, &holding.PurchaseDate,
-			&holding.WalletAddress, &holding.Notes, &holding.CreatedAt, &holding.UpdatedAt,
+			&holding.WalletAddress, &holding.Notes, &holding.StakingAnnualPercentage, &holding.CreatedAt, &holding.UpdatedAt,
 			&holding.PriceUSD, &holding.PriceBTC, &holding.PriceChange24h, &holding.PriceLastUpdated,
 		)
 		if err != nil {
@@ -1660,22 +1904,23 @@ func (s *Server) getCryptoHoldings(c *gin.Context) {
 		}
 
 		holdingMap := map[string]interface{}{
-			"id":                   holding.ID,
-			"account_id":           holding.AccountID,
-			"institution_name":     holding.InstitutionName,
-			"crypto_symbol":        holding.CryptoSymbol,
-			"balance_tokens":       holding.BalanceTokens,
-			"purchase_price_usd":   holding.PurchasePriceUSD,
-			"purchase_date":        holding.PurchaseDate,
-			"wallet_address":       holding.WalletAddress,
-			"notes":                holding.Notes,
-			"created_at":           holding.CreatedAt,
-			"updated_at":           holding.UpdatedAt,
-			"current_price_usd":    holding.PriceUSD,
-			"current_price_btc":    holding.PriceBTC,
-			"current_value_usd":    currentValueUSD,
-			"price_change_24h":     holding.PriceChange24h,
-			"price_last_updated":   holding.PriceLastUpdated,
+			"id":                        holding.ID,
+			"account_id":                holding.AccountID,
+			"institution_name":          holding.InstitutionName,
+			"crypto_symbol":             holding.CryptoSymbol,
+			"balance_tokens":            holding.BalanceTokens,
+			"purchase_price_usd":        holding.PurchasePriceUSD,
+			"purchase_date":             holding.PurchaseDate,
+			"wallet_address":            holding.WalletAddress,
+			"notes":                     holding.Notes,
+			"staking_annual_percentage": holding.StakingAnnualPercentage,
+			"created_at":                holding.CreatedAt,
+			"updated_at":                holding.UpdatedAt,
+			"current_price_usd":         holding.PriceUSD,
+			"current_price_btc":         holding.PriceBTC,
+			"current_value_usd":         currentValueUSD,
+			"price_change_24h":          holding.PriceChange24h,
+			"price_last_updated":        holding.PriceLastUpdated,
 		}
 		holdings = append(holdings, holdingMap)
 	}

@@ -30,6 +30,7 @@ export interface StockHolding {
   market_value?: number
   institution_name: string
   data_source: string
+  estimated_quarterly_dividend?: number
   last_price_update?: string
   last_manual_update?: string
   created_at: string
@@ -235,4 +236,26 @@ export interface CryptoPriceRefreshSummary {
   provider_name: string
   timestamp: string
   duration_ms: number
+}
+
+export interface PassiveIncomeSource {
+  source: string
+  monthly_amount: number
+  annual_amount: number
+  percentage: number
+}
+
+export interface PassiveIncomeSummary {
+  cash_interest_monthly: number
+  stock_dividends_monthly: number
+  real_estate_income_monthly: number
+  crypto_staking_monthly: number
+}
+
+export interface PassiveIncomeData {
+  total_monthly_income: number
+  total_annual_income: number
+  income_breakdown: PassiveIncomeSource[]
+  summary: PassiveIncomeSummary
+  last_updated: string
 }
