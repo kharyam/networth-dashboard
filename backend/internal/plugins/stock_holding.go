@@ -235,6 +235,18 @@ func (p *StockHoldingPlugin) GetManualEntrySchema() ManualEntrySchema {
 				},
 				DefaultValue: "unknown",
 			},
+			{
+				Name:        "is_vested_equity",
+				Type:        "select",
+				Label:       "Source Type",
+				Description: "How these shares were acquired",
+				Required:    false,
+				Options: []FieldOption{
+					{Value: "false", Label: "Regular Purchase"},
+					{Value: "true", Label: "Vested Equity"},
+				},
+				DefaultValue: "false",
+			},
 		},
 	}
 }
@@ -440,6 +452,35 @@ func (p *StockHoldingPlugin) ValidateManualEntry(data map[string]interface{}) Va
 		skipDividend:
 	}
 
+	// Validate optional is_vested_equity
+	var isVestedEquity bool = false
+	if vestedData, exists := data["is_vested_equity"]; exists && vestedData != nil {
+		if vestedStr, ok := vestedData.(string); ok {
+			if vestedStr == "true" {
+				isVestedEquity = true
+			} else if vestedStr == "false" {
+				isVestedEquity = false
+			} else {
+				result.Valid = false
+				result.Errors = append(result.Errors, ValidationError{
+					Field:   "is_vested_equity",
+					Message: "Vested equity flag must be 'true' or 'false'",
+					Code:    "invalid",
+				})
+			}
+		} else if vestedBool, ok := vestedData.(bool); ok {
+			isVestedEquity = vestedBool
+		} else {
+			result.Valid = false
+			result.Errors = append(result.Errors, ValidationError{
+				Field:   "is_vested_equity",
+				Message: "Invalid vested equity flag",
+				Code:    "invalid",
+			})
+		}
+	}
+	data["is_vested_equity"] = isVestedEquity
+
 	result.Data = data
 	return result
 }
@@ -504,19 +545,22 @@ func (p *StockHoldingPlugin) ProcessManualEntry(data map[string]interface{}) err
 		return fmt.Errorf("failed to create unique account for stock holding: %w", err)
 	}
 
+	// Extract vested equity flag from validated data
+	isVestedEquity := data["is_vested_equity"].(bool)
+
 	// Insert stock holding
 	query := `
 		INSERT INTO stock_holdings (
 			account_id, symbol, company_name, shares_owned, cost_basis, 
 			current_price, institution_name, data_source, estimated_quarterly_dividend,
-			purchase_date, drip_enabled, last_manual_update
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			purchase_date, drip_enabled, last_manual_update, is_vested_equity
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 	`
 
 	_, execErr := p.db.Exec(query,
 		uniqueAccountID, symbol, companyName, shares, costBasis,
 		currentPrice, institutionName, "stock_holding", estimatedQuarterlyDividend,
-		purchaseDate, dripEnabled, time.Now(),
+		purchaseDate, dripEnabled, time.Now(), isVestedEquity,
 	)
 
 	if execErr != nil {
@@ -570,6 +614,9 @@ func (p *StockHoldingPlugin) UpdateManualEntry(id int, data map[string]interface
 		}
 	}
 
+	// Extract vested equity flag from validated data
+	isVestedEquity := validation.Data["is_vested_equity"].(bool)
+
 	// Get current market price from price service
 	priceService := services.NewPriceService()
 	currentPrice, err := priceService.GetCurrentPrice(symbol)
@@ -588,14 +635,14 @@ func (p *StockHoldingPlugin) UpdateManualEntry(id int, data map[string]interface
 		UPDATE stock_holdings 
 		SET symbol = $1, company_name = $2, shares_owned = $3, cost_basis = $4, 
 		    current_price = $5, institution_name = $6, last_updated = $7, estimated_quarterly_dividend = $8,
-		    purchase_date = $9, drip_enabled = $10, last_manual_update = $11
-		WHERE id = $12 AND data_source = 'stock_holding'
+		    purchase_date = $9, drip_enabled = $10, last_manual_update = $11, is_vested_equity = $12
+		WHERE id = $13 AND data_source = 'stock_holding'
 	`
 
 	result, err := p.db.Exec(query,
 		symbol, companyName, shares, costBasis,
 		currentPrice, institutionName, time.Now(), estimatedQuarterlyDividend,
-		purchaseDate, dripEnabled, time.Now(), id,
+		purchaseDate, dripEnabled, time.Now(), isVestedEquity, id,
 	)
 
 	if err != nil {

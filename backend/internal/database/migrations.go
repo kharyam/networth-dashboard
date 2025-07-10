@@ -363,6 +363,15 @@ const (
 		CREATE INDEX IF NOT EXISTS idx_crypto_holdings_staking ON crypto_holdings(staking_annual_percentage) WHERE staking_annual_percentage > 0;
 	`
 
+	// Schema update to add vested equity source flag to stock holdings
+	updateStockHoldingsVestedSource = `
+		-- Add is_vested_equity field to stock_holdings table
+		ALTER TABLE stock_holdings ADD COLUMN IF NOT EXISTS is_vested_equity BOOLEAN DEFAULT false;
+		
+		-- Add index for vested equity queries
+		CREATE INDEX IF NOT EXISTS idx_stock_holdings_vested ON stock_holdings(is_vested_equity) WHERE is_vested_equity = true;
+	`
+
 	createIndices = `
 		CREATE INDEX IF NOT EXISTS idx_accounts_data_source ON accounts(data_source_id);
 		CREATE INDEX IF NOT EXISTS idx_account_balances_account ON account_balances(account_id);

@@ -33,6 +33,7 @@ export interface StockHolding {
   estimated_quarterly_dividend?: number
   last_price_update?: string
   last_manual_update?: string
+  is_vested_equity: boolean
   created_at: string
 }
 
