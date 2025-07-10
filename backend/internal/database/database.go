@@ -67,6 +67,7 @@ func (db *DB) runMigrations() error {
 		updateStockHoldingsDividend,
 		updateStockHoldingsAdditionalFields,
 		updateCryptoHoldingsStaking,
+		updateStockHoldingsVestedSource,
 		createIndices,
 		seedAssetCategories,
 	}

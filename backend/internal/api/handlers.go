@@ -84,7 +84,7 @@ func (s *Server) calculateStockHoldingsValue() float64 {
 	query := `
 		SELECT COALESCE(SUM(shares_owned * COALESCE(current_price, 0)), 0) 
 		FROM stock_holdings
-		WHERE current_price > 0
+		WHERE current_price > 0 AND COALESCE(is_vested_equity, false) = false
 	`
 	err := s.db.QueryRow(query).Scan(&stockValue)
 	if err != nil {
@@ -107,17 +107,31 @@ func (s *Server) calculateStockHoldingsValue() float64 {
 }
 
 func (s *Server) calculateVestedEquityValue() float64 {
-	var value float64
+	// Calculate value from equity grants (traditional vested shares)
+	var equityGrantsValue float64
 	query := `
 		SELECT COALESCE(SUM(vested_shares * COALESCE(current_price, 0)), 0) 
 		FROM equity_grants 
 		WHERE current_price > 0 AND vested_shares > 0
 	`
-	err := s.db.QueryRow(query).Scan(&value)
+	err := s.db.QueryRow(query).Scan(&equityGrantsValue)
 	if err != nil {
-		return 0.0
+		equityGrantsValue = 0.0
 	}
-	return value
+	
+	// Calculate value from stock holdings marked as vested equity
+	var vestedStockValue float64
+	vestedStockQuery := `
+		SELECT COALESCE(SUM(shares_owned * COALESCE(current_price, 0)), 0) 
+		FROM stock_holdings 
+		WHERE current_price > 0 AND COALESCE(is_vested_equity, false) = true
+	`
+	err = s.db.QueryRow(vestedStockQuery).Scan(&vestedStockValue)
+	if err != nil {
+		vestedStockValue = 0.0
+	}
+	
+	return equityGrantsValue + vestedStockValue
 }
 
 func (s *Server) calculateUnvestedEquityValue() float64 {
@@ -643,7 +657,8 @@ func (s *Server) getStockHoldings(c *gin.Context) {
 		SELECT h.id, h.account_id, h.symbol, h.company_name, h.shares_owned, 
 		       h.cost_basis, h.current_price, h.institution_name, h.data_source, h.created_at,
 		       COALESCE(h.shares_owned * h.current_price, 0) as market_value,
-		       h.estimated_quarterly_dividend, h.purchase_date, h.drip_enabled, h.last_manual_update
+		       h.estimated_quarterly_dividend, h.purchase_date, h.drip_enabled, h.last_manual_update,
+		       COALESCE(h.is_vested_equity, false) as is_vested_equity
 		FROM stock_holdings h
 		ORDER BY h.institution_name, h.symbol
 	`
@@ -675,6 +690,7 @@ func (s *Server) getStockHoldings(c *gin.Context) {
 			PurchaseDate              *string  `json:"purchase_date"`
 			DripEnabled               *string  `json:"drip_enabled"`
 			LastManualUpdate          *string  `json:"last_manual_update"`
+			IsVestedEquity            bool     `json:"is_vested_equity"`
 		}
 
 		err := rows.Scan(
@@ -682,6 +698,7 @@ func (s *Server) getStockHoldings(c *gin.Context) {
 			&holding.SharesOwned, &holding.CostBasis, &holding.CurrentPrice,
 			&holding.InstitutionName, &holding.DataSource, &holding.CreatedAt, &holding.MarketValue,
 			&holding.EstimatedQuarterlyDividend, &holding.PurchaseDate, &holding.DripEnabled, &holding.LastManualUpdate,
+			&holding.IsVestedEquity,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
