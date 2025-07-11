@@ -180,47 +180,19 @@ type FinancialDataPlugin interface {
 }
 
 // Helper function to get or create an account for a plugin
+// DEPRECATED: This function is no longer used in the new architecture 
+// where each asset table stores institution information directly
 func GetOrCreatePluginAccount(db *sql.DB, accountName, accountType, institution, dataSourceType string) (int, error) {
-	// First try to find existing account
-	var accountID int
-	query := `
-		SELECT id FROM accounts 
-		WHERE account_name = $1 AND institution = $2 AND data_source_type = $3
-	`
-	err := db.QueryRow(query, accountName, institution, dataSourceType).Scan(&accountID)
-
-	if err == nil {
-		// Account exists, return its ID
-		return accountID, nil
-	}
-
-	if err != sql.ErrNoRows {
-		// Real error occurred
-		return 0, fmt.Errorf("error querying account: %w", err)
-	}
-
-	// Account doesn't exist, create it
-	insertQuery := `
-		INSERT INTO accounts (account_name, account_type, institution, data_source_type, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id
-	`
-
-	now := time.Now()
-	err = db.QueryRow(insertQuery, accountName, accountType, institution, dataSourceType, now, now).Scan(&accountID)
-	if err != nil {
-		return 0, fmt.Errorf("error creating account: %w", err)
-	}
-
-	return accountID, nil
+	// This function is deprecated and should not be used
+	// In the new architecture, asset tables store institution information directly
+	return 0, fmt.Errorf("GetOrCreatePluginAccount is deprecated - accounts table no longer exists")
 }
 
 // Helper function to get or create a unique account for each manual entry
+// DEPRECATED: This function is no longer used in the new architecture
 func GetOrCreateUniquePluginAccount(db *sql.DB, baseAccountName, uniqueIdentifier, accountType, institution, dataSourceType string) (int, error) {
-	// Create unique account name by combining base name with identifier
-	accountName := fmt.Sprintf("%s - %s", baseAccountName, uniqueIdentifier)
-	
-	return GetOrCreatePluginAccount(db, accountName, accountType, institution, dataSourceType)
+	// This function is deprecated and should not be used
+	return 0, fmt.Errorf("GetOrCreateUniquePluginAccount is deprecated - accounts table no longer exists")
 }
 
 // Bulk update types

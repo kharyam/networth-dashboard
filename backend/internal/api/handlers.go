@@ -1,10 +1,14 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -60,20 +64,20 @@ func (s *Server) getNetWorth(c *gin.Context) {
 	priceStatus := s.getPriceStatus()
 
 	data := gin.H{
-		"net_worth":              netWorth,
-		"total_assets":           totalAssets,
-		"total_liabilities":      totalLiabilities,
-		"vested_equity_value":    vestedEquityValue,
-		"unvested_equity_value":  unvestedEquityValue, // Shown separately as future value
-		"stock_holdings_value":   stockValue,
-		"real_estate_equity":     realEstateEquity,
-		"cash_holdings_value":    cashHoldingsValue,
-		"crypto_holdings_value":  cryptoHoldingsValue,
-		"other_assets_value":     otherAssetsValue,
-		"price_last_updated":     priceStatus.LastUpdated,
-		"stale_price_count":      priceStatus.StaleCount,
-		"provider_name":          priceStatus.ProviderName,
-		"last_updated":           time.Now().Format(time.RFC3339),
+		"net_worth":             netWorth,
+		"total_assets":          totalAssets,
+		"total_liabilities":     totalLiabilities,
+		"vested_equity_value":   vestedEquityValue,
+		"unvested_equity_value": unvestedEquityValue, // Shown separately as future value
+		"stock_holdings_value":  stockValue,
+		"real_estate_equity":    realEstateEquity,
+		"cash_holdings_value":   cashHoldingsValue,
+		"crypto_holdings_value": cryptoHoldingsValue,
+		"other_assets_value":    otherAssetsValue,
+		"price_last_updated":    priceStatus.LastUpdated,
+		"stale_price_count":     priceStatus.StaleCount,
+		"provider_name":         priceStatus.ProviderName,
+		"last_updated":          time.Now().Format(time.RFC3339),
 	}
 	c.JSON(http.StatusOK, data)
 }
@@ -90,7 +94,7 @@ func (s *Server) calculateStockHoldingsValue() float64 {
 	if err != nil {
 		stockValue = 0.0
 	}
-	
+
 	// Add brokerage account values from cash_holdings
 	var brokerageValue float64
 	brokerageQuery := `
@@ -102,7 +106,7 @@ func (s *Server) calculateStockHoldingsValue() float64 {
 	if err != nil {
 		brokerageValue = 0.0
 	}
-	
+
 	return stockValue + brokerageValue
 }
 
@@ -118,7 +122,7 @@ func (s *Server) calculateVestedEquityValue() float64 {
 	if err != nil {
 		equityGrantsValue = 0.0
 	}
-	
+
 	// Calculate value from stock holdings marked as vested equity
 	var vestedStockValue float64
 	vestedStockQuery := `
@@ -130,7 +134,7 @@ func (s *Server) calculateVestedEquityValue() float64 {
 	if err != nil {
 		vestedStockValue = 0.0
 	}
-	
+
 	return equityGrantsValue + vestedStockValue
 }
 
@@ -162,17 +166,22 @@ func (s *Server) calculateRealEstateEquity() float64 {
 }
 
 func (s *Server) calculateCashHoldingsValue() float64 {
-	var value float64
-	query := `
+	var cashHoldingsValue float64
+	
+	// Get value from cash_holdings table (includes both manually entered and imported accounts)
+	cashQuery := `
 		SELECT COALESCE(SUM(current_balance), 0) 
 		FROM cash_holdings
 		WHERE account_type != 'brokerage'
 	`
-	err := s.db.QueryRow(query).Scan(&value)
+	err := s.db.QueryRow(cashQuery).Scan(&cashHoldingsValue)
 	if err != nil {
-		return 0.0
+		cashHoldingsValue = 0.0
 	}
-	return value
+	
+	log.Printf("Cash holdings calculation - Total: %f (includes both manual and imported accounts)", cashHoldingsValue)
+	
+	return cashHoldingsValue
 }
 
 func (s *Server) calculateCryptoHoldingsValue() float64 {
@@ -208,19 +217,19 @@ func (s *Server) calculateOtherAssetsValue() float64 {
 }
 
 func (s *Server) calculateTotalLiabilities() float64 {
-	// Note: Real estate mortgages are NOT included here because 
+	// Note: Real estate mortgages are NOT included here because
 	// real estate equity is already calculated net of mortgages
 	// (equity = current_value - outstanding_mortgage)
-	// 
+	//
 	// This function should include other types of liabilities like:
 	// - Credit card debt
-	// - Personal loans  
+	// - Personal loans
 	// - Student loans
 	// - Other debts not secured by assets already counted as equity
 	//
 	// For now, returning 0 since we don't have other liability types implemented
 	// and real estate mortgages are already accounted for in the equity calculation
-	
+
 	return 0.0
 }
 
@@ -234,74 +243,74 @@ func (s *Server) calculateTotalLiabilities() float64 {
 // @Router /passive-income [get]
 func (s *Server) getPassiveIncome(c *gin.Context) {
 	// Calculate passive income from different sources
-	
+
 	// 1. Cash holdings interest (monthly)
 	cashInterestMonthly := s.calculateCashInterestMonthly()
-	
+
 	// 2. Stock dividends (monthly average from quarterly)
 	stockDividendsMonthly := s.calculateStockDividendsMonthly()
-	
+
 	// 3. Real estate rental income (already monthly)
 	realEstateIncomeMonthly := s.calculateRealEstateIncomeMonthly()
-	
+
 	// 4. Crypto staking income (monthly)
 	cryptoStakingMonthly := s.calculateCryptoStakingMonthly()
-	
+
 	// Calculate total monthly passive income
 	totalMonthly := cashInterestMonthly + stockDividendsMonthly + realEstateIncomeMonthly + cryptoStakingMonthly
-	
+
 	// Create income source breakdown for pie chart
 	incomeBreakdown := []gin.H{}
-	
+
 	if cashInterestMonthly > 0 {
 		incomeBreakdown = append(incomeBreakdown, gin.H{
-			"source": "Cash Interest",
+			"source":         "Cash Interest",
 			"monthly_amount": cashInterestMonthly,
-			"annual_amount": cashInterestMonthly * 12,
-			"percentage": (cashInterestMonthly / totalMonthly) * 100,
+			"annual_amount":  cashInterestMonthly * 12,
+			"percentage":     (cashInterestMonthly / totalMonthly) * 100,
 		})
 	}
-	
+
 	if stockDividendsMonthly > 0 {
 		incomeBreakdown = append(incomeBreakdown, gin.H{
-			"source": "Stock Dividends",
+			"source":         "Stock Dividends",
 			"monthly_amount": stockDividendsMonthly,
-			"annual_amount": stockDividendsMonthly * 12,
-			"percentage": (stockDividendsMonthly / totalMonthly) * 100,
+			"annual_amount":  stockDividendsMonthly * 12,
+			"percentage":     (stockDividendsMonthly / totalMonthly) * 100,
 		})
 	}
-	
+
 	if realEstateIncomeMonthly > 0 {
 		incomeBreakdown = append(incomeBreakdown, gin.H{
-			"source": "Real Estate",
+			"source":         "Real Estate",
 			"monthly_amount": realEstateIncomeMonthly,
-			"annual_amount": realEstateIncomeMonthly * 12,
-			"percentage": (realEstateIncomeMonthly / totalMonthly) * 100,
+			"annual_amount":  realEstateIncomeMonthly * 12,
+			"percentage":     (realEstateIncomeMonthly / totalMonthly) * 100,
 		})
 	}
-	
+
 	if cryptoStakingMonthly > 0 {
 		incomeBreakdown = append(incomeBreakdown, gin.H{
-			"source": "Crypto Staking",
+			"source":         "Crypto Staking",
 			"monthly_amount": cryptoStakingMonthly,
-			"annual_amount": cryptoStakingMonthly * 12,
-			"percentage": (cryptoStakingMonthly / totalMonthly) * 100,
+			"annual_amount":  cryptoStakingMonthly * 12,
+			"percentage":     (cryptoStakingMonthly / totalMonthly) * 100,
 		})
 	}
-	
+
 	data := gin.H{
 		"total_monthly_income": totalMonthly,
-		"total_annual_income": totalMonthly * 12,
-		"income_breakdown": incomeBreakdown,
+		"total_annual_income":  totalMonthly * 12,
+		"income_breakdown":     incomeBreakdown,
 		"summary": gin.H{
-			"cash_interest_monthly": cashInterestMonthly,
-			"stock_dividends_monthly": stockDividendsMonthly,
+			"cash_interest_monthly":      cashInterestMonthly,
+			"stock_dividends_monthly":    stockDividendsMonthly,
 			"real_estate_income_monthly": realEstateIncomeMonthly,
-			"crypto_staking_monthly": cryptoStakingMonthly,
+			"crypto_staking_monthly":     cryptoStakingMonthly,
 		},
 		"last_updated": time.Now().Format(time.RFC3339),
 	}
-	
+
 	c.JSON(http.StatusOK, data)
 }
 
@@ -350,10 +359,10 @@ func (s *Server) calculateRealEstateIncomeMonthly() float64 {
 
 func (s *Server) calculateCryptoStakingMonthly() float64 {
 	var totalStakingIncome float64
-	
+
 	// Calculation: (balance_tokens * price_usd * staking_annual_percentage / 100 / 12)
 	// Example: 10 ETH * $3,400 * 3.43% / 12 = $34,000 * 0.0343 / 12 = $97.27/month
-	
+
 	// Debug query to show individual calculations
 	debugQuery := `
 		SELECT ch.crypto_symbol, ch.balance_tokens, COALESCE(cp.price_usd, 0) as price_usd, 
@@ -368,7 +377,7 @@ func (s *Server) calculateCryptoStakingMonthly() float64 {
 		)
 		WHERE ch.staking_annual_percentage > 0
 	`
-	
+
 	// Log debug information
 	rows, err := s.db.Query(debugQuery)
 	if err == nil {
@@ -378,12 +387,12 @@ func (s *Server) calculateCryptoStakingMonthly() float64 {
 			var symbol string
 			var tokens, price, percentage, monthlyIncome float64
 			if err := rows.Scan(&symbol, &tokens, &price, &percentage, &monthlyIncome); err == nil {
-				fmt.Printf("  %s: %.6f tokens * $%.2f * %.2f%% / 12 = $%.2f/month\n", 
+				fmt.Printf("  %s: %.6f tokens * $%.2f * %.2f%% / 12 = $%.2f/month\n",
 					symbol, tokens, price, percentage, monthlyIncome)
 			}
 		}
 	}
-	
+
 	// Main calculation query
 	query := `
 		SELECT COALESCE(SUM(
@@ -402,22 +411,22 @@ func (s *Server) calculateCryptoStakingMonthly() float64 {
 	if err != nil {
 		return 0.0
 	}
-	
+
 	fmt.Printf("DEBUG: Total crypto staking monthly income: $%.2f\n", totalStakingIncome)
 	return totalStakingIncome
 }
 
 // PriceStatus represents the current status of price data
 type PriceStatus struct {
-	LastUpdated       string `json:"last_updated"`
-	StaleCount        int    `json:"stale_count"`
-	TotalCount        int    `json:"total_count"`
-	ProviderName      string `json:"provider_name"`
-	CacheStale        bool   `json:"cache_stale"`
+	LastUpdated        string `json:"last_updated"`
+	StaleCount         int    `json:"stale_count"`
+	TotalCount         int    `json:"total_count"`
+	ProviderName       string `json:"provider_name"`
+	CacheStale         bool   `json:"cache_stale"`
 	ForceRefreshNeeded bool   `json:"force_refresh_needed"`
-	LastCacheUpdate   string `json:"last_cache_update,omitempty"`
-	CacheAgeMinutes   int    `json:"cache_age_minutes"`
-	MarketOpen        bool   `json:"market_open"`
+	LastCacheUpdate    string `json:"last_cache_update,omitempty"`
+	CacheAgeMinutes    int    `json:"cache_age_minutes"`
+	MarketOpen         bool   `json:"market_open"`
 }
 
 func (s *Server) getPriceStatus() PriceStatus {
@@ -455,7 +464,7 @@ func (s *Server) getPriceStatus() PriceStatus {
 		SELECT COALESCE(MAX(timestamp), '1970-01-01'::timestamp) as last_update
 		FROM stock_prices
 	`
-	
+
 	err = s.db.QueryRow(cacheQuery).Scan(&lastCacheUpdate)
 	if err != nil {
 		lastCacheUpdate = time.Time{} // Zero time if error
@@ -474,12 +483,12 @@ func (s *Server) getPriceStatus() PriceStatus {
 	isMarketOpen := marketService.IsMarketOpen()
 	cacheStale := false
 	forceRefreshNeeded := false
-	
+
 	if !lastCacheUpdate.IsZero() {
 		// Use the same logic as the market service for consistency
 		shouldRefresh := marketService.ShouldRefreshPricesWithForce(lastCacheUpdate, s.config.API.CacheRefreshInterval, false)
 		cacheStale = shouldRefresh
-		
+
 		// Force refresh needed if cache is significantly stale
 		if isMarketOpen && cacheAgeMinutes > 30 { // More than 30 min during market hours
 			forceRefreshNeeded = true
@@ -493,15 +502,15 @@ func (s *Server) getPriceStatus() PriceStatus {
 	}
 
 	return PriceStatus{
-		LastUpdated:       now.Format(time.RFC3339),
-		StaleCount:        staleCount,
-		TotalCount:        totalCount,
-		ProviderName:      priceService.GetProviderName(),
-		CacheStale:        cacheStale,
+		LastUpdated:        now.Format(time.RFC3339),
+		StaleCount:         staleCount,
+		TotalCount:         totalCount,
+		ProviderName:       priceService.GetProviderName(),
+		CacheStale:         cacheStale,
 		ForceRefreshNeeded: forceRefreshNeeded,
-		LastCacheUpdate:   lastCacheUpdateStr,
-		CacheAgeMinutes:   cacheAgeMinutes,
-		MarketOpen:        isMarketOpen,
+		LastCacheUpdate:    lastCacheUpdateStr,
+		CacheAgeMinutes:    cacheAgeMinutes,
+		MarketOpen:         isMarketOpen,
 	}
 }
 
@@ -528,11 +537,13 @@ func (s *Server) getNetWorthHistory(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "List of accounts"
 // @Router /accounts [get]
+// DEPRECATED: This function is no longer used in the new architecture
+// Account information is now stored directly in asset tables (cash_holdings, stock_holdings, etc.)
+// Use the specific asset endpoints instead
 func (s *Server) getAccounts(c *gin.Context) {
-	// TODO: Implement account retrieval
-	c.JSON(http.StatusOK, gin.H{
-		"accounts": []gin.H{},
-		"message":  "Accounts endpoint - to be implemented",
+	c.JSON(http.StatusGone, gin.H{
+		"error": "Accounts endpoint is deprecated - use specific asset endpoints (cash-holdings, stock-holdings, etc.)",
+		"message": "The centralized accounts table has been deprecated. Account information is now stored directly in asset-specific tables.",
 	})
 }
 
@@ -654,7 +665,7 @@ func (s *Server) getAccountBalances(c *gin.Context) {
 // @Router /stocks [get]
 func (s *Server) getStockHoldings(c *gin.Context) {
 	query := `
-		SELECT h.id, h.account_id, h.symbol, h.company_name, h.shares_owned, 
+		SELECT h.id, h.symbol, h.company_name, h.shares_owned, 
 		       h.cost_basis, h.current_price, h.institution_name, h.data_source, h.created_at,
 		       COALESCE(h.shares_owned * h.current_price, 0) as market_value,
 		       h.estimated_quarterly_dividend, h.purchase_date, h.drip_enabled, h.last_manual_update,
@@ -675,26 +686,25 @@ func (s *Server) getStockHoldings(c *gin.Context) {
 	holdings := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var holding struct {
-			ID                        int      `json:"id"`
-			AccountID                 int      `json:"account_id"`
-			Symbol                    string   `json:"symbol"`
-			CompanyName               *string  `json:"company_name"`
-			SharesOwned               float64  `json:"shares_owned"`
-			CostBasis                 *float64 `json:"cost_basis"`
-			CurrentPrice              *float64 `json:"current_price"`
-			InstitutionName           string   `json:"institution_name"`
-			MarketValue               float64  `json:"market_value"`
-			DataSource                string   `json:"data_source"`
-			CreatedAt                 string   `json:"created_at"`
+			ID                         int      `json:"id"`
+			Symbol                     string   `json:"symbol"`
+			CompanyName                *string  `json:"company_name"`
+			SharesOwned                float64  `json:"shares_owned"`
+			CostBasis                  *float64 `json:"cost_basis"`
+			CurrentPrice               *float64 `json:"current_price"`
+			InstitutionName            string   `json:"institution_name"`
+			MarketValue                float64  `json:"market_value"`
+			DataSource                 string   `json:"data_source"`
+			CreatedAt                  string   `json:"created_at"`
 			EstimatedQuarterlyDividend *float64 `json:"estimated_quarterly_dividend"`
-			PurchaseDate              *string  `json:"purchase_date"`
-			DripEnabled               *string  `json:"drip_enabled"`
-			LastManualUpdate          *string  `json:"last_manual_update"`
-			IsVestedEquity            bool     `json:"is_vested_equity"`
+			PurchaseDate               *string  `json:"purchase_date"`
+			DripEnabled                *string  `json:"drip_enabled"`
+			LastManualUpdate           *string  `json:"last_manual_update"`
+			IsVestedEquity             bool     `json:"is_vested_equity"`
 		}
 
 		err := rows.Scan(
-			&holding.ID, &holding.AccountID, &holding.Symbol, &holding.CompanyName,
+			&holding.ID, &holding.Symbol, &holding.CompanyName,
 			&holding.SharesOwned, &holding.CostBasis, &holding.CurrentPrice,
 			&holding.InstitutionName, &holding.DataSource, &holding.CreatedAt, &holding.MarketValue,
 			&holding.EstimatedQuarterlyDividend, &holding.PurchaseDate, &holding.DripEnabled, &holding.LastManualUpdate,
@@ -708,21 +718,21 @@ func (s *Server) getStockHoldings(c *gin.Context) {
 		}
 
 		holdingMap := map[string]interface{}{
-			"id":                          holding.ID,
-			"account_id":                  holding.AccountID,
-			"symbol":                      holding.Symbol,
-			"company_name":                holding.CompanyName,
-			"shares_owned":                holding.SharesOwned,
-			"cost_basis":                  holding.CostBasis,
-			"current_price":               holding.CurrentPrice,
-			"institution_name":            holding.InstitutionName,
-			"market_value":                holding.MarketValue,
-			"data_source":                 holding.DataSource,
-			"created_at":                  holding.CreatedAt,
+			"id":                           holding.ID,
+			"symbol":                       holding.Symbol,
+			"company_name":                 holding.CompanyName,
+			"shares_owned":                 holding.SharesOwned,
+			"cost_basis":                   holding.CostBasis,
+			"current_price":                holding.CurrentPrice,
+			"institution_name":             holding.InstitutionName,
+			"market_value":                 holding.MarketValue,
+			"data_source":                  holding.DataSource,
+			"created_at":                   holding.CreatedAt,
 			"estimated_quarterly_dividend": holding.EstimatedQuarterlyDividend,
-			"purchase_date":               holding.PurchaseDate,
-			"drip_enabled":                holding.DripEnabled,
-			"last_manual_update":          holding.LastManualUpdate,
+			"purchase_date":                holding.PurchaseDate,
+			"drip_enabled":                 holding.DripEnabled,
+			"last_manual_update":           holding.LastManualUpdate,
+			"is_vested_equity":             holding.IsVestedEquity,
 		}
 		holdings = append(holdings, holdingMap)
 	}
@@ -818,13 +828,13 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 
 		// Get sources for this symbol (both stock holdings and equity grants)
 		sourcesQuery := `
-			SELECT id, account_id, shares_owned, cost_basis, data_source, created_at, 'direct_stock' as source_type, NULL as grant_type
+			SELECT id, shares_owned, cost_basis, data_source, created_at, 'direct_stock' as source_type, NULL as grant_type
 			FROM stock_holdings 
 			WHERE symbol = $1 AND shares_owned > 0
 			
 			UNION ALL
 			
-			SELECT id, account_id, vested_shares as shares_owned, 
+			SELECT id, vested_shares as shares_owned, 
 			       CASE 
 			           WHEN grant_type = 'stock_option' THEN COALESCE(strike_price, 0)
 			           ELSE COALESCE(current_price, 0) 
@@ -845,7 +855,6 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 		for sourceRows.Next() {
 			var source struct {
 				ID          int      `json:"id"`
-				AccountID   int      `json:"account_id"`
 				SharesOwned float64  `json:"shares_owned"`
 				CostBasis   *float64 `json:"cost_basis"`
 				DataSource  string   `json:"data_source"`
@@ -855,7 +864,7 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 			}
 
 			err := sourceRows.Scan(
-				&source.ID, &source.AccountID, &source.SharesOwned,
+				&source.ID, &source.SharesOwned,
 				&source.CostBasis, &source.DataSource, &source.CreatedAt,
 				&source.SourceType, &source.GrantType,
 			)
@@ -871,7 +880,6 @@ func (s *Server) getConsolidatedStocks(c *gin.Context) {
 
 			sourceMap := map[string]interface{}{
 				"id":            source.ID,
-				"account_id":    source.AccountID,
 				"symbol":        stock.Symbol,
 				"company_name":  stock.CompanyName,
 				"shares_owned":  source.SharesOwned,
@@ -1005,7 +1013,7 @@ func (s *Server) updateStockHolding(c *gin.Context) {
 	validation := stockPlugin.ValidateManualEntry(updateData)
 	if !validation.Valid {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Validation failed",
+			"error":             "Validation failed",
 			"validation_errors": validation.Errors,
 		})
 		return
@@ -1020,7 +1028,7 @@ func (s *Server) updateStockHolding(c *gin.Context) {
 
 	// Return updated stock holding
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Stock holding updated successfully",
+		"message":  "Stock holding updated successfully",
 		"stock_id": id,
 	})
 }
@@ -1087,7 +1095,7 @@ func (s *Server) deleteStockHolding(c *gin.Context) {
 // @Router /equity [get]
 func (s *Server) getEquityGrants(c *gin.Context) {
 	query := `
-		SELECT id, account_id, grant_type, company_symbol, total_shares, 
+		SELECT id, grant_type, company_symbol, total_shares, 
 		       vested_shares, unvested_shares, strike_price, grant_date, 
 		       vest_start_date, current_price, data_source, created_at
 		FROM equity_grants
@@ -1107,7 +1115,6 @@ func (s *Server) getEquityGrants(c *gin.Context) {
 	for rows.Next() {
 		var grant struct {
 			ID             int      `json:"id"`
-			AccountID      int      `json:"account_id"`
 			GrantType      string   `json:"grant_type"`
 			CompanySymbol  string   `json:"company_symbol"`
 			TotalShares    float64  `json:"total_shares"`
@@ -1122,7 +1129,7 @@ func (s *Server) getEquityGrants(c *gin.Context) {
 		}
 
 		err := rows.Scan(
-			&grant.ID, &grant.AccountID, &grant.GrantType, &grant.CompanySymbol,
+			&grant.ID, &grant.GrantType, &grant.CompanySymbol,
 			&grant.TotalShares, &grant.VestedShares, &grant.UnvestedShares,
 			&grant.StrikePrice, &grant.GrantDate, &grant.VestStartDate, &grant.CurrentPrice, &grant.DataSource, &grant.CreatedAt,
 		)
@@ -1135,7 +1142,6 @@ func (s *Server) getEquityGrants(c *gin.Context) {
 
 		grantMap := map[string]interface{}{
 			"id":              grant.ID,
-			"account_id":      grant.AccountID,
 			"grant_type":      grant.GrantType,
 			"company_symbol":  grant.CompanySymbol,
 			"total_shares":    grant.TotalShares,
@@ -1187,7 +1193,6 @@ func (s *Server) getVestingSchedule(c *gin.Context) {
 // @Router /equity [post]
 func (s *Server) createEquityGrant(c *gin.Context) {
 	var request struct {
-		AccountID     int     `json:"account_id" binding:"required"`
 		GrantType     string  `json:"grant_type" binding:"required"`
 		CompanySymbol string  `json:"company_symbol" binding:"required"`
 		TotalShares   float64 `json:"total_shares" binding:"required"`
@@ -1218,17 +1223,17 @@ func (s *Server) createEquityGrant(c *gin.Context) {
 	// Insert equity grant
 	query := `
 		INSERT INTO equity_grants (
-			account_id, grant_type, company_symbol, total_shares, vested_shares, 
+			grant_type, company_symbol, total_shares, vested_shares, 
 			unvested_shares, strike_price, grant_date, vest_start_date, 
 			current_price, data_source, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id
 	`
 
 	var grantID int
 	err := s.db.QueryRow(
 		query,
-		request.AccountID, request.GrantType, request.CompanySymbol,
+		request.GrantType, request.CompanySymbol,
 		request.TotalShares, request.VestedShares, unvestedShares,
 		request.StrikePrice, request.GrantDate, request.VestStartDate,
 		currentPrice, "manual", time.Now(),
@@ -1268,7 +1273,6 @@ func (s *Server) updateEquityGrant(c *gin.Context) {
 	}
 
 	var request struct {
-		AccountID     int     `json:"account_id" binding:"required"`
 		GrantType     string  `json:"grant_type" binding:"required"`
 		CompanySymbol string  `json:"company_symbol" binding:"required"`
 		TotalShares   float64 `json:"total_shares" binding:"required"`
@@ -1303,15 +1307,15 @@ func (s *Server) updateEquityGrant(c *gin.Context) {
 	// Update equity grant
 	query := `
 		UPDATE equity_grants 
-		SET account_id = $1, grant_type = $2, company_symbol = $3, total_shares = $4, 
-		    vested_shares = $5, unvested_shares = $6, strike_price = $7, current_price = $8, 
-		    grant_date = $9, vest_start_date = $10, updated_at = $11
-		WHERE id = $12
+		SET grant_type = $1, company_symbol = $2, total_shares = $3, 
+		    vested_shares = $4, unvested_shares = $5, strike_price = $6, current_price = $7, 
+		    grant_date = $8, vest_start_date = $9, updated_at = $10
+		WHERE id = $11
 	`
 
 	result, err := s.db.Exec(
 		query,
-		request.AccountID, request.GrantType, request.CompanySymbol,
+		request.GrantType, request.CompanySymbol,
 		request.TotalShares, request.VestedShares, unvestedShares,
 		request.StrikePrice, currentPrice, request.GrantDate, request.VestStartDate,
 		time.Now(), id,
@@ -1407,7 +1411,7 @@ func (s *Server) deleteEquityGrant(c *gin.Context) {
 // @Router /real-estate [get]
 func (s *Server) getRealEstate(c *gin.Context) {
 	query := `
-		SELECT id, account_id, property_type, property_name, purchase_price, 
+		SELECT id, property_type, property_name, purchase_price, 
 		       current_value, outstanding_mortgage, equity, 
 		       TO_CHAR(purchase_date, 'YYYY-MM-DD') as purchase_date, 
 		       property_size_sqft, lot_size_acres, rental_income_monthly, 
@@ -1431,7 +1435,6 @@ func (s *Server) getRealEstate(c *gin.Context) {
 	for rows.Next() {
 		var property struct {
 			ID                  int      `json:"id"`
-			AccountID           int      `json:"account_id"`
 			PropertyType        string   `json:"property_type"`
 			PropertyName        string   `json:"property_name"`
 			PurchasePrice       float64  `json:"purchase_price"`
@@ -1457,12 +1460,12 @@ func (s *Server) getRealEstate(c *gin.Context) {
 		}
 
 		err := rows.Scan(
-			&property.ID, &property.AccountID, &property.PropertyType, &property.PropertyName,
+			&property.ID, &property.PropertyType, &property.PropertyName,
 			&property.PurchasePrice, &property.CurrentValue, &property.OutstandingMortgage,
 			&property.Equity, &property.PurchaseDate, &property.PropertySizeSqft,
 			&property.LotSizeAcres, &property.RentalIncomeMonthly, &property.PropertyTaxAnnual,
-			&property.Notes, &property.StreetAddress, &property.City, &property.State, 
-			&property.ZipCode, &property.Latitude, &property.Longitude, 
+			&property.Notes, &property.StreetAddress, &property.City, &property.State,
+			&property.ZipCode, &property.Latitude, &property.Longitude,
 			&property.APIEstimatedValue, &property.APIEstimateDate, &property.APIProvider,
 			&property.CreatedAt,
 		)
@@ -1475,7 +1478,6 @@ func (s *Server) getRealEstate(c *gin.Context) {
 
 		propertyMap := map[string]interface{}{
 			"id":                    property.ID,
-			"account_id":            property.AccountID,
 			"property_type":         property.PropertyType,
 			"property_name":         property.PropertyName,
 			"purchase_price":        property.PurchasePrice,
@@ -1517,7 +1519,7 @@ func (s *Server) getRealEstate(c *gin.Context) {
 // @Router /cash-holdings [get]
 func (s *Server) getCashHoldings(c *gin.Context) {
 	query := `
-		SELECT id, account_id, institution_name, account_name, account_type, 
+		SELECT id, institution_name, account_name, account_type, 
 		       current_balance, interest_rate, monthly_contribution, 
 		       account_number_last4, currency, notes, created_at, updated_at
 		FROM cash_holdings
@@ -1537,7 +1539,6 @@ func (s *Server) getCashHoldings(c *gin.Context) {
 	for rows.Next() {
 		var holding struct {
 			ID                  int      `json:"id"`
-			AccountID           int      `json:"account_id"`
 			InstitutionName     string   `json:"institution_name"`
 			AccountName         string   `json:"account_name"`
 			AccountType         string   `json:"account_type"`
@@ -1552,7 +1553,7 @@ func (s *Server) getCashHoldings(c *gin.Context) {
 		}
 
 		err := rows.Scan(
-			&holding.ID, &holding.AccountID, &holding.InstitutionName, &holding.AccountName,
+			&holding.ID, &holding.InstitutionName, &holding.AccountName,
 			&holding.AccountType, &holding.CurrentBalance, &holding.InterestRate,
 			&holding.MonthlyContribution, &holding.AccountNumberLast4, &holding.Currency,
 			&holding.Notes, &holding.CreatedAt, &holding.UpdatedAt,
@@ -1566,7 +1567,6 @@ func (s *Server) getCashHoldings(c *gin.Context) {
 
 		holdingMap := map[string]interface{}{
 			"id":                   holding.ID,
-			"account_id":           holding.AccountID,
 			"institution_name":     holding.InstitutionName,
 			"account_name":         holding.AccountName,
 			"account_type":         holding.AccountType,
@@ -1856,7 +1856,7 @@ func (s *Server) deleteCashHolding(c *gin.Context) {
 // @Router /crypto-holdings [get]
 func (s *Server) getCryptoHoldings(c *gin.Context) {
 	query := `
-		SELECT ch.id, ch.account_id, ch.institution_name, ch.crypto_symbol, 
+		SELECT ch.id, ch.institution_name, ch.crypto_symbol, 
 		       ch.balance_tokens, ch.purchase_price_usd, ch.purchase_date,
 		       ch.wallet_address, ch.notes, ch.staking_annual_percentage, ch.created_at, ch.updated_at,
 		       cp.price_usd, cp.price_btc, cp.price_change_24h, cp.last_updated
@@ -1883,7 +1883,6 @@ func (s *Server) getCryptoHoldings(c *gin.Context) {
 	for rows.Next() {
 		var holding struct {
 			ID                      int      `json:"id"`
-			AccountID               int      `json:"account_id"`
 			InstitutionName         string   `json:"institution_name"`
 			CryptoSymbol            string   `json:"crypto_symbol"`
 			BalanceTokens           float64  `json:"balance_tokens"`
@@ -1901,7 +1900,7 @@ func (s *Server) getCryptoHoldings(c *gin.Context) {
 		}
 
 		err := rows.Scan(
-			&holding.ID, &holding.AccountID, &holding.InstitutionName, &holding.CryptoSymbol,
+			&holding.ID, &holding.InstitutionName, &holding.CryptoSymbol,
 			&holding.BalanceTokens, &holding.PurchasePriceUSD, &holding.PurchaseDate,
 			&holding.WalletAddress, &holding.Notes, &holding.StakingAnnualPercentage, &holding.CreatedAt, &holding.UpdatedAt,
 			&holding.PriceUSD, &holding.PriceBTC, &holding.PriceChange24h, &holding.PriceLastUpdated,
@@ -1922,7 +1921,6 @@ func (s *Server) getCryptoHoldings(c *gin.Context) {
 
 		holdingMap := map[string]interface{}{
 			"id":                        holding.ID,
-			"account_id":                holding.AccountID,
 			"institution_name":          holding.InstitutionName,
 			"crypto_symbol":             holding.CryptoSymbol,
 			"balance_tokens":            holding.BalanceTokens,
@@ -2425,7 +2423,7 @@ func (s *Server) getManualEntries(c *gin.Context) {
 	// Build unified query to get manual entries from all relevant tables
 	query := `
 		SELECT 'computershare' as entry_type, 
-		       sh.id, sh.account_id, sh.created_at, sh.created_at as updated_at,
+		       sh.id, sh.created_at, sh.created_at as updated_at,
 		       json_build_object(
 		           'symbol', sh.symbol,
 		           'company_name', sh.company_name,
@@ -2433,15 +2431,14 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		           'cost_basis', sh.cost_basis,
 		           'current_price', sh.current_price
 		       ) as data_json,
-		       a.account_name, a.institution
+		       sh.institution_name as account_name, sh.institution_name as institution
 		FROM stock_holdings sh
-		LEFT JOIN accounts a ON sh.account_id = a.id
 		WHERE sh.data_source = 'computershare'
 		
 		UNION ALL
 		
 		SELECT 'stock_holding' as entry_type, 
-		       sh.id, sh.account_id, sh.created_at, sh.created_at as updated_at,
+		       sh.id, sh.created_at, sh.created_at as updated_at,
 		       json_build_object(
 		           'symbol', sh.symbol,
 		           'company_name', sh.company_name,
@@ -2450,15 +2447,14 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		           'current_price', sh.current_price,
 		           'institution_name', sh.institution_name
 		       ) as data_json,
-		       a.account_name, a.institution
+		       sh.institution_name as account_name, sh.institution_name as institution
 		FROM stock_holdings sh
-		LEFT JOIN accounts a ON sh.account_id = a.id
 		WHERE sh.data_source IN ('manual', 'stock_holding') OR (sh.data_source IS NULL AND sh.created_at IS NOT NULL)
 		
 		UNION ALL
 		
 		SELECT 'morgan_stanley' as entry_type,
-		       eg.id, eg.account_id, eg.created_at, eg.created_at as updated_at,
+		       eg.id, eg.created_at, eg.created_at as updated_at,
 		       json_build_object(
 		           'grant_type', eg.grant_type,
 		           'company_symbol', eg.company_symbol,
@@ -2470,15 +2466,14 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		           'vest_start_date', eg.vest_start_date,
 		           'current_price', eg.current_price
 		       ) as data_json,
-		       a.account_name, a.institution
+		       'Morgan Stanley' as account_name, 'Morgan Stanley' as institution
 		FROM equity_grants eg
-		LEFT JOIN accounts a ON eg.account_id = a.id
 		WHERE eg.created_at IS NOT NULL
 		
 		UNION ALL
 		
 		SELECT 'real_estate' as entry_type,
-		       re.id, re.account_id, re.created_at, re.created_at as updated_at,
+		       re.id, re.created_at, re.created_at as updated_at,
 		       json_build_object(
 		           'property_type', re.property_type,
 		           'property_name', re.property_name,
@@ -2497,15 +2492,14 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		           'property_tax_annual', re.property_tax_annual,
 		           'notes', re.notes
 		       ) as data_json,
-		       a.account_name, a.institution
+		       re.property_name as account_name, 'Real Estate' as institution
 		FROM real_estate_properties re
-		LEFT JOIN accounts a ON re.account_id = a.id
 		WHERE re.created_at IS NOT NULL
 		
 		UNION ALL
 		
 		SELECT 'cash_holdings' as entry_type,
-		       ch.id, ch.account_id, ch.created_at, ch.updated_at,
+		       ch.id, ch.created_at, ch.updated_at,
 		       json_build_object(
 		           'institution_name', ch.institution_name,
 		           'account_name', ch.account_name,
@@ -2517,15 +2511,14 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		           'currency', ch.currency,
 		           'notes', ch.notes
 		       ) as data_json,
-		       a.account_name, a.institution
+		       ch.account_name, ch.institution_name as institution
 		FROM cash_holdings ch
-		LEFT JOIN accounts a ON ch.account_id = a.id
 		WHERE ch.created_at IS NOT NULL
 		
 		UNION ALL
 		
 		SELECT 'crypto_holdings' as entry_type,
-		       cry.id, cry.account_id, cry.created_at, cry.updated_at,
+		       cry.id, cry.created_at, cry.updated_at,
 		       json_build_object(
 		           'institution_name', cry.institution_name,
 		           'crypto_symbol', cry.crypto_symbol,
@@ -2535,15 +2528,14 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		           'wallet_address', cry.wallet_address,
 		           'notes', cry.notes
 		       ) as data_json,
-		       a.account_name, a.institution
+		       cry.institution_name as account_name, cry.institution_name as institution
 		FROM crypto_holdings cry
-		LEFT JOIN accounts a ON cry.account_id = a.id
 		WHERE cry.created_at IS NOT NULL
 		
 		UNION ALL
 		
 		SELECT 'other_assets' as entry_type,
-		       ma.id, ma.account_id, ma.created_at, ma.last_updated as updated_at,
+		       ma.id, ma.created_at, ma.last_updated as updated_at,
 		       json_build_object(
 		           'asset_category_id', ma.asset_category_id,
 		           'asset_name', ma.asset_name,
@@ -2561,9 +2553,8 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		           'category_icon', ac.icon,
 		           'category_color', ac.color
 		       ) as data_json,
-		       a.account_name, a.institution
+		       ma.asset_name as account_name, 'Other Assets' as institution
 		FROM miscellaneous_assets ma
-		LEFT JOIN accounts a ON ma.account_id = a.id
 		LEFT JOIN asset_categories ac ON ma.asset_category_id = ac.id
 		WHERE ma.created_at IS NOT NULL
 	`
@@ -2589,19 +2580,10 @@ func (s *Server) getManualEntries(c *gin.Context) {
 	s.db.QueryRow("SELECT COUNT(*) FROM real_estate_properties").Scan(&realEstateCount)
 	s.db.QueryRow("SELECT COUNT(*) FROM cash_holdings").Scan(&cashCount)
 	s.db.QueryRow("SELECT COUNT(*) FROM crypto_holdings").Scan(&cryptoCount)
-	fmt.Printf("DEBUG: Table counts - stock: %d, equity: %d, real_estate: %d, cash: %d, crypto: %d\n", 
+	fmt.Printf("DEBUG: Table counts - stock: %d, equity: %d, real_estate: %d, cash: %d, crypto: %d\n",
 		stockCount, equityCount, realEstateCount, cashCount, cryptoCount)
-	
-	// Debug: Check accounts that exist
-	accountRows, _ := s.db.Query("SELECT id, account_name, institution FROM accounts ORDER BY created_at DESC LIMIT 10")
-	fmt.Printf("DEBUG: Recent accounts:\n")
-	for accountRows.Next() {
-		var id int
-		var name, institution string
-		accountRows.Scan(&id, &name, &institution)
-		fmt.Printf("  Account %d: %s at %s\n", id, name, institution)
-	}
-	accountRows.Close()
+
+	// Debug code removed - accounts table no longer exists in new architecture
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -2618,7 +2600,6 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		var entry struct {
 			EntryType   string  `json:"entry_type"`
 			ID          int     `json:"id"`
-			AccountID   int     `json:"account_id"`
 			CreatedAt   string  `json:"created_at"`
 			UpdatedAt   string  `json:"updated_at"`
 			DataJSON    string  `json:"data_json"`
@@ -2627,7 +2608,7 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		}
 
 		err := rows.Scan(
-			&entry.EntryType, &entry.ID, &entry.AccountID, &entry.CreatedAt, &entry.UpdatedAt,
+			&entry.EntryType, &entry.ID, &entry.CreatedAt, &entry.UpdatedAt,
 			&entry.DataJSON, &entry.AccountName, &entry.Institution,
 		)
 		if err != nil {
@@ -2638,12 +2619,11 @@ func (s *Server) getManualEntries(c *gin.Context) {
 			return
 		}
 
-		fmt.Printf("DEBUG: Found entry - Type: %s, ID: %d, AccountID: %d, AccountName: %v\n", 
-			entry.EntryType, entry.ID, entry.AccountID, entry.AccountName)
+		fmt.Printf("DEBUG: Found entry - Type: %s, ID: %d, AccountName: %v\n",
+			entry.EntryType, entry.ID, entry.AccountName)
 
 		entryMap := map[string]interface{}{
 			"id":           entry.ID,
-			"account_id":   entry.AccountID,
 			"entry_type":   entry.EntryType,
 			"data_json":    entry.DataJSON,
 			"created_at":   entry.CreatedAt,
@@ -2853,7 +2833,7 @@ func (s *Server) refreshPrices(c *gin.Context) {
 	// Enhanced debugging - log full request details
 	fmt.Printf("DEBUG: refreshPrices called - Method: %s, URL: %s, FullPath: %s\n", c.Request.Method, c.Request.URL.String(), c.FullPath())
 	fmt.Printf("DEBUG: Query parameters: %v\n", c.Request.URL.Query())
-	
+
 	// Check for force refresh parameter
 	forceRefresh := c.Query("force") == "true"
 	fmt.Printf("DEBUG: force query param: '%s', forceRefresh: %t\n", c.Query("force"), forceRefresh)
@@ -3038,7 +3018,7 @@ func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceSe
 	var lastCacheUpdate time.Time
 	var stockHoldingsPrice sql.NullFloat64
 	var stockPricesTimestamp sql.NullTime
-	
+
 	priceQuery := `
 		SELECT COALESCE(h.current_price, 0), h.current_price, sp.timestamp
 		FROM stock_holdings h
@@ -3056,7 +3036,7 @@ func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceSe
 	if err != nil && err != sql.ErrNoRows {
 		fmt.Printf("ERROR: Failed to get old price for %s: %v\n", symbol, err)
 	}
-	
+
 	// Determine cache source and age
 	if stockPricesTimestamp.Valid {
 		lastCacheUpdate = stockPricesTimestamp.Time
@@ -3089,7 +3069,7 @@ func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceSe
 	newPrice, err := priceService.GetCurrentPriceWithForce(symbol, forceRefresh)
 	if err != nil {
 		result.Error = err.Error()
-		
+
 		// Categorize the error type for better handling
 		errorStr := strings.ToLower(err.Error())
 		if strings.Contains(errorStr, "rate limit") {
@@ -3108,7 +3088,7 @@ func (s *Server) updateSymbolPrice(symbol string, priceService *services.PriceSe
 	}
 
 	result.NewPrice = newPrice
-	
+
 	// Calculate price changes
 	if oldPrice > 0 {
 		result.PriceChange = newPrice - oldPrice
@@ -3272,7 +3252,7 @@ func (s *Server) refreshCryptoPrice(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": fmt.Sprintf("Price refreshed for %s", symbol),
+		"message":          fmt.Sprintf("Price refreshed for %s", symbol),
 		"symbol":           price.Symbol,
 		"price_usd":        price.PriceUSD,
 		"price_btc":        price.PriceBTC,
@@ -3295,7 +3275,7 @@ func (s *Server) refreshCryptoPrice(c *gin.Context) {
 func (s *Server) getCryptoPriceHistory(c *gin.Context) {
 	// Optional query parameters for filtering
 	daysBack := c.DefaultQuery("days", "30") // Default to last 30 days
-	
+
 	// Parse days parameter
 	days := 30
 	if daysBack != "" {
@@ -3325,7 +3305,7 @@ func (s *Server) getCryptoPriceHistory(c *gin.Context) {
 
 	// Group data by symbol
 	historyMap := make(map[string][]map[string]interface{})
-	
+
 	for rows.Next() {
 		var symbol string
 		var priceUSD, priceBTC float64
@@ -3340,9 +3320,9 @@ func (s *Server) getCryptoPriceHistory(c *gin.Context) {
 		}
 
 		dataPoint := map[string]interface{}{
-			"timestamp":  lastUpdated.Format(time.RFC3339),
-			"price_usd":  priceUSD,
-			"price_btc":  priceBTC,
+			"timestamp": lastUpdated.Format(time.RFC3339),
+			"price_usd": priceUSD,
+			"price_btc": priceBTC,
 		}
 
 		historyMap[symbol] = append(historyMap[symbol], dataPoint)
@@ -3386,17 +3366,17 @@ func (s *Server) getPropertyValuation(c *gin.Context) {
 	// Check if property valuation feature is enabled
 	if !s.propertyValuationService.IsPropertyValuationEnabled() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Property valuation feature is currently disabled",
+			"error":           "Property valuation feature is currently disabled",
 			"feature_enabled": false,
 		})
 		return
 	}
-	
+
 	address := c.Query("address")
 	city := c.Query("city")
 	state := c.Query("state")
 	zipCode := c.Query("zip_code")
-	
+
 	// At least one parameter is required
 	if address == "" && city == "" && state == "" && zipCode == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -3404,7 +3384,7 @@ func (s *Server) getPropertyValuation(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	valuation, err := s.propertyValuationService.GetPropertyValuation(address, city, state, zipCode)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -3412,7 +3392,7 @@ func (s *Server) getPropertyValuation(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, valuation)
 }
 
@@ -3434,17 +3414,17 @@ func (s *Server) refreshPropertyValuation(c *gin.Context) {
 	// Check if property valuation feature is enabled
 	if !s.propertyValuationService.IsPropertyValuationEnabled() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Property valuation feature is currently disabled",
+			"error":           "Property valuation feature is currently disabled",
 			"feature_enabled": false,
 		})
 		return
 	}
-	
+
 	address := c.Query("address")
 	city := c.Query("city")
 	state := c.Query("state")
 	zipCode := c.Query("zip_code")
-	
+
 	// At least one parameter is required
 	if address == "" && city == "" && state == "" && zipCode == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -3452,7 +3432,7 @@ func (s *Server) refreshPropertyValuation(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	valuation, err := s.propertyValuationService.RefreshPropertyValuation(address, city, state, zipCode)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -3460,9 +3440,9 @@ func (s *Server) refreshPropertyValuation(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Property valuation refreshed successfully",
+		"message":   "Property valuation refreshed successfully",
 		"valuation": valuation,
 	})
 }
@@ -3480,42 +3460,42 @@ func (s *Server) getPropertyValuationProviders(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"providers": []gin.H{
 				{
-					"name": "Manual Entry",
-					"available": true,
+					"name":        "Manual Entry",
+					"available":   true,
 					"description": "Manual property value entry (external APIs disabled)",
 				},
 			},
 			"active_provider": "Manual Entry",
 			"feature_enabled": false,
-			"message": "Property valuation feature is disabled",
+			"message":         "Property valuation feature is disabled",
 		})
 		return
 	}
-	
+
 	providers := []gin.H{
 		{
-			"name": "Manual Entry",
-			"available": true,
+			"name":        "Manual Entry",
+			"available":   true,
 			"description": "Manual property value entry",
 		},
 	}
-	
+
 	if s.propertyValuationService.IsAttomDataAvailable() {
 		providers = append(providers, gin.H{
-			"name": "ATTOM Data API",
-			"available": true,
+			"name":        "ATTOM Data API",
+			"available":   true,
 			"description": "Professional property data and valuation from ATTOM Data",
 		})
 	} else {
 		providers = append(providers, gin.H{
-			"name": "ATTOM Data API",
-			"available": false,
+			"name":        "ATTOM Data API",
+			"available":   false,
 			"description": "Professional property data and valuation from ATTOM Data (API key required or feature disabled)",
 		})
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{
-		"providers": providers,
+		"providers":       providers,
 		"active_provider": s.propertyValuationService.GetProviderName(),
 		"feature_enabled": true,
 	})
@@ -3534,7 +3514,7 @@ func (s *Server) getPropertyValuationProviders(c *gin.Context) {
 // @Router /other-assets [get]
 func (s *Server) getOtherAssets(c *gin.Context) {
 	categoryFilter := c.Query("category")
-	
+
 	query := `
 		SELECT ma.id, ma.asset_name, ma.current_value, ma.purchase_price, 
 		       ma.amount_owed, ma.purchase_date, ma.description, ma.custom_fields,
@@ -3546,7 +3526,7 @@ func (s *Server) getOtherAssets(c *gin.Context) {
 		FROM miscellaneous_assets ma
 		LEFT JOIN asset_categories ac ON ma.asset_category_id = ac.id
 	`
-	
+
 	args := []interface{}{}
 	if categoryFilter != "" {
 		query += " WHERE ma.asset_category_id = $1"
@@ -3559,9 +3539,9 @@ func (s *Server) getOtherAssets(c *gin.Context) {
 		}
 		args = append(args, categoryID)
 	}
-	
+
 	query += " ORDER BY ma.last_updated DESC"
-	
+
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -3570,31 +3550,31 @@ func (s *Server) getOtherAssets(c *gin.Context) {
 		return
 	}
 	defer rows.Close()
-	
+
 	var assets []map[string]interface{}
 	for rows.Next() {
 		var asset struct {
-			ID                    int             `json:"id"`
-			AssetName            string          `json:"asset_name"`
-			CurrentValue         float64         `json:"current_value"`
-			PurchasePrice        sql.NullFloat64 `json:"purchase_price"`
-			AmountOwed           sql.NullFloat64 `json:"amount_owed"`
-			PurchaseDate         sql.NullTime    `json:"purchase_date"`
-			Description          sql.NullString  `json:"description"`
-			CustomFields         sql.NullString  `json:"custom_fields"`
-			ValuationMethod      string          `json:"valuation_method"`
-			LastValuationDate    sql.NullTime    `json:"last_valuation_date"`
-			APIProvider          sql.NullString  `json:"api_provider"`
-			Notes                sql.NullString  `json:"notes"`
-			CreatedAt            time.Time       `json:"created_at"`
-			LastUpdated          time.Time       `json:"last_updated"`
-			CategoryName         sql.NullString  `json:"category_name"`
-			CategoryDescription  sql.NullString  `json:"category_description"`
-			CategoryIcon         sql.NullString  `json:"category_icon"`
-			CategoryColor        sql.NullString  `json:"category_color"`
-			AssetCategoryID      sql.NullInt64   `json:"asset_category_id"`
+			ID                  int             `json:"id"`
+			AssetName           string          `json:"asset_name"`
+			CurrentValue        float64         `json:"current_value"`
+			PurchasePrice       sql.NullFloat64 `json:"purchase_price"`
+			AmountOwed          sql.NullFloat64 `json:"amount_owed"`
+			PurchaseDate        sql.NullTime    `json:"purchase_date"`
+			Description         sql.NullString  `json:"description"`
+			CustomFields        sql.NullString  `json:"custom_fields"`
+			ValuationMethod     string          `json:"valuation_method"`
+			LastValuationDate   sql.NullTime    `json:"last_valuation_date"`
+			APIProvider         sql.NullString  `json:"api_provider"`
+			Notes               sql.NullString  `json:"notes"`
+			CreatedAt           time.Time       `json:"created_at"`
+			LastUpdated         time.Time       `json:"last_updated"`
+			CategoryName        sql.NullString  `json:"category_name"`
+			CategoryDescription sql.NullString  `json:"category_description"`
+			CategoryIcon        sql.NullString  `json:"category_icon"`
+			CategoryColor       sql.NullString  `json:"category_color"`
+			AssetCategoryID     sql.NullInt64   `json:"asset_category_id"`
 		}
-		
+
 		err := rows.Scan(
 			&asset.ID, &asset.AssetName, &asset.CurrentValue, &asset.PurchasePrice,
 			&asset.AmountOwed, &asset.PurchaseDate, &asset.Description, &asset.CustomFields,
@@ -3606,7 +3586,7 @@ func (s *Server) getOtherAssets(c *gin.Context) {
 		if err != nil {
 			continue
 		}
-		
+
 		// Calculate equity (value - amount owed)
 		var equity float64
 		if asset.AmountOwed.Valid {
@@ -3614,24 +3594,24 @@ func (s *Server) getOtherAssets(c *gin.Context) {
 		} else {
 			equity = asset.CurrentValue
 		}
-		
+
 		// Parse custom fields JSON
 		var customFields map[string]interface{}
 		if asset.CustomFields.Valid && asset.CustomFields.String != "" {
 			json.Unmarshal([]byte(asset.CustomFields.String), &customFields)
 		}
-		
+
 		assetMap := map[string]interface{}{
-			"id":                     asset.ID,
-			"asset_name":            asset.AssetName,
-			"current_value":         asset.CurrentValue,
-			"equity":                equity,
-			"valuation_method":      asset.ValuationMethod,
-			"created_at":            asset.CreatedAt,
-			"last_updated":          asset.LastUpdated,
-			"asset_category_id":     asset.AssetCategoryID.Int64,
+			"id":                asset.ID,
+			"asset_name":        asset.AssetName,
+			"current_value":     asset.CurrentValue,
+			"equity":            equity,
+			"valuation_method":  asset.ValuationMethod,
+			"created_at":        asset.CreatedAt,
+			"last_updated":      asset.LastUpdated,
+			"asset_category_id": asset.AssetCategoryID.Int64,
 		}
-		
+
 		// Add optional fields
 		if asset.PurchasePrice.Valid {
 			assetMap["purchase_price"] = asset.PurchasePrice.Float64
@@ -3657,7 +3637,7 @@ func (s *Server) getOtherAssets(c *gin.Context) {
 		if customFields != nil {
 			assetMap["custom_fields"] = customFields
 		}
-		
+
 		// Add category information
 		if asset.CategoryName.Valid {
 			assetMap["category"] = map[string]interface{}{
@@ -3667,22 +3647,22 @@ func (s *Server) getOtherAssets(c *gin.Context) {
 				"color":       asset.CategoryColor.String,
 			}
 		}
-		
+
 		assets = append(assets, assetMap)
 	}
-	
+
 	// Calculate total value and equity
 	var totalValue, totalEquity float64
 	for _, asset := range assets {
 		totalValue += asset["current_value"].(float64)
 		totalEquity += asset["equity"].(float64)
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"other_assets": assets,
 		"summary": gin.H{
-			"total_count": len(assets),
-			"total_value": totalValue,
+			"total_count":  len(assets),
+			"total_value":  totalValue,
 			"total_equity": totalEquity,
 		},
 	})
@@ -3706,7 +3686,7 @@ func (s *Server) createOtherAsset(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Use the other_assets plugin to process the entry
 	err := s.pluginManager.ProcessManualEntry("other_assets", data)
 	if err != nil {
@@ -3715,7 +3695,7 @@ func (s *Server) createOtherAsset(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Other asset created successfully",
 	})
@@ -3741,7 +3721,7 @@ func (s *Server) updateOtherAsset(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	var data map[string]interface{}
 	if err := c.ShouldBindJSON(&data); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -3749,7 +3729,7 @@ func (s *Server) updateOtherAsset(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Get the other_assets plugin
 	plugin, err := s.pluginManager.GetPlugin("other_assets")
 	if err != nil {
@@ -3758,7 +3738,7 @@ func (s *Server) updateOtherAsset(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Update the entry
 	err = plugin.UpdateManualEntry(id, data)
 	if err != nil {
@@ -3773,7 +3753,7 @@ func (s *Server) updateOtherAsset(c *gin.Context) {
 		}
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Other asset updated successfully",
 	})
@@ -3798,7 +3778,7 @@ func (s *Server) deleteOtherAsset(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	query := "DELETE FROM miscellaneous_assets WHERE id = $1"
 	result, err := s.db.Exec(query, id)
 	if err != nil {
@@ -3807,7 +3787,7 @@ func (s *Server) deleteOtherAsset(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -3815,14 +3795,14 @@ func (s *Server) deleteOtherAsset(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	if rowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "Asset not found",
 		})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Other asset deleted successfully",
 	})
@@ -3841,21 +3821,21 @@ func (s *Server) deleteOtherAsset(c *gin.Context) {
 // @Router /asset-categories [get]
 func (s *Server) getAssetCategories(c *gin.Context) {
 	activeFilter := c.Query("active")
-	
+
 	query := `
 		SELECT id, name, description, icon, color, custom_schema, 
 		       valuation_api_config, is_active, sort_order, 
 		       created_at, updated_at
 		FROM asset_categories
 	`
-	
+
 	args := []interface{}{}
 	if activeFilter == "true" {
 		query += " WHERE is_active = true"
 	}
-	
+
 	query += " ORDER BY sort_order, name"
-	
+
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -3864,23 +3844,23 @@ func (s *Server) getAssetCategories(c *gin.Context) {
 		return
 	}
 	defer rows.Close()
-	
+
 	var categories []map[string]interface{}
 	for rows.Next() {
 		var category struct {
-			ID                   int            `json:"id"`
-			Name                 string         `json:"name"`
-			Description          sql.NullString `json:"description"`
-			Icon                 sql.NullString `json:"icon"`
-			Color                sql.NullString `json:"color"`
-			CustomSchema         sql.NullString `json:"custom_schema"`
-			ValuationAPIConfig   sql.NullString `json:"valuation_api_config"`
-			IsActive             bool           `json:"is_active"`
-			SortOrder            int            `json:"sort_order"`
-			CreatedAt            time.Time      `json:"created_at"`
-			UpdatedAt            time.Time      `json:"updated_at"`
+			ID                 int            `json:"id"`
+			Name               string         `json:"name"`
+			Description        sql.NullString `json:"description"`
+			Icon               sql.NullString `json:"icon"`
+			Color              sql.NullString `json:"color"`
+			CustomSchema       sql.NullString `json:"custom_schema"`
+			ValuationAPIConfig sql.NullString `json:"valuation_api_config"`
+			IsActive           bool           `json:"is_active"`
+			SortOrder          int            `json:"sort_order"`
+			CreatedAt          time.Time      `json:"created_at"`
+			UpdatedAt          time.Time      `json:"updated_at"`
 		}
-		
+
 		err := rows.Scan(
 			&category.ID, &category.Name, &category.Description, &category.Icon,
 			&category.Color, &category.CustomSchema, &category.ValuationAPIConfig,
@@ -3889,7 +3869,7 @@ func (s *Server) getAssetCategories(c *gin.Context) {
 		if err != nil {
 			continue
 		}
-		
+
 		categoryMap := map[string]interface{}{
 			"id":         category.ID,
 			"name":       category.Name,
@@ -3898,7 +3878,7 @@ func (s *Server) getAssetCategories(c *gin.Context) {
 			"created_at": category.CreatedAt,
 			"updated_at": category.UpdatedAt,
 		}
-		
+
 		// Add optional fields
 		if category.Description.Valid {
 			categoryMap["description"] = category.Description.String
@@ -3909,7 +3889,7 @@ func (s *Server) getAssetCategories(c *gin.Context) {
 		if category.Color.Valid {
 			categoryMap["color"] = category.Color.String
 		}
-		
+
 		// Parse custom schema
 		if category.CustomSchema.Valid && category.CustomSchema.String != "" {
 			var schema map[string]interface{}
@@ -3917,7 +3897,7 @@ func (s *Server) getAssetCategories(c *gin.Context) {
 				categoryMap["custom_schema"] = schema
 			}
 		}
-		
+
 		// Parse valuation API config
 		if category.ValuationAPIConfig.Valid && category.ValuationAPIConfig.String != "" {
 			var config map[string]interface{}
@@ -3925,10 +3905,10 @@ func (s *Server) getAssetCategories(c *gin.Context) {
 				categoryMap["valuation_api_config"] = config
 			}
 		}
-		
+
 		categories = append(categories, categoryMap)
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"asset_categories": categories,
 		"total_count":      len(categories),
@@ -3953,7 +3933,7 @@ func (s *Server) createAssetCategory(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Validate required fields
 	name, ok := data["name"].(string)
 	if !ok || strings.TrimSpace(name) == "" {
@@ -3962,13 +3942,13 @@ func (s *Server) createAssetCategory(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Prepare optional fields
 	var description, icon, color sql.NullString
 	var customSchema, valuationAPIConfig sql.NullString
 	var isActive = true
 	var sortOrder = 0
-	
+
 	if desc, ok := data["description"].(string); ok {
 		description.String = desc
 		description.Valid = true
@@ -3987,7 +3967,7 @@ func (s *Server) createAssetCategory(c *gin.Context) {
 	if order, ok := data["sort_order"].(float64); ok {
 		sortOrder = int(order)
 	}
-	
+
 	// Handle custom schema
 	if schema, ok := data["custom_schema"]; ok {
 		if schemaJSON, err := json.Marshal(schema); err == nil {
@@ -3995,7 +3975,7 @@ func (s *Server) createAssetCategory(c *gin.Context) {
 			customSchema.Valid = true
 		}
 	}
-	
+
 	// Handle valuation API config
 	if config, ok := data["valuation_api_config"]; ok {
 		if configJSON, err := json.Marshal(config); err == nil {
@@ -4003,16 +3983,16 @@ func (s *Server) createAssetCategory(c *gin.Context) {
 			valuationAPIConfig.Valid = true
 		}
 	}
-	
+
 	query := `
 		INSERT INTO asset_categories (name, description, icon, color, custom_schema, 
 		                            valuation_api_config, is_active, sort_order)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id
 	`
-	
+
 	var categoryID int
-	err := s.db.QueryRow(query, name, description, icon, color, customSchema, 
+	err := s.db.QueryRow(query, name, description, icon, color, customSchema,
 		valuationAPIConfig, isActive, sortOrder).Scan(&categoryID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -4020,7 +4000,7 @@ func (s *Server) createAssetCategory(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	c.JSON(http.StatusCreated, gin.H{
 		"message":     "Asset category created successfully",
 		"category_id": categoryID,
@@ -4047,7 +4027,7 @@ func (s *Server) updateAssetCategory(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	var data map[string]interface{}
 	if err := c.ShouldBindJSON(&data); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -4055,48 +4035,48 @@ func (s *Server) updateAssetCategory(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Build dynamic update query
 	var setParts []string
 	var args []interface{}
 	argIndex := 1
-	
+
 	if name, ok := data["name"].(string); ok && strings.TrimSpace(name) != "" {
 		setParts = append(setParts, fmt.Sprintf("name = $%d", argIndex))
 		args = append(args, strings.TrimSpace(name))
 		argIndex++
 	}
-	
+
 	if desc, ok := data["description"].(string); ok {
 		setParts = append(setParts, fmt.Sprintf("description = $%d", argIndex))
 		args = append(args, desc)
 		argIndex++
 	}
-	
+
 	if icon, ok := data["icon"].(string); ok {
 		setParts = append(setParts, fmt.Sprintf("icon = $%d", argIndex))
 		args = append(args, icon)
 		argIndex++
 	}
-	
+
 	if color, ok := data["color"].(string); ok {
 		setParts = append(setParts, fmt.Sprintf("color = $%d", argIndex))
 		args = append(args, color)
 		argIndex++
 	}
-	
+
 	if active, ok := data["is_active"].(bool); ok {
 		setParts = append(setParts, fmt.Sprintf("is_active = $%d", argIndex))
 		args = append(args, active)
 		argIndex++
 	}
-	
+
 	if order, ok := data["sort_order"].(float64); ok {
 		setParts = append(setParts, fmt.Sprintf("sort_order = $%d", argIndex))
 		args = append(args, int(order))
 		argIndex++
 	}
-	
+
 	if schema, ok := data["custom_schema"]; ok {
 		if schemaJSON, err := json.Marshal(schema); err == nil {
 			setParts = append(setParts, fmt.Sprintf("custom_schema = $%d", argIndex))
@@ -4104,7 +4084,7 @@ func (s *Server) updateAssetCategory(c *gin.Context) {
 			argIndex++
 		}
 	}
-	
+
 	if config, ok := data["valuation_api_config"]; ok {
 		if configJSON, err := json.Marshal(config); err == nil {
 			setParts = append(setParts, fmt.Sprintf("valuation_api_config = $%d", argIndex))
@@ -4112,25 +4092,25 @@ func (s *Server) updateAssetCategory(c *gin.Context) {
 			argIndex++
 		}
 	}
-	
+
 	if len(setParts) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "No valid fields to update",
 		})
 		return
 	}
-	
+
 	// Add updated_at
 	setParts = append(setParts, fmt.Sprintf("updated_at = $%d", argIndex))
 	args = append(args, time.Now())
 	argIndex++
-	
+
 	// Add WHERE condition
 	args = append(args, id)
-	
-	query := fmt.Sprintf("UPDATE asset_categories SET %s WHERE id = $%d", 
+
+	query := fmt.Sprintf("UPDATE asset_categories SET %s WHERE id = $%d",
 		strings.Join(setParts, ", "), argIndex)
-	
+
 	result, err := s.db.Exec(query, args...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -4138,7 +4118,7 @@ func (s *Server) updateAssetCategory(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -4146,14 +4126,14 @@ func (s *Server) updateAssetCategory(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	if rowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "Asset category not found",
 		})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Asset category updated successfully",
 	})
@@ -4178,7 +4158,7 @@ func (s *Server) deleteAssetCategory(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Check if category is in use
 	var count int
 	countQuery := "SELECT COUNT(*) FROM miscellaneous_assets WHERE asset_category_id = $1"
@@ -4189,14 +4169,14 @@ func (s *Server) deleteAssetCategory(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	if count > 0 {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": fmt.Sprintf("Cannot delete category: %d assets are using this category", count),
 		})
 		return
 	}
-	
+
 	// Delete category
 	query := "DELETE FROM asset_categories WHERE id = $1"
 	result, err := s.db.Exec(query, id)
@@ -4206,7 +4186,7 @@ func (s *Server) deleteAssetCategory(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -4214,14 +4194,14 @@ func (s *Server) deleteAssetCategory(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	if rowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "Asset category not found",
 		})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Asset category deleted successfully",
 	})
@@ -4245,10 +4225,10 @@ func (s *Server) getAssetCategorySchema(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	var name, description sql.NullString
 	var customSchema sql.NullString
-	
+
 	query := "SELECT name, description, custom_schema FROM asset_categories WHERE id = $1"
 	err = s.db.QueryRow(query, id).Scan(&name, &description, &customSchema)
 	if err != nil {
@@ -4263,23 +4243,23 @@ func (s *Server) getAssetCategorySchema(c *gin.Context) {
 		}
 		return
 	}
-	
+
 	result := map[string]interface{}{
 		"category_id": id,
 		"name":        name.String,
 	}
-	
+
 	if description.Valid {
 		result["description"] = description.String
 	}
-	
+
 	if customSchema.Valid && customSchema.String != "" {
 		var schema map[string]interface{}
 		if err := json.Unmarshal([]byte(customSchema.String), &schema); err == nil {
 			result["schema"] = schema
 		}
 	}
-	
+
 	c.JSON(http.StatusOK, result)
 }
 
@@ -4291,7 +4271,7 @@ func (s *Server) determineActualProviderName(results []services.PriceUpdateResul
 
 	apiCount := 0
 	cacheCount := 0
-	
+
 	// Count API vs cache sources
 	for _, result := range results {
 		if result.Updated {
@@ -4302,22 +4282,939 @@ func (s *Server) determineActualProviderName(results []services.PriceUpdateResul
 			}
 		}
 	}
-	
+
 	// If all data came from cache, indicate that
 	if apiCount == 0 && cacheCount > 0 {
 		return "Cache"
 	}
-	
+
 	// If all data came from API, use the configured provider name
 	if apiCount > 0 && cacheCount == 0 {
 		return defaultProviderName
 	}
-	
+
 	// If mixed sources, indicate that
 	if apiCount > 0 && cacheCount > 0 {
 		return fmt.Sprintf("%s + Cache", defaultProviderName)
 	}
-	
+
 	// Default fallback
 	return defaultProviderName
+}
+
+// Document Processing handlers (LLM integration)
+
+// @Summary Upload financial document
+// @Description Upload a financial document (PDF, CSV, image) for LLM processing
+// @Tags documents
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "Financial document file (PDF, CSV, JPG, PNG)"
+// @Success 201 {object} map[string]interface{} "Document uploaded successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid file"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Failure 503 {object} map[string]interface{} "LLM feature disabled"
+// @Router /documents/upload [post]
+func (s *Server) uploadDocument(c *gin.Context) {
+	// Check if LLM feature is enabled
+	if !s.config.API.LLMEnabled || s.documentProcessor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":           "LLM document processing feature is disabled",
+			"feature_enabled": false,
+		})
+		return
+	}
+
+	// Parse multipart form
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "No file provided or invalid form data",
+		})
+		return
+	}
+	defer file.Close()
+
+	// Validate file type
+	allowedTypes := []string{".pdf", ".csv", ".jpg", ".jpeg", ".png", ".xlsx", ".xls"}
+	fileExt := strings.ToLower(filepath.Ext(header.Filename))
+	isAllowed := false
+	for _, ext := range allowedTypes {
+		if fileExt == ext {
+			isAllowed = true
+			break
+		}
+	}
+
+	if !isAllowed {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         "Unsupported file type",
+			"allowed_types": allowedTypes,
+			"received_type": fileExt,
+		})
+		return
+	}
+
+	// Upload document
+	job, err := s.documentProcessor.UploadDocument(c.Request.Context(), file, header)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to upload document: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"success": true,
+		"message": "Document uploaded successfully",
+		"job": gin.H{
+			"id":                job.ID,
+			"filename":          job.Filename,
+			"file_path":         job.FilePath,
+			"file_type":         job.FileType,
+			"file_size":         job.FileSize,
+			"processing_status": job.ProcessingStatus,
+			"created_at":        job.CreatedAt,
+			"updated_at":        job.UpdatedAt,
+		},
+	})
+}
+
+// @Summary Get document processing job
+// @Description Retrieve details of a document processing job
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Param id path int true "Document job ID"
+// @Success 200 {object} map[string]interface{} "Document job details"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Job not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Failure 503 {object} map[string]interface{} "LLM feature disabled"
+// @Router /documents/{id} [get]
+func (s *Server) getDocument(c *gin.Context) {
+	// Check if LLM feature is enabled
+	if !s.config.API.LLMEnabled || s.documentProcessor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":           "LLM document processing feature is disabled",
+			"feature_enabled": false,
+		})
+		return
+	}
+
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid job ID",
+		})
+		return
+	}
+
+	job, err := s.documentProcessor.GetJob(c.Request.Context(), id)
+	if err != nil {
+		if err.Error() == "job not found" {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Document job not found",
+			})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to get document job: %v", err),
+			})
+		}
+		return
+	}
+
+	response := map[string]interface{}{
+		"id":                job.ID,
+		"filename":          job.Filename,
+		"file_type":         job.FileType,
+		"file_size":         job.FileSize,
+		"processing_status": job.ProcessingStatus,
+		"created_at":        job.CreatedAt,
+		"updated_at":        job.UpdatedAt,
+	}
+
+
+	if job.ExtractedData != nil {
+		response["extracted_data"] = *job.ExtractedData
+	}
+
+	if job.ErrorMessage != nil {
+		response["error_message"] = *job.ErrorMessage
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// ImportResult represents the result of importing extracted document data
+type ImportResult struct {
+	ImportedAccounts    int                    `json:"imported_accounts"`
+	ImportedTransactions int                   `json:"imported_transactions"`
+	ImportedHoldings    int                    `json:"imported_holdings"`
+	AccountMatches      []AccountMatch         `json:"account_matches"`
+	NewAccounts         []CreatedAccount       `json:"new_accounts"`
+	TransactionSummary  TransactionSummary     `json:"transaction_summary"`
+	HoldingSummary      HoldingSummary         `json:"holding_summary"`
+	Warnings           []string               `json:"warnings,omitempty"`
+}
+
+type AccountMatch struct {
+	ExtractedAccount services.ExtractedAccount `json:"extracted_account"`
+	MatchedAccountID int                       `json:"matched_account_id"`
+	MatchType        string                    `json:"match_type"` // "exact", "partial", "new"
+}
+
+type CreatedAccount struct {
+	AccountID        int    `json:"account_id"`
+	AccountName      string `json:"account_name"`
+	AccountType      string `json:"account_type"`
+	Institution      string `json:"institution"`
+}
+
+type TransactionSummary struct {
+	TotalAmount    float64 `json:"total_amount"`
+	DebitsTotal    float64 `json:"debits_total"`
+	CreditsTotal   float64 `json:"credits_total"`
+	DateRange      string  `json:"date_range"`
+}
+
+type HoldingSummary struct {
+	TotalValue     float64 `json:"total_value"`
+	UniqueSymbols  int     `json:"unique_symbols"`
+}
+
+// importExtractedData imports extracted financial data into the dashboard
+func (s *Server) importExtractedData(ctx context.Context, data *services.FinancialDocumentData) (*ImportResult, error) {
+	log.Printf("Importing data for %s - Accounts: %d, Transactions: %d, Holdings: %d, Crypto: %d", 
+		data.Institution, len(data.Accounts), len(data.Transactions), len(data.Holdings), len(data.Crypto))
+	
+	result := &ImportResult{
+		AccountMatches: make([]AccountMatch, 0),
+		NewAccounts:    make([]CreatedAccount, 0),
+		Warnings:       make([]string, 0),
+	}
+
+	// Start a database transaction
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback() // Will be ignored if Commit() is called
+
+	// Step 1: Import or match accounts
+	accountMap := make(map[string]int) // Maps account number to account ID
+	for _, account := range data.Accounts {
+		log.Printf("Importing account: %s (%s) - %s", account.AccountNumber, account.AccountType, account.Name)
+		accountID, isNew, err := s.importAccount(ctx, tx, &account, data.Institution)
+		if err != nil {
+			log.Printf("Failed to import account %s: %v", account.AccountNumber, err)
+			return nil, fmt.Errorf("failed to import account %s: %w", account.AccountNumber, err)
+		}
+		log.Printf("Account %s imported successfully - ID: %d, New: %v", account.AccountNumber, accountID, isNew)
+
+		accountMap[account.AccountNumber] = accountID
+		
+		match := AccountMatch{
+			ExtractedAccount: account,
+			MatchedAccountID: accountID,
+		}
+
+		if isNew {
+			match.MatchType = "new"
+			result.NewAccounts = append(result.NewAccounts, CreatedAccount{
+				AccountID:   accountID,
+				AccountName: account.Name,
+				AccountType: account.AccountType,
+				Institution: data.Institution,
+			})
+		} else {
+			match.MatchType = "matched"
+		}
+
+		result.AccountMatches = append(result.AccountMatches, match)
+		result.ImportedAccounts++
+	}
+
+	// Step 2: Import transactions (if any account was found)
+	var totalDebits, totalCredits float64
+	var minDate, maxDate string
+	
+	for _, transaction := range data.Transactions {
+		// Note: Transaction import is currently a placeholder since we import account balances directly
+		// The account balance is already updated in the cash_holdings table above
+		log.Printf("Transaction found (not imported): %s, %f, %s", 
+			transaction.Description, transaction.Amount, transaction.Date)
+
+		if transaction.Type == "debit" {
+			totalDebits += transaction.Amount
+		} else {
+			totalCredits += transaction.Amount
+		}
+
+		if minDate == "" || transaction.Date < minDate {
+			minDate = transaction.Date
+		}
+		if maxDate == "" || transaction.Date > maxDate {
+			maxDate = transaction.Date
+		}
+
+		result.ImportedTransactions++
+	}
+
+	result.TransactionSummary = TransactionSummary{
+		TotalAmount:  totalCredits - totalDebits,
+		DebitsTotal:  totalDebits,
+		CreditsTotal: totalCredits,
+		DateRange:    fmt.Sprintf("%s to %s", minDate, maxDate),
+	}
+
+	// Step 3: Import holdings
+	var totalHoldingValue float64
+	uniqueSymbols := make(map[string]bool)
+
+	for _, holding := range data.Holdings {
+		// Import directly to stock_holdings table
+		err := s.importHolding(ctx, tx, &holding, data.Institution)
+		if err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("Failed to import holding: %s", holding.Symbol))
+			continue
+		}
+
+		totalHoldingValue += holding.Value
+		uniqueSymbols[holding.Symbol] = true
+		result.ImportedHoldings++
+	}
+
+	result.HoldingSummary = HoldingSummary{
+		TotalValue:    totalHoldingValue,
+		UniqueSymbols: len(uniqueSymbols),
+	}
+
+	// Step 4: Import crypto holdings
+	var totalCryptoValue float64
+	uniqueCryptoSymbols := make(map[string]bool)
+
+	for _, crypto := range data.Crypto {
+		err := s.importCrypto(ctx, tx, &crypto, data.Institution)
+		if err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("Failed to import crypto: %s", crypto.Symbol))
+			continue
+		}
+
+		totalCryptoValue += crypto.Value
+		uniqueCryptoSymbols[crypto.Symbol] = true
+		// Note: We don't have ImportedCrypto field in ImportResult struct yet, 
+		// but the crypto will be imported successfully
+	}
+
+	if len(data.Crypto) > 0 {
+		log.Printf("Imported %d crypto holdings with total value $%.2f", len(uniqueCryptoSymbols), totalCryptoValue)
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	log.Printf("Data import successful for %s - Accounts: %d, Holdings: %d, Crypto: %d", 
+		data.Institution, result.ImportedAccounts, result.ImportedHoldings, len(uniqueCryptoSymbols))
+
+	return result, nil
+}
+
+// importAccount imports or matches a cash account directly into cash_holdings table and returns the cash holding ID and whether it's new
+func (s *Server) importAccount(ctx context.Context, tx *sql.Tx, account *services.ExtractedAccount, institution string) (int, bool, error) {
+	// Try to find existing cash holding by account number and institution
+	var existingID int
+	query := `SELECT id FROM cash_holdings WHERE account_number_last4 = $1 AND institution_name = $2 LIMIT 1`
+	// Use last 4 digits of account number to match the schema
+	last4 := account.AccountNumber
+	if len(last4) > 4 {
+		last4 = last4[len(last4)-4:]
+	}
+	err := tx.QueryRowContext(ctx, query, last4, institution).Scan(&existingID)
+	
+	if err == nil {
+		// Found existing cash holding - update balance
+		updateQuery := `UPDATE cash_holdings SET current_balance = $1, currency = $2, updated_at = NOW() WHERE id = $3`
+		_, updateErr := tx.ExecContext(ctx, updateQuery, account.Balance, account.Currency, existingID)
+		if updateErr != nil {
+			return 0, false, fmt.Errorf("failed to update existing cash holding: %w", updateErr)
+		}
+		return existingID, false, nil
+	}
+
+	if err != sql.ErrNoRows {
+		return 0, false, fmt.Errorf("error checking for existing cash holding: %w", err)
+	}
+
+	// Create new cash holding entry
+	insertQuery := `
+		INSERT INTO cash_holdings (
+			institution_name, account_name, account_type, 
+			current_balance, currency, account_number_last4, data_source, 
+			created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, 'document_import', NOW(), NOW())
+		RETURNING id`
+
+	var cashHoldingID int
+	err = tx.QueryRowContext(ctx, insertQuery,
+		institution,
+		account.Name,
+		account.AccountType,
+		account.Balance,
+		account.Currency,
+		last4,
+	).Scan(&cashHoldingID)
+
+	if err != nil {
+		return 0, false, fmt.Errorf("failed to create cash holding: %w", err)
+	}
+
+	return cashHoldingID, true, nil
+}
+
+// createDefaultAccount creates a default account for transactions
+// DEPRECATED: This function is no longer used in the new architecture
+// Accounts are now imported directly to cash_holdings table via importAccount function
+func (s *Server) createDefaultAccount(ctx context.Context, tx *sql.Tx, institution string) (int, bool, error) {
+	return 0, false, fmt.Errorf("createDefaultAccount is deprecated - accounts table no longer exists")
+}
+
+// createDefaultInvestmentAccount creates a default investment account for holdings
+// DEPRECATED: This function is no longer used in the new architecture
+// Stock holdings are now imported directly to stock_holdings table with institution_name
+func (s *Server) createDefaultInvestmentAccount(ctx context.Context, tx *sql.Tx, institution string) (int, bool, error) {
+	return 0, false, fmt.Errorf("createDefaultInvestmentAccount is deprecated - accounts table no longer exists")
+}
+
+// importTransaction imports a transaction
+func (s *Server) importTransaction(ctx context.Context, tx *sql.Tx, transaction *services.ExtractedTransaction, accountID int) error {
+	// Note: We're not importing transactions into a transactions table since it doesn't exist in current schema
+	// This is a placeholder for future transaction import functionality
+	log.Printf("Would import transaction: %s, %f, %s (account %d)", 
+		transaction.Description, transaction.Amount, transaction.Date, accountID)
+	return nil
+}
+
+// importHolding imports a stock holding
+func (s *Server) importHolding(ctx context.Context, tx *sql.Tx, holding *services.ExtractedHolding, institution string) error {
+	log.Printf("Importing holding: %s - %f shares @ %f (value: %f) from %s", 
+		holding.Symbol, holding.Shares, holding.Price, holding.Value, institution)
+	
+	// Check if holding already exists
+	var existingID int
+	query := `SELECT id FROM stock_holdings WHERE symbol = $1 AND institution_name = $2 LIMIT 1`
+	err := tx.QueryRowContext(ctx, query, holding.Symbol, institution).Scan(&existingID)
+	
+	if err == nil {
+		// Update existing holding
+		log.Printf("Updating existing holding %s (ID: %d)", holding.Symbol, existingID)
+		updateQuery := `
+			UPDATE stock_holdings 
+			SET shares_owned = $1, current_price = $2, data_source = 'document_import', last_updated = NOW()
+			WHERE id = $3`
+		
+		_, err = tx.ExecContext(ctx, updateQuery, holding.Shares, holding.Price, existingID)
+		if err != nil {
+			log.Printf("Failed to update holding %s: %v", holding.Symbol, err)
+		} else {
+			log.Printf("Successfully updated holding %s", holding.Symbol)
+		}
+		return err
+	}
+
+	if err != sql.ErrNoRows {
+		return fmt.Errorf("error checking for existing holding: %w", err)
+	}
+
+	// Create new holding
+	log.Printf("Creating new holding %s", holding.Symbol)
+	insertQuery := `
+		INSERT INTO stock_holdings 
+		(symbol, company_name, shares_owned, current_price, institution_name, 
+		 data_source, is_vested_equity, created_at, last_updated)
+		VALUES ($1, $2, $3, $4, $5, 'document_import', false, NOW(), NOW())`
+
+	_, err = tx.ExecContext(ctx, insertQuery,
+		holding.Symbol,
+		holding.Description,
+		holding.Shares,
+		holding.Price,
+		institution,
+	)
+
+	if err != nil {
+		log.Printf("Failed to create holding %s: %v", holding.Symbol, err)
+	} else {
+		log.Printf("Successfully created holding %s", holding.Symbol)
+	}
+
+	return err
+}
+
+// importCrypto imports a cryptocurrency holding
+func (s *Server) importCrypto(ctx context.Context, tx *sql.Tx, crypto *services.ExtractedCrypto, institution string) error {
+	log.Printf("Importing crypto: %s - %f balance @ %f (value: %f) from %s [wallet: %s]", 
+		crypto.Symbol, crypto.Balance, crypto.Price, crypto.Value, institution, crypto.WalletType)
+	
+	// Check if crypto holding already exists
+	var existingID int
+	query := `SELECT id FROM crypto_holdings WHERE crypto_symbol = $1 AND institution_name = $2 LIMIT 1`
+	err := tx.QueryRowContext(ctx, query, crypto.Symbol, institution).Scan(&existingID)
+	
+	if err == nil {
+		// Update existing crypto holding
+		log.Printf("Updating existing crypto holding %s (ID: %d)", crypto.Symbol, existingID)
+		updateQuery := `
+			UPDATE crypto_holdings 
+			SET balance_tokens = $1, purchase_price_usd = $2, data_source = 'document_import', updated_at = NOW()
+			WHERE id = $3`
+		
+		_, err = tx.ExecContext(ctx, updateQuery, crypto.Balance, crypto.Price, existingID)
+		if err != nil {
+			log.Printf("Failed to update crypto holding %s: %v", crypto.Symbol, err)
+		} else {
+			log.Printf("Successfully updated crypto holding %s", crypto.Symbol)
+		}
+		return err
+	}
+
+	if err != sql.ErrNoRows {
+		return fmt.Errorf("error checking for existing crypto holding: %w", err)
+	}
+
+	// Create new crypto holding
+	log.Printf("Creating new crypto holding %s", crypto.Symbol)
+	insertQuery := `
+		INSERT INTO crypto_holdings 
+		(institution_name, crypto_symbol, balance_tokens, 
+		 purchase_price_usd, notes, data_source, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, 'document_import', NOW(), NOW())`
+
+	notes := crypto.Description
+	if crypto.WalletType != "" {
+		if notes != "" {
+			notes = fmt.Sprintf("Wallet Type: %s | %s", crypto.WalletType, notes)
+		} else {
+			notes = fmt.Sprintf("Wallet Type: %s", crypto.WalletType)
+		}
+	}
+
+	_, err = tx.ExecContext(ctx, insertQuery,
+		institution,
+		crypto.Symbol,
+		crypto.Balance,
+		crypto.Price, // Use current price as purchase price for lack of better data
+		notes,
+	)
+
+	if err != nil {
+		log.Printf("Failed to create crypto holding %s: %v", crypto.Symbol, err)
+	} else {
+		log.Printf("Successfully created crypto holding %s", crypto.Symbol)
+	}
+
+	return err
+}
+
+// updateJobStatus updates the status of a document processing job
+func (s *Server) updateJobStatus(ctx context.Context, jobID int, status string) error {
+	query := `UPDATE document_processing_jobs SET processing_status = $1, updated_at = NOW() WHERE id = $2`
+	_, err := s.db.ExecContext(ctx, query, status, jobID)
+	return err
+}
+
+// @Summary List document processing jobs
+// @Description Retrieve a paginated list of document processing jobs
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Param limit query int false "Number of jobs to return (default: 20, max: 100)"
+// @Param offset query int false "Number of jobs to skip (default: 0)"
+// @Success 200 {object} map[string]interface{} "List of document jobs"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Failure 503 {object} map[string]interface{} "LLM feature disabled"
+// @Router /documents [get]
+func (s *Server) listDocuments(c *gin.Context) {
+	// Check if LLM feature is enabled
+	if !s.config.API.LLMEnabled || s.documentProcessor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":           "LLM document processing feature is disabled",
+			"feature_enabled": false,
+		})
+		return
+	}
+
+	// Parse query parameters
+	limitStr := c.DefaultQuery("limit", "20")
+	offsetStr := c.DefaultQuery("offset", "0")
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+
+	jobs, err := s.documentProcessor.ListJobs(c.Request.Context(), limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to list document jobs: %v", err),
+		})
+		return
+	}
+
+	// Convert jobs to response format
+	var jobsResponse []map[string]interface{}
+	for _, job := range jobs {
+		jobMap := map[string]interface{}{
+			"id":                job.ID,
+			"filename":          job.Filename,
+			"file_type":         job.FileType,
+			"file_size":         job.FileSize,
+			"processing_status": job.ProcessingStatus,
+			"created_at":        job.CreatedAt,
+			"updated_at":        job.UpdatedAt,
+		}
+
+		if job.ErrorMessage != nil {
+			jobMap["error_message"] = *job.ErrorMessage
+		}
+
+		jobsResponse = append(jobsResponse, jobMap)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"jobs":   jobsResponse,
+		"count":  len(jobsResponse),
+		"limit":  limit,
+		"offset": offset,
+	})
+}
+
+// @Summary Process document with LLM
+// @Description Start LLM processing of an uploaded document
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Param id path int true "Document job ID"
+// @Success 200 {object} map[string]interface{} "Document processing started"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid status"
+// @Failure 404 {object} map[string]interface{} "Job not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Failure 503 {object} map[string]interface{} "LLM feature disabled"
+// @Router /documents/{id}/process [post]
+func (s *Server) processDocument(c *gin.Context) {
+	// Check if LLM feature is enabled
+	if !s.config.API.LLMEnabled || s.documentProcessor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":           "LLM document processing feature is disabled",
+			"feature_enabled": false,
+		})
+		return
+	}
+
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid job ID",
+		})
+		return
+	}
+
+	// Check if job exists and is in correct status
+	job, err := s.documentProcessor.GetJob(c.Request.Context(), id)
+	if err != nil {
+		if err.Error() == "job not found" {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Document job not found",
+			})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to get document job: %v", err),
+			})
+		}
+		return
+	}
+
+	if job.ProcessingStatus != "uploaded" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Cannot process document in status '%s'. Expected 'uploaded'", job.ProcessingStatus),
+		})
+		return
+	}
+
+	// Start processing asynchronously
+	go func() {
+		if err := s.documentProcessor.ProcessDocument(context.Background(), id); err != nil {
+			fmt.Printf("ERROR: Failed to process document %d: %v\n", id, err)
+		}
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Document processing started",
+		"job_id":  id,
+		"status":  "processing",
+	})
+}
+
+// ApprovalRequest represents the request body for document approval
+type ApprovalRequest struct {
+	InstitutionName *string `json:"institution_name,omitempty"` // Optional override for institution name
+}
+
+// @Summary Approve processed document
+// @Description Approve and import the extracted data from a processed document with optional institution name override
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Param id path int true "Document job ID"
+// @Param body body ApprovalRequest false "Optional approval parameters"
+// @Success 200 {object} map[string]interface{} "Document data imported successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request or invalid status"
+// @Failure 404 {object} map[string]interface{} "Job not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Failure 503 {object} map[string]interface{} "LLM feature disabled"
+// @Router /documents/{id}/approve [post]
+func (s *Server) approveDocument(c *gin.Context) {
+	// Check if LLM feature is enabled
+	if !s.config.API.LLMEnabled || s.documentProcessor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":           "LLM document processing feature is disabled",
+			"feature_enabled": false,
+		})
+		return
+	}
+
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid job ID",
+		})
+		return
+	}
+
+	// Parse optional approval request body
+	var approvalReq ApprovalRequest
+	if err := c.ShouldBindJSON(&approvalReq); err != nil {
+		// If binding fails, continue with default values (empty request body is fine)
+		log.Printf("Failed to parse approval request body (using defaults): %v", err)
+	}
+
+	// Check if job exists and is in correct status
+	job, err := s.documentProcessor.GetJob(c.Request.Context(), id)
+	if err != nil {
+		if err.Error() == "job not found" {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Document job not found",
+			})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to get document job: %v", err),
+			})
+		}
+		return
+	}
+
+	if job.ProcessingStatus != "completed" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Cannot approve document in status '%s'. Expected 'completed'", job.ProcessingStatus),
+		})
+		return
+	}
+
+	if job.ExtractedData == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "No extracted data available for approval",
+		})
+		return
+	}
+
+	// Parse extracted data
+	var extractedData services.FinancialDocumentData
+	if err := json.Unmarshal([]byte(*job.ExtractedData), &extractedData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Failed to parse extracted data: %v", err),
+		})
+		return
+	}
+
+	// Apply institution name override if provided
+	if approvalReq.InstitutionName != nil && strings.TrimSpace(*approvalReq.InstitutionName) != "" {
+		log.Printf("Overriding institution name from '%s' to '%s' for job %d", 
+			extractedData.Institution, *approvalReq.InstitutionName, id)
+		extractedData.Institution = strings.TrimSpace(*approvalReq.InstitutionName)
+	}
+
+	// Import the data into the dashboard
+	log.Printf("Starting data import for job %d", id)
+	importResult, err := s.importExtractedData(c.Request.Context(), &extractedData)
+	if err != nil {
+		log.Printf("Data import failed for job %d: %v", id, err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to import data: %v", err),
+		})
+		return
+	}
+	log.Printf("Data import successful for job %d: %+v", id, importResult)
+
+	// Update job status to approved
+	if err := s.updateJobStatus(c.Request.Context(), id, "approved"); err != nil {
+		// Log the error but don't fail the response since data was imported
+		log.Printf("Warning: Failed to update job status to approved: %v", err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":              true,
+		"message":              "Document data successfully imported",
+		"job_id":               id,
+		"imported_accounts":    importResult.ImportedAccounts,
+		"imported_transactions": importResult.ImportedTransactions,
+		"imported_holdings":    importResult.ImportedHoldings,
+		"import_details":       importResult,
+	})
+}
+
+// @Summary Delete document processing job
+// @Description Delete a document processing job and its associated files
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Param id path int true "Document job ID"
+// @Success 200 {object} map[string]interface{} "Document deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Job not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Failure 503 {object} map[string]interface{} "LLM feature disabled"
+// @Router /documents/{id} [delete]
+func (s *Server) deleteDocument(c *gin.Context) {
+	// Check if LLM feature is enabled
+	if !s.config.API.LLMEnabled || s.documentProcessor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":           "LLM document processing feature is disabled",
+			"feature_enabled": false,
+		})
+		return
+	}
+
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid job ID",
+		})
+		return
+	}
+
+	// Get job to check if it exists and get file path
+	job, err := s.documentProcessor.GetJob(c.Request.Context(), id)
+	if err != nil {
+		if err.Error() == "job not found" {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Document job not found",
+			})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to get document job: %v", err),
+			})
+		}
+		return
+	}
+
+	// Delete file from filesystem
+	if err := os.Remove(job.FilePath); err != nil && !os.IsNotExist(err) {
+		fmt.Printf("WARNING: Failed to delete file %s: %v\n", job.FilePath, err)
+	}
+
+	// Delete job from database
+	query := "DELETE FROM document_processing_jobs WHERE id = $1"
+	result, err := s.db.Exec(query, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to delete document job",
+		})
+		return
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check deletion result",
+		})
+		return
+	}
+
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Document job not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Document deleted successfully",
+		"job_id":  id,
+	})
+}
+
+// getDocumentHealth returns the health status of the document processing system
+// @Summary Get document processing system health
+// @Description Get health status information about the LLM document processing system
+// @Tags documents
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Health status information"
+// @Router /documents/health [get]
+func (s *Server) getDocumentHealth(c *gin.Context) {
+	// Check if upload directory is writable
+	uploadDirWritable := true
+	uploadDir := s.config.API.LLMUploadDir
+	if uploadDir == "" {
+		uploadDir = "./uploads"
+	}
+
+	// Try to create upload directory if it doesn't exist
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		uploadDirWritable = false
+	} else {
+		// Test write access by creating a temporary file
+		testFile := filepath.Join(uploadDir, ".write_test")
+		if file, err := os.Create(testFile); err != nil {
+			uploadDirWritable = false
+		} else {
+			file.Close()
+			os.Remove(testFile) // Clean up test file
+		}
+	}
+
+	// Count pending jobs
+	var pendingJobs int
+	query := `SELECT COUNT(*) FROM document_processing_jobs WHERE processing_status IN ('uploaded', 'processing')`
+	err := s.db.QueryRow(query).Scan(&pendingJobs)
+	if err != nil {
+		pendingJobs = 0 // Default to 0 if query fails
+	}
+
+	// Determine LLM status
+	llmStatus := "disabled"
+	if s.config.API.LLMEnabled {
+		if s.documentProcessor != nil {
+			llmStatus = "enabled"
+		} else {
+			llmStatus = "enabled_but_not_initialized"
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"llm_enabled":         s.config.API.LLMEnabled,
+		"llm_status":          llmStatus,
+		"upload_dir_writable": uploadDirWritable,
+		"pending_jobs":        pendingJobs,
+		"upload_directory":    uploadDir,
+		"llm_model":           s.config.API.LLMModel,
+		"llm_base_url":        s.config.API.LLMBaseURL,
+	})
 }

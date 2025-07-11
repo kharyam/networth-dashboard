@@ -547,7 +547,7 @@ func (p *RealEstatePlugin) ProcessManualEntry(data map[string]interface{}) error
 
 	_, err = p.db.Exec(query,
 		uniqueAccountID, propertyType, propertyName, streetAddress, city, state, zipCode,
-		purchasePrice, currentValue, outstandingMortgage, equity, purchaseDate, 
+		purchasePrice, currentValue, outstandingMortgage, equity, purchaseDate,
 		propertySizeSqft, lotSizeAcres, rentalIncomeMonthly, propertyTaxAnnual, notes,
 	)
 
@@ -645,7 +645,7 @@ func (p *RealEstatePlugin) UpdateManualEntry(id int, data map[string]interface{}
 
 	result, err := p.db.Exec(query,
 		propertyType, propertyName, streetAddress, city, state, zipCode,
-		purchasePrice, currentValue, outstandingMortgage, equity, purchaseDate, 
+		purchasePrice, currentValue, outstandingMortgage, equity, purchaseDate,
 		propertySizeSqft, lotSizeAcres, rentalIncomeMonthly, propertyTaxAnnual, notes,
 		time.Now(), id,
 	)
@@ -723,7 +723,7 @@ func (p *RealEstatePlugin) validateNumberField(data map[string]interface{}, fiel
 			data[field] = nil
 			return 0, nil
 		}
-		
+
 		var err error
 		num, err = strconv.ParseFloat(v, 64)
 		if err != nil {

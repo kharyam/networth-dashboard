@@ -18,41 +18,41 @@ const (
 type ServiceType string
 
 const (
-	ServiceTypePlaid        ServiceType = "plaid"
-	ServiceTypeAllyInvest   ServiceType = "ally_invest"
-	ServiceTypeKraken       ServiceType = "kraken"
-	ServiceTypeFidelity     ServiceType = "fidelity"
+	ServiceTypePlaid         ServiceType = "plaid"
+	ServiceTypeAllyInvest    ServiceType = "ally_invest"
+	ServiceTypeKraken        ServiceType = "kraken"
+	ServiceTypeFidelity      ServiceType = "fidelity"
 	ServiceTypeMorganStanley ServiceType = "morgan_stanley"
-	ServiceTypeMarketData   ServiceType = "market_data"
+	ServiceTypeMarketData    ServiceType = "market_data"
 )
 
 // Credential represents a stored credential
 type Credential struct {
-	ID           int           `json:"id" db:"id"`
-	ServiceType  ServiceType   `json:"service_type" db:"service_type"`
-	CredType     CredentialType `json:"credential_type" db:"credential_type"`
-	Name         string        `json:"name" db:"name"`
-	EncryptedData string       `json:"-" db:"encrypted_data"` // Never expose in JSON
-	IsActive     bool          `json:"is_active" db:"is_active"`
-	CreatedAt    time.Time     `json:"created_at" db:"created_at"`
-	UpdatedAt    time.Time     `json:"updated_at" db:"updated_at"`
-	LastUsed     *time.Time    `json:"last_used,omitempty" db:"last_used"`
+	ID            int            `json:"id" db:"id"`
+	ServiceType   ServiceType    `json:"service_type" db:"service_type"`
+	CredType      CredentialType `json:"credential_type" db:"credential_type"`
+	Name          string         `json:"name" db:"name"`
+	EncryptedData string         `json:"-" db:"encrypted_data"` // Never expose in JSON
+	IsActive      bool           `json:"is_active" db:"is_active"`
+	CreatedAt     time.Time      `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at" db:"updated_at"`
+	LastUsed      *time.Time     `json:"last_used,omitempty" db:"last_used"`
 }
 
 // APIKeyCredential represents API key-based credentials
 type APIKeyCredential struct {
-	Key        string `json:"key"`
-	Secret     string `json:"secret,omitempty"`
+	Key         string `json:"key"`
+	Secret      string `json:"secret,omitempty"`
 	Environment string `json:"environment,omitempty"` // sandbox, production, etc.
 }
 
 // OAuthCredential represents OAuth-based credentials
 type OAuthCredential struct {
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
-	AccessToken  string `json:"access_token,omitempty"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	TokenType    string `json:"token_type,omitempty"`
+	ClientID     string     `json:"client_id"`
+	ClientSecret string     `json:"client_secret"`
+	AccessToken  string     `json:"access_token,omitempty"`
+	RefreshToken string     `json:"refresh_token,omitempty"`
+	TokenType    string     `json:"token_type,omitempty"`
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
 }
 

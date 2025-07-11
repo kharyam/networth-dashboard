@@ -5,7 +5,7 @@
 
 backend:
   image:
-    repository: "image-registry.openshift-image-registry.svc:5000/networth-dashboard/backend"
+    repository: "image-registry.openshift-image-registry.svc:5000/networth-ai/backend"
     pullPolicy: Always
     tag: "latest"
 
@@ -21,10 +21,19 @@ backend:
     enabled: true
     allowedOrigins: "frontend-networth-dashboard.apps.ocp.khary.net"
 
+  config:
+    # LLM Configuration (for document processing)
+    llmEnabled: "true"
+    llmBaseUrl: "https://openrouter.ai/api/v1"
+    llmModel: "google/gemma-3-4b-it"
+    llmUploadDir: "/app/uploads"
+    llmInsecureSkipVerify: "true"
+
+
 frontend:
   replicaCount: 1
   image:
-    repository: "image-registry.openshift-image-registry.svc:5000/networth-dashboard/frontend"
+    repository: "image-registry.openshift-image-registry.svc:5000/networth-ai/frontend"
     pullPolicy: Always
     tag: "latest"
 
@@ -33,7 +42,7 @@ frontend:
       route.openshift.io/termination: edge
       route.openshift.io/insecureEdgeTerminationPolicy: Redirect
     hosts:
-      - host: frontend-networth-dashboard.apps.ocp.khary.net
+      - host: frontend-networth-ai.apps.ocp.khary.net
         paths:
           - path: /
             pathType: ImplementationSpecific

@@ -372,24 +372,59 @@ const (
 		CREATE INDEX IF NOT EXISTS idx_stock_holdings_vested ON stock_holdings(is_vested_equity) WHERE is_vested_equity = true;
 	`
 
+	// Document processing tables for LLM integration
+	createDocumentProcessingJobsTable = `
+		CREATE TABLE IF NOT EXISTS document_processing_jobs (
+			id SERIAL PRIMARY KEY,
+			filename VARCHAR(255) NOT NULL,
+			file_path VARCHAR(500) NOT NULL,
+			file_type VARCHAR(50) NOT NULL,
+			file_size INTEGER NOT NULL,
+			processing_status VARCHAR(50) DEFAULT 'uploaded',
+			llm_response JSONB,
+			extracted_data JSONB,
+			error_message TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		
+		-- Add indices for document processing jobs
+		CREATE INDEX IF NOT EXISTS idx_document_jobs_status ON document_processing_jobs(processing_status);
+		CREATE INDEX IF NOT EXISTS idx_document_jobs_created ON document_processing_jobs(created_at);
+		CREATE INDEX IF NOT EXISTS idx_document_jobs_filename ON document_processing_jobs(filename);
+	`
+
+	createTransactionsTable = `
+		CREATE TABLE IF NOT EXISTS transactions (
+			id SERIAL PRIMARY KEY,
+			document_job_id INTEGER REFERENCES document_processing_jobs(id),
+			transaction_date DATE NOT NULL,
+			amount DECIMAL(15,2) NOT NULL,
+			description TEXT NOT NULL,
+			raw_description TEXT,
+			category VARCHAR(100),
+			transaction_type VARCHAR(50) DEFAULT 'debit',
+			currency VARCHAR(3) DEFAULT 'USD',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		
+		-- Add indices for transactions
+		CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date);
+		CREATE INDEX IF NOT EXISTS idx_transactions_document ON transactions(document_job_id);
+		CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category);
+	`
+
 	createIndices = `
-		CREATE INDEX IF NOT EXISTS idx_accounts_data_source ON accounts(data_source_id);
-		CREATE INDEX IF NOT EXISTS idx_account_balances_account ON account_balances(account_id);
-		CREATE INDEX IF NOT EXISTS idx_account_balances_timestamp ON account_balances(timestamp);
 		CREATE INDEX IF NOT EXISTS idx_stock_holdings_symbol ON stock_holdings(symbol);
-		CREATE INDEX IF NOT EXISTS idx_stock_holdings_account ON stock_holdings(account_id);
 		CREATE INDEX IF NOT EXISTS idx_stock_holdings_institution ON stock_holdings(institution_name);
 		CREATE INDEX IF NOT EXISTS idx_stock_prices_symbol ON stock_prices(symbol);
-		CREATE INDEX IF NOT EXISTS idx_equity_grants_account ON equity_grants(account_id);
 		CREATE INDEX IF NOT EXISTS idx_equity_grants_symbol ON equity_grants(company_symbol);
 		CREATE INDEX IF NOT EXISTS idx_vesting_schedule_grant ON vesting_schedule(grant_id);
 		CREATE INDEX IF NOT EXISTS idx_vesting_schedule_date ON vesting_schedule(vest_date);
-		CREATE INDEX IF NOT EXISTS idx_real_estate_account ON real_estate_properties(account_id);
 		CREATE INDEX IF NOT EXISTS idx_real_estate_type ON real_estate_properties(property_type);
-		CREATE INDEX IF NOT EXISTS idx_cash_holdings_account ON cash_holdings(account_id);
 		CREATE INDEX IF NOT EXISTS idx_cash_holdings_type ON cash_holdings(account_type);
 		CREATE INDEX IF NOT EXISTS idx_cash_holdings_institution ON cash_holdings(institution_name);
-		CREATE INDEX IF NOT EXISTS idx_crypto_holdings_account ON crypto_holdings(account_id);
 		CREATE INDEX IF NOT EXISTS idx_crypto_holdings_symbol ON crypto_holdings(crypto_symbol);
 		CREATE INDEX IF NOT EXISTS idx_crypto_holdings_institution ON crypto_holdings(institution_name);
 		CREATE INDEX IF NOT EXISTS idx_crypto_prices_symbol ON crypto_prices(symbol);
@@ -398,11 +433,208 @@ const (
 		CREATE INDEX IF NOT EXISTS idx_net_worth_snapshots_timestamp ON net_worth_snapshots(timestamp);
 		CREATE INDEX IF NOT EXISTS idx_asset_categories_active ON asset_categories(is_active);
 		CREATE INDEX IF NOT EXISTS idx_asset_categories_sort ON asset_categories(sort_order);
-		CREATE INDEX IF NOT EXISTS idx_miscellaneous_assets_account ON miscellaneous_assets(account_id);
 		CREATE INDEX IF NOT EXISTS idx_miscellaneous_assets_category ON miscellaneous_assets(asset_category_id);
 		CREATE INDEX IF NOT EXISTS idx_miscellaneous_assets_type ON miscellaneous_assets(asset_type);
 		CREATE INDEX IF NOT EXISTS idx_miscellaneous_assets_valuation ON miscellaneous_assets(valuation_method);
 	`
+
+	// Remove llm_response column from document_processing_jobs table
+	removeDocumentLLMResponseColumn = `
+		-- Remove the llm_response column as it causes PostgreSQL JSON errors with backticks
+		-- The extracted_data column contains all necessary information
+		ALTER TABLE document_processing_jobs DROP COLUMN IF EXISTS llm_response;
+	`
+
+	// Add data_source field to cash_holdings and crypto_holdings for document import tracking
+	addDataSourceToCashHoldings = `
+		-- Add data_source field to cash_holdings table for tracking import origin
+		ALTER TABLE cash_holdings ADD COLUMN IF NOT EXISTS data_source VARCHAR(20) DEFAULT 'manual';
+		
+		-- Add index for data source queries
+		CREATE INDEX IF NOT EXISTS idx_cash_holdings_data_source ON cash_holdings(data_source);
+	`
+
+	addDataSourceToCryptoHoldings = `
+		-- Add data_source field to crypto_holdings table for tracking import origin
+		ALTER TABLE crypto_holdings ADD COLUMN IF NOT EXISTS data_source VARCHAR(20) DEFAULT 'manual';
+		
+		-- Add index for data source queries
+		CREATE INDEX IF NOT EXISTS idx_crypto_holdings_data_source ON crypto_holdings(data_source);
+	`
+
+	// Handle existing accounts infrastructure for upgrades, skip for new installations
+	migrateAccountsInfrastructureIfExists = `
+		-- Create accounts infrastructure only if it doesn't exist (for existing installations)
+		-- Then migrate data and remove old tables
+		DO $$
+		BEGIN
+		    -- Create accounts table only if it doesn't exist
+		    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'accounts') THEN
+		        -- This is a new installation, skip accounts infrastructure entirely
+		        RAISE NOTICE 'New installation detected, skipping accounts infrastructure';
+		    ELSE
+		        -- This is an existing installation, migrate data to cash_holdings
+		        RAISE NOTICE 'Existing installation detected, migrating account data';
+		        
+		        -- Migrate existing imported accounts to cash_holdings table
+		        INSERT INTO cash_holdings (
+		            institution_name, account_name, account_type, 
+		            current_balance, currency, data_source, created_at, updated_at
+		        )
+		        SELECT 
+		            a.institution,
+		            a.account_name,
+		            a.account_type,
+		            COALESCE(ab.balance, 0) as current_balance,
+		            COALESCE(ab.currency, 'USD') as currency,
+		            'document_import' as data_source,
+		            a.created_at,
+		            a.updated_at
+		        FROM accounts a
+		        LEFT JOIN LATERAL (
+		            SELECT balance, currency, timestamp
+		            FROM account_balances 
+		            WHERE account_id = a.id 
+		            ORDER BY timestamp DESC 
+		            LIMIT 1
+		        ) ab ON true
+		        WHERE a.data_source_type = 'document_import'
+		        ON CONFLICT (institution_name, account_name) DO NOTHING;
+		        
+		        -- Drop old tables after migration
+		        DROP TABLE IF EXISTS account_balances CASCADE;
+		        DROP TABLE IF EXISTS transactions CASCADE;
+		        DROP TABLE IF EXISTS manual_entries CASCADE;
+		        DROP TABLE IF EXISTS manual_entry_log CASCADE;
+		        DROP TABLE IF EXISTS accounts CASCADE;
+		    END IF;
+		END $$;
+	`
+
+	// Create new table definitions without account_id references
+	createStockHoldingsTableWithoutAccountRef = `
+		CREATE TABLE IF NOT EXISTS stock_holdings (
+			id SERIAL PRIMARY KEY,
+			symbol VARCHAR(10) NOT NULL,
+			company_name VARCHAR(200),
+			shares_owned DECIMAL(15,6) NOT NULL,
+			cost_basis DECIMAL(10,4),
+			current_price DECIMAL(10,4),
+			market_value DECIMAL(15,2) GENERATED ALWAYS AS (shares_owned * COALESCE(current_price, 0)) STORED,
+			institution_name VARCHAR(100) DEFAULT 'Manual Entry',
+			data_source VARCHAR(20) DEFAULT 'manual',
+			is_vested_equity BOOLEAN DEFAULT false,
+			estimated_quarterly_dividend DECIMAL(10,4),
+			purchase_date DATE,
+			drip_enabled VARCHAR(10) DEFAULT 'unknown',
+			last_manual_update TIMESTAMP,
+			last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(symbol, institution_name)
+		);`
+
+	createEquityGrantsTableWithoutAccountRef = `
+		CREATE TABLE IF NOT EXISTS equity_grants (
+			id SERIAL PRIMARY KEY,
+			grant_type VARCHAR(50) NOT NULL,
+			company_symbol VARCHAR(10) NOT NULL,
+			total_shares DECIMAL(15,6) NOT NULL,
+			vested_shares DECIMAL(15,6) DEFAULT 0,
+			unvested_shares DECIMAL(15,6) NOT NULL,
+			strike_price DECIMAL(10,4),
+			current_price DECIMAL(10,4) DEFAULT 0,
+			grant_date DATE NOT NULL,
+			vest_start_date DATE NOT NULL,
+			data_source VARCHAR(20) DEFAULT 'manual',
+			last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(grant_type, company_symbol, grant_date)
+		);`
+
+	createRealEstatePropertiesTableWithoutAccountRef = `
+		CREATE TABLE IF NOT EXISTS real_estate_properties (
+			id SERIAL PRIMARY KEY,
+			property_type VARCHAR(50) NOT NULL,
+			property_name VARCHAR(200) NOT NULL,
+			purchase_price DECIMAL(15,2) NOT NULL,
+			current_value DECIMAL(15,2) NOT NULL,
+			outstanding_mortgage DECIMAL(15,2) DEFAULT 0,
+			equity DECIMAL(15,2) NOT NULL,
+			purchase_date DATE NOT NULL,
+			property_size_sqft DECIMAL(10,2),
+			lot_size_acres DECIMAL(8,4),
+			rental_income_monthly DECIMAL(10,2),
+			property_tax_annual DECIMAL(10,2),
+			street_address VARCHAR(200),
+			city VARCHAR(100),
+			state VARCHAR(2),
+			zip_code VARCHAR(10),
+			latitude DECIMAL(10,8),
+			longitude DECIMAL(11,8),
+			api_estimated_value DECIMAL(15,2),
+			api_estimate_date TIMESTAMP,
+			api_provider VARCHAR(50),
+			notes TEXT,
+			last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(property_name)
+		);`
+
+	createCashHoldingsTableWithoutAccountRef = `
+		CREATE TABLE IF NOT EXISTS cash_holdings (
+			id SERIAL PRIMARY KEY,
+			institution_name VARCHAR(100) NOT NULL,
+			account_name VARCHAR(100) NOT NULL,
+			account_type VARCHAR(50) NOT NULL,
+			current_balance DECIMAL(15,2) NOT NULL,
+			interest_rate DECIMAL(5,2),
+			monthly_contribution DECIMAL(10,2),
+			account_number_last4 VARCHAR(4),
+			currency VARCHAR(3) DEFAULT 'USD',
+			data_source VARCHAR(20) DEFAULT 'manual',
+			notes TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(institution_name, account_name)
+		);`
+
+	createMiscellaneousAssetsTableWithoutAccountRef = `
+		CREATE TABLE IF NOT EXISTS miscellaneous_assets (
+			id SERIAL PRIMARY KEY,
+			asset_category_id INTEGER REFERENCES asset_categories(id),
+			asset_name VARCHAR(200) NOT NULL,
+			asset_type VARCHAR(50),
+			current_value DECIMAL(15,2) NOT NULL,
+			purchase_price DECIMAL(15,2),
+			amount_owed DECIMAL(15,2) DEFAULT 0,
+			purchase_date DATE,
+			description TEXT,
+			custom_fields JSONB,
+			valuation_method VARCHAR(20) DEFAULT 'manual',
+			last_valuation_date TIMESTAMP,
+			api_provider VARCHAR(50),
+			notes TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);`
+
+	createCryptoHoldingsTableWithoutAccountRef = `
+		CREATE TABLE IF NOT EXISTS crypto_holdings (
+			id SERIAL PRIMARY KEY,
+			institution_name VARCHAR(100) NOT NULL,
+			crypto_symbol VARCHAR(20) NOT NULL,
+			balance_tokens DECIMAL(20,8) NOT NULL,
+			purchase_price_usd DECIMAL(15,2),
+			purchase_date DATE,
+			wallet_address VARCHAR(255),
+			staking_annual_percentage DECIMAL(5,2) DEFAULT 0,
+			data_source VARCHAR(20) DEFAULT 'manual',
+			notes TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(institution_name, crypto_symbol)
+		);`
+
 
 	// Seed data for default asset categories
 	seedAssetCategories = `

@@ -29,6 +29,8 @@ type Server struct {
 	priceService             *services.PriceService
 	marketService            *services.MarketHoursService
 	propertyValuationService *services.PropertyValuationService
+	llmService               *services.LLMService
+	documentProcessor        *services.DocumentProcessor
 	httpServer               *http.Server
 }
 
@@ -60,6 +62,21 @@ func NewServer(cfg *config.Config, db *sql.DB, pluginManager *plugins.Manager) *
 	propertyValuationService := services.NewPropertyValuationService(&cfg.API)
 	log.Printf("INFO: Property valuation service initialized with provider: %s", propertyValuationService.GetProviderName())
 
+	// Initialize LLM service if enabled
+	var llmService *services.LLMService
+	var documentProcessor *services.DocumentProcessor
+	if cfg.API.LLMEnabled {
+		llmConfig := services.LLMConfig{
+			APIKey:             cfg.API.LLMAPIKey,
+			BaseURL:            cfg.API.LLMBaseURL,
+			Model:              cfg.API.LLMModel,
+			InsecureSkipVerify: cfg.API.LLMInsecureSkipVerify,
+		}
+		llmService = services.NewLLMService(llmConfig)
+		documentProcessor = services.NewDocumentProcessor(db, llmService, cfg.API.LLMUploadDir)
+		log.Printf("INFO: LLM service initialized with model: %s (SSL verify: %v)", cfg.API.LLMModel, !cfg.API.LLMInsecureSkipVerify)
+	}
+
 	server := &Server{
 		config:                   cfg,
 		db:                       db,
@@ -69,6 +86,8 @@ func NewServer(cfg *config.Config, db *sql.DB, pluginManager *plugins.Manager) *
 		priceService:             priceService,
 		marketService:            marketService,
 		propertyValuationService: propertyValuationService,
+		llmService:               llmService,
+		documentProcessor:        documentProcessor,
 	}
 
 	server.setupRouter()
@@ -104,13 +123,6 @@ func (s *Server) setupRouter() {
 		api.GET("/net-worth", s.getNetWorth)
 		api.GET("/net-worth/history", s.getNetWorthHistory)
 		api.GET("/passive-income", s.getPassiveIncome)
-
-		// Account endpoints
-		api.GET("/accounts", s.getAccounts)
-		api.GET("/accounts/:id", s.getAccount)
-		api.POST("/accounts", s.createAccount)
-		api.PUT("/accounts/:id", s.updateAccount)
-		api.DELETE("/accounts/:id", s.deleteAccount)
 
 		// Balance endpoints
 		api.GET("/balances", s.getBalances)
@@ -188,7 +200,7 @@ func (s *Server) setupRouter() {
 		api.POST("/prices/refresh", s.refreshPrices)
 		api.POST("/prices/refresh/:symbol", s.refreshSymbolPrice)
 		api.GET("/prices/status", s.getPricesStatus)
-		
+
 		// Market status endpoints
 		api.GET("/market/status", s.getMarketStatus)
 
@@ -200,7 +212,18 @@ func (s *Server) setupRouter() {
 		// Credential management endpoints
 		credentialHandler := handlers.NewCredentialHandler(s.credentialManager)
 		handlers.RegisterCredentialRoutes(api, credentialHandler)
-		
+
+		// Document processing endpoints (LLM integration)
+		api.GET("/documents/health", s.getDocumentHealth)
+		if s.config.API.LLMEnabled {
+			api.POST("/documents/upload", s.uploadDocument)
+			api.GET("/documents/:id", s.getDocument)
+			api.GET("/documents", s.listDocuments)
+			api.POST("/documents/:id/process", s.processDocument)
+			api.POST("/documents/:id/approve", s.approveDocument)
+			api.DELETE("/documents/:id", s.deleteDocument)
+		}
+
 		// OpenAPI spec download
 		// @Summary Download OpenAPI specification
 		// @Description Download the complete OpenAPI specification in JSON format
@@ -259,10 +282,10 @@ func (s *Server) healthCheck(c *gin.Context) {
 
 	// Get price service status
 	priceStatus := s.getPriceStatus()
-	
+
 	// Get market status
 	marketOpen := s.marketService.IsMarketOpen()
-	
+
 	// Get crypto service status
 	var cryptoSymbolCount int
 	query := "SELECT COUNT(DISTINCT crypto_symbol) FROM crypto_holdings"
@@ -271,20 +294,20 @@ func (s *Server) healthCheck(c *gin.Context) {
 	// Get property valuation service status
 	propertyProvider := s.propertyValuationService.GetProviderName()
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":     "healthy",
-		"timestamp":  time.Now().Format(time.RFC3339),
-		"database":   dbStatus,
+	response := gin.H{
+		"status":    "healthy",
+		"timestamp": time.Now().Format(time.RFC3339),
+		"database":  dbStatus,
 		"plugins": gin.H{
 			"total_count": pluginCount,
 			"available":   pluginList,
 		},
 		"price_service": gin.H{
-			"provider":            priceStatus.ProviderName,
-			"last_updated":        priceStatus.LastUpdated,
-			"stale_prices":        priceStatus.StaleCount,
-			"total_symbols":       priceStatus.TotalCount,
-			"cache_age_minutes":   priceStatus.CacheAgeMinutes,
+			"provider":             priceStatus.ProviderName,
+			"last_updated":         priceStatus.LastUpdated,
+			"stale_prices":         priceStatus.StaleCount,
+			"total_symbols":        priceStatus.TotalCount,
+			"cache_age_minutes":    priceStatus.CacheAgeMinutes,
 			"force_refresh_needed": priceStatus.ForceRefreshNeeded,
 		},
 		"market_status": gin.H{
@@ -297,5 +320,25 @@ func (s *Server) healthCheck(c *gin.Context) {
 			"provider": propertyProvider,
 		},
 		"version": "1.0",
-	})
+	}
+
+	// Add LLM service status if enabled
+	if s.config.API.LLMEnabled {
+		var documentCount int
+		docQuery := "SELECT COUNT(*) FROM document_processing_jobs"
+		s.db.QueryRow(docQuery).Scan(&documentCount)
+
+		response["llm_service"] = gin.H{
+			"enabled":             true,
+			"model":               s.config.API.LLMModel,
+			"base_url":            s.config.API.LLMBaseURL,
+			"documents_processed": documentCount,
+		}
+	} else {
+		response["llm_service"] = gin.H{
+			"enabled": false,
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
 }

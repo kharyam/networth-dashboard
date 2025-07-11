@@ -12,7 +12,6 @@ import (
 type CashHoldingsPlugin struct {
 	db          *sql.DB
 	name        string
-	accountID   int
 	lastUpdated time.Time
 }
 
@@ -56,19 +55,7 @@ func (p *CashHoldingsPlugin) GetDescription() string {
 
 // Initialize initializes the plugin with configuration
 func (p *CashHoldingsPlugin) Initialize(config PluginConfig) error {
-	// Get or create the plugin account
-	accountID, err := GetOrCreatePluginAccount(
-		p.db,
-		"Cash Holdings Portfolio",
-		"cash_holdings",
-		"Manual Entry",
-		"manual",
-	)
-	if err != nil {
-		return fmt.Errorf("failed to initialize Cash Holdings account: %w", err)
-	}
-
-	p.accountID = accountID
+	// No longer need to create accounts - cash holdings are stored directly in cash_holdings table
 	return nil
 }
 
@@ -97,7 +84,7 @@ func (p *CashHoldingsPlugin) IsHealthy() PluginHealth {
 func (p *CashHoldingsPlugin) GetAccounts() ([]Account, error) {
 	return []Account{
 		{
-			ID:          fmt.Sprintf("%d", p.accountID),
+			ID:          "cash_holdings",
 			Name:        "Cash Holdings Portfolio",
 			Type:        "cash_holdings",
 			Institution: "Manual Entry",
@@ -112,12 +99,12 @@ func (p *CashHoldingsPlugin) GetBalances() ([]Balance, error) {
 	var balances []Balance
 
 	query := `
-		SELECT current_balance, currency, updated_at
+		SELECT current_balance, currency, updated_at, institution_name, account_name
 		FROM cash_holdings
-		WHERE account_id = $1
+		ORDER BY institution_name, account_name
 	`
 
-	rows, err := p.db.Query(query, p.accountID)
+	rows, err := p.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query cash holdings balances: %w", err)
 	}
@@ -125,12 +112,13 @@ func (p *CashHoldingsPlugin) GetBalances() ([]Balance, error) {
 
 	for rows.Next() {
 		var balance Balance
-		err := rows.Scan(&balance.Amount, &balance.Currency, &balance.AsOfDate)
+		var institutionName, accountName string
+		err := rows.Scan(&balance.Amount, &balance.Currency, &balance.AsOfDate, &institutionName, &accountName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan cash holding balance: %w", err)
 		}
 
-		balance.AccountID = fmt.Sprintf("%d", p.accountID)
+		balance.AccountID = fmt.Sprintf("%s-%s", institutionName, accountName)
 		balance.DataSource = "manual"
 		balances = append(balances, balance)
 	}
@@ -254,11 +242,11 @@ func (p *CashHoldingsPlugin) GetManualEntrySchema() ManualEntrySchema {
 				Placeholder: "1234",
 			},
 			{
-				Name:        "currency",
-				Type:        "select",
-				Label:       "Currency",
-				Description: "Currency of the account",
-				Required:    true,
+				Name:         "currency",
+				Type:         "select",
+				Label:        "Currency",
+				Description:  "Currency of the account",
+				Required:     true,
 				DefaultValue: "USD",
 				Options: []FieldOption{
 					{Value: "USD", Label: "US Dollar (USD)"},
@@ -370,7 +358,7 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 	if balanceData, ok := data["current_balance"]; ok {
 		var balance float64
 		var err error
-		
+
 		switch v := balanceData.(type) {
 		case string:
 			balance, err = strconv.ParseFloat(v, 64)
@@ -385,7 +373,7 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 		default:
 			err = fmt.Errorf("unsupported type: %T", v)
 		}
-		
+
 		if err != nil {
 			errors = append(errors, ValidationError{
 				Field:   "current_balance",
@@ -417,7 +405,7 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 		} else {
 			var interestRate float64
 			var err error
-			
+
 			switch v := interestRateData.(type) {
 			case string:
 				if v != "" {
@@ -437,7 +425,7 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 			default:
 				err = fmt.Errorf("unsupported type: %T", v)
 			}
-			
+
 			if err != nil {
 				errors = append(errors, ValidationError{
 					Field:   "interest_rate",
@@ -454,7 +442,7 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 				validatedData["interest_rate"] = interestRate
 			}
 		}
-		skipInterestRate:
+	skipInterestRate:
 	}
 
 	// Validate optional monthly_contribution
@@ -465,7 +453,7 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 		} else {
 			var monthlyContrib float64
 			var err error
-			
+
 			switch v := monthlyContribData.(type) {
 			case string:
 				if v != "" {
@@ -485,7 +473,7 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 			default:
 				err = fmt.Errorf("unsupported type: %T", v)
 			}
-			
+
 			if err != nil {
 				errors = append(errors, ValidationError{
 					Field:   "monthly_contribution",
@@ -502,7 +490,7 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 				validatedData["monthly_contribution"] = monthlyContrib
 			}
 		}
-		skipMonthlyContrib:
+	skipMonthlyContrib:
 	}
 
 	// Validate optional account_number_last4
@@ -574,7 +562,6 @@ func (p *CashHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) Va
 	}
 }
 
-
 // ProcessManualEntry processes and stores manual entry data
 func (p *CashHoldingsPlugin) ProcessManualEntry(data map[string]interface{}) error {
 	// Validate the data first
@@ -587,7 +574,7 @@ func (p *CashHoldingsPlugin) ProcessManualEntry(data map[string]interface{}) err
 	institutionName := validation.Data["institution_name"].(string)
 	accountName := validation.Data["account_name"].(string)
 	uniqueIdentifier := fmt.Sprintf("%s %s", institutionName, accountName)
-	
+
 	uniqueAccountID, err := GetOrCreateUniquePluginAccount(
 		p.db,
 		"Cash Holdings",
@@ -717,17 +704,17 @@ func (p *CashHoldingsPlugin) BulkUpdateManualEntry(updates []BulkUpdateItem) err
 			FROM cash_holdings 
 			WHERE id = $1
 		`
-		
+
 		var institutionName, accountName, accountType, currency string
 		var currentBalance float64
 		var interestRate, monthlyContribution *float64
 		var accountNumberLast4, notes *string
-		
+
 		err := tx.QueryRow(query, update.ID).Scan(
 			&institutionName, &accountName, &accountType, &currentBalance,
 			&interestRate, &monthlyContribution, &accountNumberLast4, &currency, &notes,
 		)
-		
+
 		if err != nil {
 			failedUpdates = append(failedUpdates, BulkUpdateError{
 				ID:     update.ID,
@@ -736,16 +723,16 @@ func (p *CashHoldingsPlugin) BulkUpdateManualEntry(updates []BulkUpdateItem) err
 			})
 			continue
 		}
-		
+
 		// Create complete data by merging existing with changes
 		existingData = map[string]interface{}{
-			"institution_name":     institutionName,
-			"account_name":         accountName,
-			"account_type":         accountType,
-			"current_balance":      currentBalance,
-			"currency":             currency,
+			"institution_name": institutionName,
+			"account_name":     accountName,
+			"account_type":     accountType,
+			"current_balance":  currentBalance,
+			"currency":         currency,
 		}
-		
+
 		if interestRate != nil {
 			existingData["interest_rate"] = *interestRate
 		}
@@ -758,12 +745,12 @@ func (p *CashHoldingsPlugin) BulkUpdateManualEntry(updates []BulkUpdateItem) err
 		if notes != nil {
 			existingData["notes"] = *notes
 		}
-		
+
 		// Merge changes into existing data
 		for key, value := range update.Data {
 			existingData[key] = value
 		}
-		
+
 		// Validate the complete merged data
 		validation := p.ValidateManualEntry(existingData)
 		if !validation.Valid {

@@ -52,9 +52,9 @@ type CryptoPriceUpdateResult struct {
 	Error          string    `json:"error,omitempty"`
 	ErrorType      string    `json:"error_type,omitempty"` // "rate_limited", "api_error", "invalid_symbol", "cache_error"
 	Timestamp      time.Time `json:"timestamp"`
-	Source         string    `json:"source"`        // "api", "cache"
-	PriceChangeUSD float64   `json:"price_change_usd"`  // Absolute change in USD
-	PriceChangePct float64   `json:"price_change_pct"` // Percentage change in USD
+	Source         string    `json:"source"`              // "api", "cache"
+	PriceChangeUSD float64   `json:"price_change_usd"`    // Absolute change in USD
+	PriceChangePct float64   `json:"price_change_pct"`    // Percentage change in USD
 	CacheAge       string    `json:"cache_age,omitempty"` // How old the previous cached price was
 }
 
@@ -81,7 +81,7 @@ func NewCryptoService(db *sql.DB) *CryptoService {
 // GetPrice fetches current price for a single cryptocurrency
 func (cs *CryptoService) GetPrice(symbol string) (*CryptoPriceData, error) {
 	symbol = strings.ToLower(symbol)
-	
+
 	// Check if we have recent cached data (within 5 minutes)
 	cached, err := cs.getCachedPrice(symbol)
 	if err == nil && cached != nil && time.Since(cached.LastUpdated) < 5*time.Minute {
@@ -89,7 +89,7 @@ func (cs *CryptoService) GetPrice(symbol string) (*CryptoPriceData, error) {
 	}
 
 	// Fetch from CoinGecko
-	url := fmt.Sprintf("%s/simple/price?ids=%s&vs_currencies=usd,btc&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true", 
+	url := fmt.Sprintf("%s/simple/price?ids=%s&vs_currencies=usd,btc&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true",
 		cs.baseURL, cs.symbolToID(symbol))
 
 	resp, err := cs.client.Get(url)
@@ -155,7 +155,7 @@ func (cs *CryptoService) GetMultiplePrices(symbols []string) (map[string]*Crypto
 	// Convert symbols to coin IDs and prepare request
 	coinIDs := make([]string, 0, len(symbols))
 	symbolToID := make(map[string]string)
-	
+
 	for _, symbol := range symbols {
 		symbol = strings.ToLower(symbol)
 		coinID := cs.symbolToID(symbol)
@@ -163,7 +163,7 @@ func (cs *CryptoService) GetMultiplePrices(symbols []string) (map[string]*Crypto
 		symbolToID[coinID] = strings.ToUpper(symbol)
 	}
 
-	url := fmt.Sprintf("%s/simple/price?ids=%s&vs_currencies=usd,btc&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true", 
+	url := fmt.Sprintf("%s/simple/price?ids=%s&vs_currencies=usd,btc&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true",
 		cs.baseURL, strings.Join(coinIDs, ","))
 
 	resp, err := cs.client.Get(url)
@@ -187,10 +187,10 @@ func (cs *CryptoService) GetMultiplePrices(symbols []string) (map[string]*Crypto
 	}
 
 	results := make(map[string]*CryptoPriceData)
-	
+
 	for coinID, priceData := range response {
 		symbol := symbolToID[coinID]
-		
+
 		priceUSD, _ := priceData["usd"].(float64)
 		priceBTC, _ := priceData["btc"].(float64)
 		marketCapUSD, _ := priceData["usd_market_cap"].(float64)
@@ -222,7 +222,7 @@ func (cs *CryptoService) GetMultiplePrices(symbols []string) (map[string]*Crypto
 // RefreshAllCryptoPrices refreshes prices for all crypto holdings in the database
 func (cs *CryptoService) RefreshAllCryptoPrices() (*CryptoPriceRefreshSummary, error) {
 	startTime := time.Now()
-	
+
 	// Get all unique crypto symbols from holdings
 	query := `SELECT DISTINCT crypto_symbol FROM crypto_holdings`
 	rows, err := cs.db.Query(query)
@@ -262,7 +262,7 @@ func (cs *CryptoService) RefreshAllCryptoPrices() (*CryptoPriceRefreshSummary, e
 
 	// Fetch new prices for all symbols
 	newPrices, err := cs.GetMultiplePrices(symbols)
-	
+
 	// Build results
 	results := make([]CryptoPriceUpdateResult, 0, len(symbols))
 	updatedCount := 0
@@ -341,7 +341,7 @@ func (cs *CryptoService) getCachedPrice(symbol string) (*CryptoPriceData, error)
 		&price.Symbol, &price.PriceUSD, &price.PriceBTC, &price.MarketCapUSD,
 		&price.Volume24hUSD, &price.PriceChange24h, &price.LastUpdated,
 	)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, nil // No cached data
 	}
@@ -379,26 +379,26 @@ func (cs *CryptoService) cachePrice(price *CryptoPriceData) error {
 // This is a simplified mapping - in production, you might want to maintain a more comprehensive mapping
 func (cs *CryptoService) symbolToID(symbol string) string {
 	symbolMap := map[string]string{
-		"btc":  "bitcoin",
-		"eth":  "ethereum",
-		"ada":  "cardano",
-		"dot":  "polkadot",
-		"sol":  "solana",
+		"btc":   "bitcoin",
+		"eth":   "ethereum",
+		"ada":   "cardano",
+		"dot":   "polkadot",
+		"sol":   "solana",
 		"matic": "polygon",
-		"avax": "avalanche-2",
-		"link": "chainlink",
-		"uni":  "uniswap",
-		"ltc":  "litecoin",
-		"bch":  "bitcoin-cash",
-		"xlm":  "stellar",
-		"xrp":  "ripple",
-		"doge": "dogecoin",
-		"shib": "shiba-inu",
-		"bnb":  "binancecoin",
-		"usdc": "usd-coin",
-		"usdt": "tether",
-		"busd": "binance-usd",
-		"dai":  "dai",
+		"avax":  "avalanche-2",
+		"link":  "chainlink",
+		"uni":   "uniswap",
+		"ltc":   "litecoin",
+		"bch":   "bitcoin-cash",
+		"xlm":   "stellar",
+		"xrp":   "ripple",
+		"doge":  "dogecoin",
+		"shib":  "shiba-inu",
+		"bnb":   "binancecoin",
+		"usdc":  "usd-coin",
+		"usdt":  "tether",
+		"busd":  "binance-usd",
+		"dai":   "dai",
 	}
 
 	symbol = strings.ToLower(symbol)

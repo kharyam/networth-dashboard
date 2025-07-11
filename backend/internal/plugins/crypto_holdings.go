@@ -115,15 +115,15 @@ func (p *CryptoHoldingsPlugin) GetBalances() ([]Balance, error) {
 		SELECT ch.crypto_symbol, ch.balance_tokens, cp.price_usd, ch.updated_at
 		FROM crypto_holdings ch
 		LEFT JOIN crypto_prices cp ON ch.crypto_symbol = cp.symbol
-		WHERE ch.account_id = $1
-		AND (cp.last_updated IS NULL OR cp.last_updated = (
+		WHERE (cp.last_updated IS NULL OR cp.last_updated = (
 			SELECT MAX(last_updated)
 			FROM crypto_prices cp2
 			WHERE cp2.symbol = ch.crypto_symbol
 		))
+		ORDER BY ch.crypto_symbol
 	`
 
-	rows, err := p.db.Query(query, p.accountID)
+	rows, err := p.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query crypto holdings balances: %w", err)
 	}
@@ -262,7 +262,7 @@ func (p *CryptoHoldingsPlugin) GetManualEntrySchema() ManualEntrySchema {
 					Max: func(f float64) *float64 { return &f }(100),
 				},
 				DefaultValue: 0,
-				Placeholder: "5.0",
+				Placeholder:  "5.0",
 			},
 			{
 				Name:        "notes",
@@ -340,7 +340,7 @@ func (p *CryptoHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) 
 	if balanceData, exists := data["balance_tokens"]; exists && balanceData != nil {
 		var balance float64
 		var err error
-		
+
 		switch v := balanceData.(type) {
 		case string:
 			if v == "" {
@@ -374,7 +374,7 @@ func (p *CryptoHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) 
 				Code:    "invalid",
 			})
 		}
-		
+
 		if err == nil && balance < 0 {
 			errors = append(errors, ValidationError{
 				Field:   "balance_tokens",
@@ -400,7 +400,7 @@ func (p *CryptoHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) 
 		} else {
 			var purchasePrice float64
 			var err error
-			
+
 			switch v := purchasePriceData.(type) {
 			case string:
 				if v != "" {
@@ -420,7 +420,7 @@ func (p *CryptoHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) 
 			default:
 				err = fmt.Errorf("unsupported type: %T", v)
 			}
-			
+
 			if err != nil {
 				errors = append(errors, ValidationError{
 					Field:   "purchase_price_usd",
@@ -437,7 +437,7 @@ func (p *CryptoHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) 
 				validatedData["purchase_price_usd"] = purchasePrice
 			}
 		}
-		skipPurchasePrice:
+	skipPurchasePrice:
 	}
 
 	// Validate optional purchase_date
@@ -481,7 +481,7 @@ func (p *CryptoHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) 
 		} else {
 			var stakingPercentage float64
 			var err error
-			
+
 			switch v := stakingData.(type) {
 			case string:
 				if v != "" {
@@ -501,7 +501,7 @@ func (p *CryptoHoldingsPlugin) ValidateManualEntry(data map[string]interface{}) 
 			default:
 				err = fmt.Errorf("unsupported type: %T", v)
 			}
-			
+
 			if err != nil {
 				errors = append(errors, ValidationError{
 					Field:   "staking_annual_percentage",
@@ -560,36 +560,18 @@ func (p *CryptoHoldingsPlugin) ProcessManualEntry(data map[string]interface{}) e
 		return fmt.Errorf("validation failed: %v", validation.Errors)
 	}
 
-	// Create unique account for this crypto holding
-	institutionName := validation.Data["institution_name"].(string)
-	cryptoSymbol := validation.Data["crypto_symbol"].(string)
-	uniqueIdentifier := fmt.Sprintf("%s %s", institutionName, cryptoSymbol)
-	
-	uniqueAccountID, err := GetOrCreateUniquePluginAccount(
-		p.db,
-		"Crypto Holdings",
-		uniqueIdentifier,
-		"crypto",
-		institutionName,
-		"manual",
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create unique account for crypto holding: %w", err)
-	}
-
 	// Insert the crypto holding record
 	query := `
 		INSERT INTO crypto_holdings (
-			account_id, institution_name, crypto_symbol, balance_tokens,
+			institution_name, crypto_symbol, balance_tokens,
 			purchase_price_usd, purchase_date, wallet_address, notes,
 			staking_annual_percentage, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
 	now := time.Now()
-	_, err = p.db.Exec(
+	_, err := p.db.Exec(
 		query,
-		uniqueAccountID,
 		validation.Data["institution_name"],
 		validation.Data["crypto_symbol"],
 		validation.Data["balance_tokens"],
@@ -616,14 +598,6 @@ func (p *CryptoHoldingsPlugin) UpdateManualEntry(id int, data map[string]interfa
 	validation := p.ValidateManualEntry(data)
 	if !validation.Valid {
 		return fmt.Errorf("validation failed: %v", validation.Errors)
-	}
-
-	// First, get the actual account ID for this crypto holding
-	var actualAccountID int
-	accountQuery := `SELECT account_id FROM crypto_holdings WHERE id = $1`
-	err := p.db.QueryRow(accountQuery, id).Scan(&actualAccountID)
-	if err != nil {
-		return fmt.Errorf("failed to get crypto holding account ID: %w", err)
 	}
 
 	// Update the crypto holding record

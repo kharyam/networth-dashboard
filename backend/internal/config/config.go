@@ -46,22 +46,30 @@ type ApiConfig struct {
 	TwelveDataAPIKey     string
 	TwelveDataDailyLimit int
 	TwelveDataRateLimit  int
-	
+
 	// Fallback price provider (Alpha Vantage)
 	AlphaVantageAPIKey     string
 	AlphaVantageDailyLimit int
 	AlphaVantageRateLimit  int
-	
+
 	// Price provider selection
-	PrimaryPriceProvider   string // "twelvedata" or "alphavantage"
-	FallbackPriceProvider  string
-	
-	CacheRefreshInterval   time.Duration
-	AttomDataAPIKey        string
-	AttomDataBaseURL       string
+	PrimaryPriceProvider  string // "twelvedata" or "alphavantage"
+	FallbackPriceProvider string
+
+	CacheRefreshInterval time.Duration
+	AttomDataAPIKey      string
+	AttomDataBaseURL     string
 	// Feature flags for property valuation
 	PropertyValuationEnabled bool
 	AttomDataEnabled         bool
+
+	// LLM configuration
+	LLMAPIKey             string
+	LLMBaseURL            string
+	LLMModel              string
+	LLMUploadDir          string
+	LLMEnabled            bool
+	LLMInsecureSkipVerify bool
 }
 
 type MarketConfig struct {
@@ -74,20 +82,22 @@ type MarketConfig struct {
 func Load() (*Config, error) {
 	dbPort, _ := strconv.Atoi(getEnvOrDefault("DB_PORT", "5432"))
 	rateLimitRPS, _ := strconv.Atoi(getEnvOrDefault("RATE_LIMIT_RPS", "100"))
-	
+
 	// Twelve Data configuration
 	twelveDataDailyLimit, _ := strconv.Atoi(getEnvOrDefault("TWELVE_DATA_DAILY_LIMIT", "800"))
 	twelveDataRateLimit, _ := strconv.Atoi(getEnvOrDefault("TWELVE_DATA_RATE_LIMIT", "8"))
-	
+
 	// Alpha Vantage configuration (fallback)
 	alphaVantageDailyLimit, _ := strconv.Atoi(getEnvOrDefault("ALPHA_VANTAGE_DAILY_LIMIT", "25"))
 	alphaVantageRateLimit, _ := strconv.Atoi(getEnvOrDefault("ALPHA_VANTAGE_RATE_LIMIT", "5"))
-	
+
 	cacheRefreshMinutes, _ := strconv.Atoi(getEnvOrDefault("CACHE_REFRESH_MINUTES", "15"))
-	
+
 	// Parse feature flag boolean values (default to false for safety)
 	propertyValuationEnabled, _ := strconv.ParseBool(getEnvOrDefault("PROPERTY_VALUATION_ENABLED", "false"))
 	attomDataEnabled, _ := strconv.ParseBool(getEnvOrDefault("ATTOM_DATA_ENABLED", "false"))
+	llmEnabled, _ := strconv.ParseBool(getEnvOrDefault("LLM_ENABLED", "false"))
+	llmInsecureSkipVerify, _ := strconv.ParseBool(getEnvOrDefault("LLM_INSECURE_SKIP_VERIFY", "false"))
 
 	// Price provider configuration
 	primaryProvider := getEnvOrDefault("PRIMARY_PRICE_PROVIDER", "twelvedata")
@@ -96,7 +106,7 @@ func Load() (*Config, error) {
 	// Debug logging for API keys
 	twelveDataKey := getEnvOrDefault("TWELVE_DATA_API_KEY", "")
 	alphaVantageKey := getEnvOrDefault("ALPHA_VANTAGE_API_KEY", "")
-	
+
 	if twelveDataKey == "" && alphaVantageKey == "" {
 		log.Println("WARNING: No price provider API keys set - will use mock price provider")
 	} else {
@@ -147,6 +157,12 @@ func Load() (*Config, error) {
 			AttomDataBaseURL:         getEnvOrDefault("ATTOM_DATA_BASE_URL", "https://api.gateway.attomdata.com/propertyapi/v1.0.0"),
 			PropertyValuationEnabled: propertyValuationEnabled,
 			AttomDataEnabled:         attomDataEnabled,
+			LLMAPIKey:                getEnvOrDefault("LLM_API_KEY", ""),
+			LLMBaseURL:               getEnvOrDefault("LLM_BASE_URL", "https://api.openai.com/v1"),
+			LLMModel:                 getEnvOrDefault("LLM_MODEL", "gpt-4o"),
+			LLMUploadDir:             getEnvOrDefault("LLM_UPLOAD_DIR", "./uploads"),
+			LLMEnabled:               llmEnabled,
+			LLMInsecureSkipVerify:    llmInsecureSkipVerify,
 		},
 		Market: MarketConfig{
 			OpenTimeLocal:  getEnvOrDefault("MARKET_OPEN_LOCAL", "09:30"),  // 9:30 AM ET

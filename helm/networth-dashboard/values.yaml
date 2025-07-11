@@ -47,6 +47,12 @@ backend:
     alphaVantageRateLimit: 5
     primaryPriceProvider: "twelvedata"
     fallbackPriceProvider: "alphavantage"
+    # LLM Configuration (for document processing)
+    llmEnabled: "false"
+    llmBaseUrl: "https://api.openai.com/v1"
+    llmModel: "gpt-4o"
+    llmUploadDir: "/app/uploads"
+    llmInsecureSkipVerify: "false"
 
   cors:
     enabled: true

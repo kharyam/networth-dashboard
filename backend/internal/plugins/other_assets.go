@@ -232,7 +232,7 @@ func (p *OtherAssetsPlugin) GetManualEntrySchema() ManualEntrySchema {
 func (p *OtherAssetsPlugin) GetManualEntrySchemaForCategory(categoryID int) (ManualEntrySchema, error) {
 	// Start with base schema
 	schema := p.GetManualEntrySchema()
-	
+
 	// Get custom schema for the category
 	var customSchemaJSON sql.NullString
 	query := "SELECT custom_schema FROM asset_categories WHERE id = $1 AND is_active = true"
@@ -243,12 +243,12 @@ func (p *OtherAssetsPlugin) GetManualEntrySchemaForCategory(categoryID int) (Man
 		}
 		return schema, fmt.Errorf("failed to fetch category schema: %v", err)
 	}
-	
+
 	// If no custom schema, return base schema
 	if !customSchemaJSON.Valid {
 		return schema, nil
 	}
-	
+
 	// Parse custom schema
 	var customSchema struct {
 		Fields []struct {
@@ -261,11 +261,11 @@ func (p *OtherAssetsPlugin) GetManualEntrySchemaForCategory(categoryID int) (Man
 			Placeholder string                   `json:"placeholder,omitempty"`
 		} `json:"fields"`
 	}
-	
+
 	if err := json.Unmarshal([]byte(customSchemaJSON.String), &customSchema); err != nil {
 		return schema, fmt.Errorf("failed to parse custom schema: %v", err)
 	}
-	
+
 	// Convert custom fields to FieldSpec format
 	for _, customField := range customSchema.Fields {
 		field := FieldSpec{
@@ -275,7 +275,7 @@ func (p *OtherAssetsPlugin) GetManualEntrySchemaForCategory(categoryID int) (Man
 			Required:    customField.Required,
 			Placeholder: customField.Placeholder,
 		}
-		
+
 		// Convert options if present
 		if len(customField.Options) > 0 {
 			for _, opt := range customField.Options {
@@ -289,7 +289,7 @@ func (p *OtherAssetsPlugin) GetManualEntrySchemaForCategory(categoryID int) (Man
 				}
 			}
 		}
-		
+
 		// Convert validation if present
 		if customField.Validation != nil {
 			validation := FieldValidation{}
@@ -305,10 +305,10 @@ func (p *OtherAssetsPlugin) GetManualEntrySchemaForCategory(categoryID int) (Man
 			}
 			field.Validation = validation
 		}
-		
+
 		schema.Fields = append(schema.Fields, field)
 	}
-	
+
 	return schema, nil
 }
 
@@ -442,7 +442,7 @@ func (p *OtherAssetsPlugin) ValidateManualEntry(data map[string]interface{}) Val
 // transformCustomFields converts flattened custom field names to nested structure
 func (p *OtherAssetsPlugin) transformCustomFields(data map[string]interface{}) {
 	customFields := make(map[string]interface{})
-	
+
 	// Find and move flattened custom fields to nested structure
 	for key, value := range data {
 		if strings.HasPrefix(key, "custom_fields.") {
@@ -451,14 +451,14 @@ func (p *OtherAssetsPlugin) transformCustomFields(data map[string]interface{}) {
 			delete(data, key)
 		}
 	}
-	
+
 	// Merge with existing custom_fields if any
 	if existingCustomFields, exists := data["custom_fields"].(map[string]interface{}); exists {
 		for key, value := range existingCustomFields {
 			customFields[key] = value
 		}
 	}
-	
+
 	// Set the custom_fields object
 	if len(customFields) > 0 {
 		data["custom_fields"] = customFields
@@ -498,7 +498,7 @@ func (p *OtherAssetsPlugin) validateCustomFields(data map[string]interface{}, ca
 	// Validate each custom field
 	for _, field := range schema.Fields {
 		value, exists := customFields[field.Name]
-		
+
 		// Check required fields
 		if field.Required && (!exists || value == nil || value == "") {
 			errors = append(errors, ValidationError{
@@ -792,7 +792,7 @@ func (p *OtherAssetsPlugin) validateNumberField(data map[string]interface{}, fie
 			data[field] = nil
 			return 0, nil
 		}
-		
+
 		var err error
 		num, err = strconv.ParseFloat(v, 64)
 		if err != nil {

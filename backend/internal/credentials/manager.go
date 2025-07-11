@@ -15,9 +15,9 @@ func NewManager(db *sql.DB, encryptionKey string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	store := NewStore(db, encryptionService)
-	
+
 	return &Manager{
 		store: store,
 	}, nil
@@ -30,7 +30,7 @@ func (m *Manager) StoreAPIKey(serviceType ServiceType, name, key, secret, enviro
 		Secret:      secret,
 		Environment: environment,
 	}
-	
+
 	return m.store.Store(serviceType, CredentialTypeAPIKey, name, cred)
 }
 
@@ -40,7 +40,7 @@ func (m *Manager) StoreOAuth(serviceType ServiceType, name, clientID, clientSecr
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 	}
-	
+
 	return m.store.Store(serviceType, CredentialTypeOAuth, name, cred)
 }
 
@@ -51,7 +51,7 @@ func (m *Manager) StoreBasicAuth(serviceType ServiceType, name, username, passwo
 		Password: password,
 		Domain:   domain,
 	}
-	
+
 	return m.store.Store(serviceType, CredentialTypeBasic, name, cred)
 }
 
@@ -66,12 +66,12 @@ func (m *Manager) GetAPIKey(serviceType ServiceType) (*APIKeyCredential, error) 
 	if err != nil {
 		return nil, err
 	}
-	
+
 	apiKey, ok := data.(*APIKeyCredential)
 	if !ok {
 		return nil, ErrUnsupportedCredentialType
 	}
-	
+
 	return apiKey, nil
 }
 
@@ -81,12 +81,12 @@ func (m *Manager) GetOAuth(serviceType ServiceType) (*OAuthCredential, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	oauth, ok := data.(*OAuthCredential)
 	if !ok {
 		return nil, ErrUnsupportedCredentialType
 	}
-	
+
 	return oauth, nil
 }
 
@@ -96,12 +96,12 @@ func (m *Manager) GetBasicAuth(serviceType ServiceType) (*BasicAuthCredential, e
 	if err != nil {
 		return nil, err
 	}
-	
+
 	basicAuth, ok := data.(*BasicAuthCredential)
 	if !ok {
 		return nil, ErrUnsupportedCredentialType
 	}
-	
+
 	return basicAuth, nil
 }
 
@@ -112,7 +112,7 @@ func (m *Manager) UpdateAPIKey(serviceType ServiceType, key, secret, environment
 		Secret:      secret,
 		Environment: environment,
 	}
-	
+
 	return m.store.Update(serviceType, cred)
 }
 
@@ -124,7 +124,7 @@ func (m *Manager) UpdateOAuth(serviceType ServiceType, clientID, clientSecret, a
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}
-	
+
 	return m.store.Update(serviceType, cred)
 }
 

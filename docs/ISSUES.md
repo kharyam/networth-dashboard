@@ -1,8 +1,34 @@
 # Next Up
 
+IN PROGRESS I have an ambitious plan to update this application. I would like the application to have the ability to integrate with an llm via an open api compatible endpoint.  Possibly create a chat interface in the application, geared towards this application, for interaction with the user.  The main feature I want, is the ability for the application to analyze an arbitrary statement (text,pdf,csv,etc.) from a financial institution and use the existing api (or database directly, prefereably API) to update all relevant financial information in the dashboard.  If the statement is from a bank, update all matching bank accounts or creat them if they don't exist with information from the statement.  For a brokerage account, do the same, adding each holding as an entry for the institution. Possibly look up what the current dividend is for the holding and add that as well, since we are tracking it.  I imagine to do this, a fairly sophisticated prompt has to be given to the LLM through the endpoint to let it know exactly how to transform arbitrary statements so that they can be added to the dashboard via the existing API.  The code will then need to get the standardized output from the llm (which it will match a format given to it from its prompt) and make all appropriate calls to update the dashboard.  For matching entries from the statement, it should update existing information, otherwise create new entries. Create a plan for this, let me know the feasibility of doing it, and what technologies would be used to integrate the llm input/output with the functionality of the dashboard, such as API integration.
+
+
+  Key Benefits Achieved
+
+  1. Single Source of Truth: All cash holdings (manual + imported) now live in the cash_holdings table
+  2. Immediate UI Access: Imported accounts are immediately visible and editable in existing Cash Holdings page
+  3. Full Feature Support: Imported data gets all existing features (interest rates, CRUD operations, etc.)
+  4. Consistent Data Model: No parallel systems to maintain
+  5. Complete Asset Coverage: Handles cash, stocks, and crypto imports using existing infrastructure
+
+  How It Works Now
+
+  1. Document Upload & Processing: Users upload financial documents as before
+  2. AI Extraction: LLM extracts accounts, stocks, and crypto holdings
+  3. Import to Existing Tables:
+    - Cash accounts → cash_holdings table with data_source = 'document_import'
+    - Stock holdings → stock_holdings table with data_source = 'document_import'
+    - Crypto holdings → crypto_holdings table with data_source = 'document_import'
+  4. Immediate Availability: All imported data appears in existing management UIs
+  5. Full Editability: Users can modify imported data using existing CRUD interfaces
+
+  The system now provides a unified approach where imported financial data seamlessly integrates with manually entered data, giving
+  users a single, consistent interface for managing all their financial information regardless of how it was added to the system.
+
+
 Get an error when editing crypto on crpyto holdings page
 
-Need a way of specifying a brokerage account, right now its under cash holdings
+DONE Need a way of specifying a brokerage account, right now its under cash holdings
 
 DONE For cash holdings, a bulk edit screen would be helpful.  For each institution, a table view similar to a spreadsheet where I can update values at once then submit them in bulk. Describe a good way to add this functionality to the UI, e.g., what the UI enhancements would look like.
 
