@@ -70,6 +70,7 @@ func NewServer(cfg *config.Config, db *sql.DB, pluginManager *plugins.Manager) *
 			APIKey:             cfg.API.LLMAPIKey,
 			BaseURL:            cfg.API.LLMBaseURL,
 			Model:              cfg.API.LLMModel,
+			Provider:           cfg.API.LLMProvider,
 			InsecureSkipVerify: cfg.API.LLMInsecureSkipVerify,
 		}
 		llmService = services.NewLLMService(llmConfig)

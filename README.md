@@ -72,6 +72,16 @@ A comprehensive real-time net worth dashboard that aggregates financial data fro
    - Backend API: http://localhost:8080
    - Health check: http://localhost:8080/health
 
+
+### AI Selection
+
+For testing, (don't send sensitive data) use deepseek/deepseek-chat:free, for example from openrouter
+
+```bash
+ollama pull llama3.2-vision:11b
+```
+
+
 ### Development Setup
 
 For local development without Docker:

@@ -702,119 +702,239 @@ function CryptoHoldings() {
             Add Your First Holding
           </button>
         </div>
-      ) : viewMode === 'grid' ? (
-        /* Grid View - Individual Crypto Cards */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {holdings.map((holding) => (
-            <div key={holding.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
-              {/* Card Header */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-gray-900 dark:text-white">
-                    {holding.crypto_symbol}
-                  </span>
-                  <a
-                    href={`https://www.coingecko.com/en/coins/${getCoinGeckoId(holding.crypto_symbol)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                    title="View on CoinGecko"
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
-                <button
-                  onClick={() => toggleIndividualPriceMode(holding.id)}
-                  className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600"
-                  title={`Switch to ${getIndividualPriceMode(holding.id) === 'usd' ? 'BTC' : 'USD'}`}
-                >
-                  {getIndividualPriceMode(holding.id) === 'usd' ? '₿' : '$'}
-                </button>
-              </div>
+      ) : viewMode === 'list' ? (
+        /* List View - Row-based Table Layout */
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+          {/* Desktop Table View */}
+          <div className="hidden md:block">
+            <table className="w-full">
+              <thead className="bg-gray-50 dark:bg-gray-700">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Cryptocurrency
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Institution
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Balance
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Value
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    24h Change
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {holdings.map((holding) => (
+                  <tr key={holding.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center space-x-3">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm font-bold text-gray-900 dark:text-white">
+                            {holding.crypto_symbol}
+                          </span>
+                          <a
+                            href={`https://www.coingecko.com/en/coins/${getCoinGeckoId(holding.crypto_symbol)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                            title="View on CoinGecko"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                        <button
+                          onClick={() => toggleIndividualPriceMode(holding.id)}
+                          className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                          title={`Switch to ${getIndividualPriceMode(holding.id) === 'usd' ? 'BTC' : 'USD'}`}
+                        >
+                          {getIndividualPriceMode(holding.id) === 'usd' ? '₿' : '$'}
+                        </button>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm text-gray-900 dark:text-white">
+                        {holding.institution_name}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
+                        {formatCrypto(holding.balance_tokens, holding.crypto_symbol)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <span className="text-sm font-bold text-green-600 dark:text-green-400">
+                        {getIndividualPriceMode(holding.id) === 'btc' 
+                          ? formatCurrency(convertToBTC(holding.current_value_usd || 0), { currency: 'BTC' })
+                          : formatCurrency(holding.current_value_usd || 0)
+                        }
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      {holding.price_change_24h ? (
+                        <div className="flex items-center justify-center space-x-1">
+                          {holding.price_change_24h >= 0 ? (
+                            <TrendingUp className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <TrendingDown className="w-4 h-4 text-red-500" />
+                          )}
+                          <span className={`text-sm font-medium ${
+                            holding.price_change_24h >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                          }`}>
+                            {holding.price_change_24h >= 0 ? '+' : ''}{holding.price_change_24h.toFixed(2)}%
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <div className="flex items-center justify-center space-x-2">
+                        <button
+                          onClick={() => {
+                            setSelectedHolding(holding)
+                            setViewModalOpen(true)
+                          }}
+                          className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          title="View Details"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedHolding(holding)
+                            setEditModalOpen(true)
+                          }}
+                          className="p-1 text-gray-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedHolding(holding)
+                            setDeleteModalOpen(true)
+                          }}
+                          className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-              {/* Institution */}
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                {holding.institution_name}
-              </p>
-
-              {/* Balance */}
-              <div className="mb-3">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Balance</p>
-                <p className="text-base font-medium text-gray-900 dark:text-white">
-                  {formatCrypto(holding.balance_tokens, holding.crypto_symbol)}
-                </p>
-              </div>
-
-              {/* Value */}
-              <div className="mb-3">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Value</p>
-                <p className="text-lg font-bold text-green-600 dark:text-green-400">
-                  {getIndividualPriceMode(holding.id) === 'btc' 
-                    ? formatCurrency(convertToBTC(holding.current_value_usd || 0), { currency: 'BTC' })
-                    : formatCurrency(holding.current_value_usd || 0)
-                  }
-                </p>
-              </div>
-
-              {/* 24h Change */}
-              {holding.price_change_24h && (
-                <div className="mb-3">
-                  <div className="flex items-center gap-1">
-                    {holding.price_change_24h >= 0 ? (
-                      <TrendingUp className="w-3 h-3 text-green-500" />
-                    ) : (
-                      <TrendingDown className="w-3 h-3 text-red-500" />
-                    )}
-                    <span className={`text-xs font-medium ${
-                      holding.price_change_24h >= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {holding.price_change_24h >= 0 ? '+' : ''}{holding.price_change_24h.toFixed(2)}%
+          {/* Mobile Card View */}
+          <div className="md:hidden divide-y divide-gray-200 dark:divide-gray-700">
+            {holdings.map((holding) => (
+              <div key={holding.id} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-base font-bold text-gray-900 dark:text-white">
+                      {holding.crypto_symbol}
                     </span>
+                    <a
+                      href={`https://www.coingecko.com/en/coins/${getCoinGeckoId(holding.crypto_symbol)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                      title="View on CoinGecko"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                    <button
+                      onClick={() => toggleIndividualPriceMode(holding.id)}
+                      className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                      title={`Switch to ${getIndividualPriceMode(holding.id) === 'usd' ? 'BTC' : 'USD'}`}
+                    >
+                      {getIndividualPriceMode(holding.id) === 'usd' ? '₿' : '$'}
+                    </button>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    <button
+                      onClick={() => {
+                        setSelectedHolding(holding)
+                        setViewModalOpen(true)
+                      }}
+                      className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+                      title="View Details"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedHolding(holding)
+                        setEditModalOpen(true)
+                      }}
+                      className="p-1 text-gray-400 hover:text-green-600 dark:hover:text-green-400"
+                      title="Edit"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedHolding(holding)
+                        setDeleteModalOpen(true)
+                      }}
+                      className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end space-x-1 pt-2 border-t border-gray-100 dark:border-gray-700">
-                <button
-                  onClick={() => {
-                    setSelectedHolding(holding)
-                    setViewModalOpen(true)
-                  }}
-                  className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
-                  title="View Details"
-                >
-                  <Eye className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedHolding(holding)
-                    setEditModalOpen(true)
-                  }}
-                  className="p-1 text-gray-400 hover:text-green-600 dark:hover:text-green-400"
-                  title="Edit"
-                >
-                  <Edit2 className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedHolding(holding)
-                    setDeleteModalOpen(true)
-                  }}
-                  className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
-                  title="Delete"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                  {holding.institution_name}
+                </div>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Balance: </span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      {formatCrypto(holding.balance_tokens, holding.crypto_symbol)}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-bold text-green-600 dark:text-green-400">
+                      {getIndividualPriceMode(holding.id) === 'btc' 
+                        ? formatCurrency(convertToBTC(holding.current_value_usd || 0), { currency: 'BTC' })
+                        : formatCurrency(holding.current_value_usd || 0)
+                      }
+                    </div>
+                    {holding.price_change_24h && (
+                      <div className="flex items-center justify-end space-x-1 mt-1">
+                        {holding.price_change_24h >= 0 ? (
+                          <TrendingUp className="w-3 h-3 text-green-500" />
+                        ) : (
+                          <TrendingDown className="w-3 h-3 text-red-500" />
+                        )}
+                        <span className={`text-xs font-medium ${
+                          holding.price_change_24h >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                        }`}>
+                          {holding.price_change_24h >= 0 ? '+' : ''}{holding.price_change_24h.toFixed(2)}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       ) : (
-        /* List View - Grouped by Institution */
-        <div className="space-y-6">
+        /* Grid View - Institution Cards in Grid Layout */
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           {groupedHoldings.map(({ institutionName, holdings: institutionHoldings, totalValue: institutionTotal }) => (
-            <div key={institutionName} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <div key={institutionName} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md transition-shadow h-fit">
               {/* Institution Header */}
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
@@ -849,32 +969,32 @@ function CryptoHoldings() {
                       </ResponsiveContainer>
                     </ChartErrorBoundary>
                   </div>
-                  <div className="flex-1">
-                    <div className="flex items-baseline gap-3">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        {institutionName}
-                      </h3>
-                      <span className="text-lg font-bold text-green-600 dark:text-green-400">
-                        {priceMode === 'btc' 
-                          ? formatCurrency(convertToBTC(institutionTotal), { currency: 'BTC' })
-                          : formatCurrency(institutionTotal)
-                        }
-                      </span>
-                    </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
+                      {institutionName}
+                    </h3>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
                       {institutionHoldings.length} holding{institutionHoldings.length !== 1 ? 's' : ''}
                     </p>
                   </div>
                 </div>
+                <div className="text-right">
+                  <p className="text-lg font-bold text-green-600 dark:text-green-400">
+                    {priceMode === 'btc' 
+                      ? formatCurrency(convertToBTC(institutionTotal), { currency: 'BTC' })
+                      : formatCurrency(institutionTotal)
+                    }
+                  </p>
+                </div>
               </div>
 
               {/* Holdings List */}
-              <div className="space-y-3">
+              <div className="space-y-3 max-h-96 overflow-y-auto">
                 {institutionHoldings.map((holding) => (
-                  <div key={holding.id} className="border-l-4 border-blue-500 pl-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  <div key={holding.id} className="border-l-4 border-blue-500 pl-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-r-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-gray-900 dark:text-white">
                           {holding.crypto_symbol}
                         </span>
                         <a
@@ -888,64 +1008,74 @@ function CryptoHoldings() {
                         </a>
                         <button
                           onClick={() => toggleIndividualPriceMode(holding.id)}
-                          className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600"
+                          className="text-xs px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
                           title={`Switch to ${getIndividualPriceMode(holding.id) === 'usd' ? 'BTC' : 'USD'}`}
                         >
                           {getIndividualPriceMode(holding.id) === 'usd' ? '₿' : '$'}
                         </button>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        {holding.price_change_24h && (
-                          <span className={`text-xs font-medium ${
-                            holding.price_change_24h >= 0 ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            {holding.price_change_24h >= 0 ? '+' : ''}{holding.price_change_24h.toFixed(2)}%
-                          </span>
-                        )}
-                        <div className="flex items-center space-x-1">
-                          <button
-                            onClick={() => {
-                              setSelectedHolding(holding)
-                              setViewModalOpen(true)
-                            }}
-                            className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
-                            title="View Details"
-                          >
-                            <Eye className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedHolding(holding)
-                              setEditModalOpen(true)
-                            }}
-                            className="p-1 text-gray-400 hover:text-green-600 dark:hover:text-green-400"
-                            title="Edit"
-                          >
-                            <Edit2 className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedHolding(holding)
-                              setDeleteModalOpen(true)
-                            }}
-                            className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => {
+                            setSelectedHolding(holding)
+                            setViewModalOpen(true)
+                          }}
+                          className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          title="View Details"
+                        >
+                          <Eye className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedHolding(holding)
+                            setEditModalOpen(true)
+                          }}
+                          className="p-1 text-gray-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedHolding(holding)
+                            setDeleteModalOpen(true)
+                          }}
+                          className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600 dark:text-gray-400">
-                        {formatCrypto(holding.balance_tokens, holding.crypto_symbol)}
-                      </span>
-                      <span className="font-medium text-gray-900 dark:text-white">
-                        {getIndividualPriceMode(holding.id) === 'btc' 
-                          ? formatCurrency(convertToBTC(holding.current_value_usd || 0), { currency: 'BTC' })
-                          : formatCurrency(holding.current_value_usd || 0)
-                        }
-                      </span>
+                    
+                    <div className="flex justify-between items-end text-xs">
+                      <div className="flex-1">
+                        <span className="text-gray-600 dark:text-gray-400">
+                          {formatCrypto(holding.balance_tokens, holding.crypto_symbol)}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-gray-900 dark:text-white">
+                          {getIndividualPriceMode(holding.id) === 'btc' 
+                            ? formatCurrency(convertToBTC(holding.current_value_usd || 0), { currency: 'BTC' })
+                            : formatCurrency(holding.current_value_usd || 0)
+                          }
+                        </div>
+                        {holding.price_change_24h && (
+                          <div className="flex items-center justify-end space-x-1 mt-1">
+                            {holding.price_change_24h >= 0 ? (
+                              <TrendingUp className="w-3 h-3 text-green-500" />
+                            ) : (
+                              <TrendingDown className="w-3 h-3 text-red-500" />
+                            )}
+                            <span className={`font-medium ${
+                              holding.price_change_24h >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                            }`}>
+                              {holding.price_change_24h >= 0 ? '+' : ''}{holding.price_change_24h.toFixed(2)}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}

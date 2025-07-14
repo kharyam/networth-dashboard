@@ -51,6 +51,7 @@ backend:
     llmEnabled: "false"
     llmBaseUrl: "https://api.openai.com/v1"
     llmModel: "gpt-4o"
+    llmProvider: ""  # Auto-detect based on URL, or specify: openai, ollama, openrouter
     llmUploadDir: "/app/uploads"
     llmInsecureSkipVerify: "false"
 

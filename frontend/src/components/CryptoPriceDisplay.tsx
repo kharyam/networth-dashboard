@@ -1,5 +1,5 @@
 import React from 'react'
-import { TrendingUp, TrendingDown, Minus, RefreshCw } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, RefreshCw, ExternalLink } from 'lucide-react'
 
 interface CryptoPrice {
   symbol: string
@@ -29,6 +29,44 @@ const CryptoPriceDisplay: React.FC<CryptoPriceDisplayProps> = ({
   onRefreshPrices,
   loading = false
 }) => {
+  // Function to map crypto symbols to CoinGecko IDs
+  const getCoinGeckoId = (symbol: string) => {
+    const symbolMap: Record<string, string> = {
+      'BTC': 'bitcoin',
+      'ETH': 'ethereum',
+      'ADA': 'cardano',
+      'DOT': 'polkadot',
+      'LINK': 'chainlink',
+      'UNI': 'uniswap',
+      'LTC': 'litecoin',
+      'XRP': 'ripple',
+      'BCH': 'bitcoin-cash',
+      'BNB': 'binancecoin',
+      'SOL': 'solana',
+      'MATIC': 'polygon',
+      'AVAX': 'avalanche-2',
+      'ATOM': 'cosmos',
+      'NEAR': 'near',
+      'FTM': 'fantom',
+      'ALGO': 'algorand',
+      'XLM': 'stellar',
+      'VET': 'vechain',
+      'ICP': 'internet-computer',
+      'THETA': 'theta-token',
+      'FIL': 'filecoin',
+      'TRX': 'tron',
+      'EOS': 'eos',
+      'XMR': 'monero',
+      'AAVE': 'aave',
+      'MKR': 'maker',
+      'COMP': 'compound-coin',
+      'SUSHI': 'sushi',
+      '1INCH': '1inch',
+      'CRV': 'curve-dao-token'
+    }
+    
+    return symbolMap[symbol.toUpperCase()] || symbol.toLowerCase()
+  }
   // Extract unique crypto symbols and their price data
   const uniqueCryptos = holdings.reduce((acc, holding) => {
     const symbol = holding.crypto_symbol.toLowerCase()
@@ -102,8 +140,19 @@ const CryptoPriceDisplay: React.FC<CryptoPriceDisplayProps> = ({
           >
             <div className="flex items-center justify-between mb-2">
               <div>
-                <div className="font-semibold text-gray-900 dark:text-white">
-                  {crypto.symbol}
+                <div className="flex items-center gap-2">
+                  <div className="font-semibold text-gray-900 dark:text-white">
+                    {crypto.symbol}
+                  </div>
+                  <a
+                    href={`https://www.coingecko.com/en/coins/${getCoinGeckoId(crypto.symbol)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                    title="View on CoinGecko"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
                 </div>
                 <div className="text-sm text-gray-600 dark:text-gray-400">
                   {crypto.name}

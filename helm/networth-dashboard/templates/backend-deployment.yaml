@@ -123,6 +123,8 @@ spec:
               value: "{{ .Values.backend.config.llmBaseUrl }}"
             - name: LLM_MODEL
               value: "{{ .Values.backend.config.llmModel }}"
+            - name: LLM_PROVIDER
+              value: "{{ .Values.backend.config.llmProvider }}"
             - name: LLM_UPLOAD_DIR
               value: "{{ .Values.backend.config.llmUploadDir }}"
             - name: LLM_INSECURE_SKIP_VERIFY

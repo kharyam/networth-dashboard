@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { 
   Eye, 
   Play, 
@@ -39,9 +39,15 @@ export default function DocumentList({
   const [showFilters, setShowFilters] = useState(false)
   const [processingJobs, setProcessingJobs] = useState<Set<number>>(new Set())
   const [autoRefresh, setAutoRefresh] = useState(true)
+  const documentsRef = useRef<DocumentProcessingJob[]>([])
+
+  // Keep ref in sync with documents state
+  useEffect(() => {
+    documentsRef.current = documents
+  }, [documents])
 
   // Fetch documents
-  const fetchDocuments = async () => {
+  const fetchDocuments = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -53,7 +59,7 @@ export default function DocumentList({
     } finally {
       setLoading(false)
     }
-  }
+  }, [filters])
 
   // Refresh documents when trigger changes
   useEffect(() => {
@@ -64,18 +70,19 @@ export default function DocumentList({
   useEffect(() => {
     if (!autoRefresh) return
 
-    const hasProcessingDocs = documents.some(doc => 
-      doc.processing_status === 'processing' || doc.processing_status === 'uploaded'
-    )
-
-    if (!hasProcessingDocs) return
-
     const interval = setInterval(() => {
-      fetchDocuments()
+      // Check if there are any processing documents before fetching
+      const hasProcessingDocs = documentsRef.current.some(doc => 
+        doc.processing_status === 'processing' || doc.processing_status === 'uploaded'
+      )
+
+      if (hasProcessingDocs) {
+        fetchDocuments()
+      }
     }, 3000) // Refresh every 3 seconds
 
     return () => clearInterval(interval)
-  }, [documents, autoRefresh])
+  }, [autoRefresh, fetchDocuments]) // Include fetchDocuments since it's now memoized
 
   // Process document
   const handleProcess = async (jobId: number) => {

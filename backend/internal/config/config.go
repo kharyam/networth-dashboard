@@ -67,6 +67,7 @@ type ApiConfig struct {
 	LLMAPIKey             string
 	LLMBaseURL            string
 	LLMModel              string
+	LLMProvider           string
 	LLMUploadDir          string
 	LLMEnabled            bool
 	LLMInsecureSkipVerify bool
@@ -160,6 +161,7 @@ func Load() (*Config, error) {
 			LLMAPIKey:                getEnvOrDefault("LLM_API_KEY", ""),
 			LLMBaseURL:               getEnvOrDefault("LLM_BASE_URL", "https://api.openai.com/v1"),
 			LLMModel:                 getEnvOrDefault("LLM_MODEL", "gpt-4o"),
+			LLMProvider:              getEnvOrDefault("LLM_PROVIDER", ""),
 			LLMUploadDir:             getEnvOrDefault("LLM_UPLOAD_DIR", "./uploads"),
 			LLMEnabled:               llmEnabled,
 			LLMInsecureSkipVerify:    llmInsecureSkipVerify,

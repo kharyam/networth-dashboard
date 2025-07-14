@@ -2422,21 +2422,6 @@ func (s *Server) getManualEntries(c *gin.Context) {
 
 	// Build unified query to get manual entries from all relevant tables
 	query := `
-		SELECT 'computershare' as entry_type, 
-		       sh.id, sh.created_at, sh.created_at as updated_at,
-		       json_build_object(
-		           'symbol', sh.symbol,
-		           'company_name', sh.company_name,
-		           'shares_owned', sh.shares_owned,
-		           'cost_basis', sh.cost_basis,
-		           'current_price', sh.current_price
-		       ) as data_json,
-		       sh.institution_name as account_name, sh.institution_name as institution
-		FROM stock_holdings sh
-		WHERE sh.data_source = 'computershare'
-		
-		UNION ALL
-		
 		SELECT 'stock_holding' as entry_type, 
 		       sh.id, sh.created_at, sh.created_at as updated_at,
 		       json_build_object(
@@ -2445,11 +2430,12 @@ func (s *Server) getManualEntries(c *gin.Context) {
 		           'shares_owned', sh.shares_owned,
 		           'cost_basis', sh.cost_basis,
 		           'current_price', sh.current_price,
-		           'institution_name', sh.institution_name
+		           'institution_name', sh.institution_name,
+		           'data_source', sh.data_source
 		       ) as data_json,
 		       sh.institution_name as account_name, sh.institution_name as institution
 		FROM stock_holdings sh
-		WHERE sh.data_source IN ('manual', 'stock_holding') OR (sh.data_source IS NULL AND sh.created_at IS NOT NULL)
+		WHERE sh.shares_owned IS NOT NULL
 		
 		UNION ALL
 		
@@ -4700,8 +4686,8 @@ func (s *Server) importTransaction(ctx context.Context, tx *sql.Tx, transaction 
 
 // importHolding imports a stock holding
 func (s *Server) importHolding(ctx context.Context, tx *sql.Tx, holding *services.ExtractedHolding, institution string) error {
-	log.Printf("Importing holding: %s - %f shares @ %f (value: %f) from %s", 
-		holding.Symbol, holding.Shares, holding.Price, holding.Value, institution)
+	log.Printf("Importing holding: %s - %f shares @ %f (value: %f, cost_basis: %f) from %s", 
+		holding.Symbol, holding.Shares, holding.Price, holding.Value, holding.CostBasis, institution)
 	
 	// Check if holding already exists
 	var existingID int
@@ -4713,10 +4699,15 @@ func (s *Server) importHolding(ctx context.Context, tx *sql.Tx, holding *service
 		log.Printf("Updating existing holding %s (ID: %d)", holding.Symbol, existingID)
 		updateQuery := `
 			UPDATE stock_holdings 
-			SET shares_owned = $1, current_price = $2, data_source = 'document_import', last_updated = NOW()
-			WHERE id = $3`
+			SET shares_owned = $1, current_price = $2, cost_basis = $3, data_source = 'document_import', last_updated = NOW()
+			WHERE id = $4`
 		
-		_, err = tx.ExecContext(ctx, updateQuery, holding.Shares, holding.Price, existingID)
+		var costBasisPtr *float64
+		if holding.CostBasis > 0 {
+			costBasisPtr = &holding.CostBasis
+		}
+		
+		_, err = tx.ExecContext(ctx, updateQuery, holding.Shares, holding.Price, costBasisPtr, existingID)
 		if err != nil {
 			log.Printf("Failed to update holding %s: %v", holding.Symbol, err)
 		} else {
@@ -4733,15 +4724,21 @@ func (s *Server) importHolding(ctx context.Context, tx *sql.Tx, holding *service
 	log.Printf("Creating new holding %s", holding.Symbol)
 	insertQuery := `
 		INSERT INTO stock_holdings 
-		(symbol, company_name, shares_owned, current_price, institution_name, 
+		(symbol, company_name, shares_owned, current_price, cost_basis, institution_name, 
 		 data_source, is_vested_equity, created_at, last_updated)
-		VALUES ($1, $2, $3, $4, $5, 'document_import', false, NOW(), NOW())`
+		VALUES ($1, $2, $3, $4, $5, $6, 'document_import', false, NOW(), NOW())`
+
+	var costBasisPtr *float64
+	if holding.CostBasis > 0 {
+		costBasisPtr = &holding.CostBasis
+	}
 
 	_, err = tx.ExecContext(ctx, insertQuery,
 		holding.Symbol,
 		holding.Description,
 		holding.Shares,
 		holding.Price,
+		costBasisPtr,
 		institution,
 	)
 

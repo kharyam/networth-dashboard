@@ -75,6 +75,7 @@ type ExtractedHolding struct {
 	Shares      float64 `json:"shares"`
 	Price       float64 `json:"price"`
 	Value       float64 `json:"value"`
+	CostBasis   float64 `json:"cost_basis"`
 	Description string  `json:"description,omitempty"`
 }
 
@@ -250,7 +251,7 @@ func (dp *DocumentProcessor) processPDFDocument(ctx context.Context, job *Docume
 	if err := json.Unmarshal([]byte(repairedResponse), &extractedData); err != nil {
 		log.Printf("Failed to parse LLM response as JSON. Response length: %d, Error: %v", len(repairedResponse), err)
 		log.Printf("Response content (first 500 chars): %s", repairedResponse[:min(500, len(repairedResponse))])
-		
+
 		// Try to find the approximate location of the JSON error
 		if syntaxErr, ok := err.(*json.SyntaxError); ok {
 			offset := syntaxErr.Offset
@@ -261,19 +262,19 @@ func (dp *DocumentProcessor) processPDFDocument(ctx context.Context, job *Docume
 				log.Printf("Context around error: %s", repairedResponse[start:end])
 			}
 		}
-		
+
 		return nil, fmt.Errorf("failed to parse LLM response as JSON: %w", err)
 	}
 
 	// Log the extracted data before validation
-	log.Printf("Raw extracted data - Accounts: %d, Transactions: %d, Holdings: %d", 
+	log.Printf("Raw extracted data - Accounts: %d, Transactions: %d, Holdings: %d",
 		len(extractedData.Accounts), len(extractedData.Transactions), len(extractedData.Holdings))
-	
+
 	if len(extractedData.Holdings) > 0 {
 		log.Printf("Holdings before validation:")
 		for i, holding := range extractedData.Holdings {
-			log.Printf("  [%d] Symbol: %s, Shares: %f, Price: %f, Value: %f, Description: %s", 
-				i, holding.Symbol, holding.Shares, holding.Price, holding.Value, holding.Description)
+			log.Printf("  [%d] Symbol: %s, Shares: %f, Price: %f, Value: %f, CostBasis: %f, Description: %s",
+				i, holding.Symbol, holding.Shares, holding.Price, holding.Value, holding.CostBasis, holding.Description)
 		}
 	}
 
@@ -287,7 +288,7 @@ func (dp *DocumentProcessor) processPDFDocument(ctx context.Context, job *Docume
 	if len(extractedData.Holdings) > 0 {
 		log.Printf("Holdings after validation:")
 		for i, holding := range extractedData.Holdings {
-			log.Printf("  [%d] Symbol: %s, Shares: %f, Price: %f, Value: %f, Description: %s", 
+			log.Printf("  [%d] Symbol: %s, Shares: %f, Price: %f, Value: %f, Description: %s",
 				i, holding.Symbol, holding.Shares, holding.Price, holding.Value, holding.Description)
 		}
 	}
@@ -339,7 +340,7 @@ func (dp *DocumentProcessor) processCSVDocument(ctx context.Context, job *Docume
 	if err := json.Unmarshal([]byte(repairedResponse), &extractedData); err != nil {
 		log.Printf("Failed to parse LLM response as JSON. Response length: %d, Error: %v", len(repairedResponse), err)
 		log.Printf("Response content (first 500 chars): %s", repairedResponse[:min(500, len(repairedResponse))])
-		
+
 		// Try to find the approximate location of the JSON error
 		if syntaxErr, ok := err.(*json.SyntaxError); ok {
 			offset := syntaxErr.Offset
@@ -350,9 +351,13 @@ func (dp *DocumentProcessor) processCSVDocument(ctx context.Context, job *Docume
 				log.Printf("Context around error: %s", repairedResponse[start:end])
 			}
 		}
-		
+
 		return nil, fmt.Errorf("failed to parse LLM response as JSON: %w", err)
 	}
+
+	// Validate CSV extraction completeness
+	log.Printf("CSV processing completed - validating completeness")
+	dp.validateCSVExtraction(string(fileBytes), extractedData, job.Filename)
 
 	// Validate and transform the extracted data
 	if err := dp.validateAndTransformFinancialData(&extractedData); err != nil {
@@ -430,7 +435,7 @@ func (dp *DocumentProcessor) processImageDocument(ctx context.Context, job *Docu
 	if err := json.Unmarshal([]byte(repairedResponse), &extractedData); err != nil {
 		log.Printf("Failed to parse LLM response as JSON. Response length: %d, Error: %v", len(repairedResponse), err)
 		log.Printf("Response content (first 500 chars): %s", repairedResponse[:min(500, len(repairedResponse))])
-		
+
 		// Try to find the approximate location of the JSON error
 		if syntaxErr, ok := err.(*json.SyntaxError); ok {
 			offset := syntaxErr.Offset
@@ -441,7 +446,7 @@ func (dp *DocumentProcessor) processImageDocument(ctx context.Context, job *Docu
 				log.Printf("Context around error: %s", repairedResponse[start:end])
 			}
 		}
-		
+
 		return nil, fmt.Errorf("failed to parse LLM response as JSON: %w", err)
 	}
 
@@ -535,15 +540,15 @@ func (dp *DocumentProcessor) updateJobWithError(ctx context.Context, jobID int, 
 
 // updateJobWithResults updates a job with processing results
 func (dp *DocumentProcessor) updateJobWithResults(ctx context.Context, jobID int, extractedData *FinancialDocumentData) error {
-	log.Printf("Updating job %d with results. Accounts: %d, Transactions: %d, Holdings: %d", 
+	log.Printf("Updating job %d with results. Accounts: %d, Transactions: %d, Holdings: %d",
 		jobID, len(extractedData.Accounts), len(extractedData.Transactions), len(extractedData.Holdings))
-	
+
 	extractedDataJSON, err := json.Marshal(extractedData)
 	if err != nil {
 		log.Printf("Failed to marshal extracted data for job %d: %v", jobID, err)
 		return fmt.Errorf("failed to marshal extracted data: %w", err)
 	}
-	
+
 	log.Printf("Marshaled JSON length: %d bytes for job %d", len(extractedDataJSON), jobID)
 	log.Printf("JSON sample (first 200 chars): %s", string(extractedDataJSON)[:min(200, len(extractedDataJSON))])
 
@@ -555,11 +560,11 @@ func (dp *DocumentProcessor) updateJobWithResults(ctx context.Context, jobID int
 	_, err = dp.db.ExecContext(ctx, query, StatusCompleted, string(extractedDataJSON), time.Now(), jobID)
 	if err != nil {
 		log.Printf("Database update failed for job %d: %v", jobID, err)
-		log.Printf("Query parameters - Status: %s, JSON length: %d", 
+		log.Printf("Query parameters - Status: %s, JSON length: %d",
 			StatusCompleted, len(extractedDataJSON))
 		return fmt.Errorf("failed to update database: %w", err)
 	}
-	
+
 	log.Printf("Successfully updated job %d with extracted data", jobID)
 	return nil
 }
@@ -595,12 +600,15 @@ func (dp *DocumentProcessor) getFinancialDocumentPrompt() string {
       "shares": 100.0,
       "price": 150.00,
       "value": 15000.00,
+      "cost_basis": 12500.00,
       "description": "Apple Inc. Common Stock"
     }
-    // ONLY include if stock holdings are explicitly listed in the document
-    // Extract ALL stock positions, equity holdings, and securities shown
-    // Look for: stock symbols, company names, share quantities, current prices, market values
+    // CRITICAL: Extract ALL stock holdings visible in the document - DO NOT skip any
+    // Look for: stock symbols, company names, share quantities, current prices, market values, cost basis
+    // Include cost_basis if available (total cost, purchase price, book value, avg cost × shares)
     // LEAVE EMPTY ARRAY if no holdings exist: "holdings": []
+    // Extract EVERY position even if data is incomplete - missing fields should be 0.0
+	// Do not add any fields that are not shown in this example
   ],
   "crypto": [
     {
@@ -624,13 +632,15 @@ func (dp *DocumentProcessor) getFinancialDocumentPrompt() string {
 }
 
 CRITICAL FORMATTING REQUIREMENTS:
-1. RESPONSE MUST BE VALID JSON ONLY - no markdown code blocks, no extra text
+1. RESPONSE MUST BE VALID JSON ONLY - no markdown code blocks, no extra text, no text meant for humans, no explanations
 2. Dates MUST be in YYYY-MM-DD format (e.g., "2024-06-15", not "06/15/2024")
 3. Account types MUST be exactly one of: checking, savings, investment, credit, 401k, ira, taxable_brokerage
 4. Transaction categories MUST be exactly one of: food, gas, shopping, transfer, dividend, other
 5. ALL amounts must be POSITIVE numbers - NEVER use negative amounts
 6. Currency should always be "USD" unless clearly stated otherwise
 7. Transaction types: "debit" for money going out, "credit" for money coming in
+8. Do not add any fields that were not explicitly mentioned in the provided examples
+9. Do not explain anything, only generate the JSON without additional formatting.
 
 AMOUNT AND TYPE RULES:
 - NEVER use negative amounts (always positive numbers)
@@ -644,6 +654,13 @@ ACCOUNT TYPE MAPPING:
 - brokerage, investment account = "taxable_brokerage"
 - 401k, 403b = "401k"
 - Roth IRA, Traditional IRA = "ira"
+- crypto exchange, cryptocurrency wallet = "crypto_exchange"
+
+CRITICAL CRYPTO EXCHANGE IDENTIFICATION:
+1. For CRYPTO EXCHANGES (Coinbase, Binance, Kraken, etc.): Use account_type "crypto_exchange", NOT "brokerage"
+2. If the document contains cryptocurrency (BTC, ETH, etc.): This is likely a crypto exchange
+3. Crypto exchanges should NEVER be classified as "brokerage" accounts
+4. Known crypto platforms: Coinbase, Binance, Kraken, Gemini, Bitfinex, Crypto.com, FTX, KuCoin, Huobi, OKX, Uphold, BlockFi, Celsius, Nexo
 
 CRITICAL BROKERAGE/INVESTMENT ACCOUNT RULES:
 1. For INVESTMENT/BROKERAGE statements: PRIORITIZE individual stock holdings over account totals
@@ -657,23 +674,36 @@ CRITICAL BROKERAGE/INVESTMENT ACCOUNT RULES:
 6. Set document_type to "investment_statement" for brokerage/investment statements
 
 STOCK HOLDINGS EXTRACTION RULES:
-1. Look for stock symbols (3-5 character codes like AAPL, MSFT, TSLA, IBM)
-2. Extract number of shares owned (whole numbers or decimals)
-3. Extract current market price per share if shown
-4. Extract total market value (shares × price)
-5. Include company name or description if available
-6. PRIORITY: Individual stock positions are MORE IMPORTANT than account totals
-7. Common locations for holdings:
+1. CRITICAL: Extract EVERY stock position visible - aim for 100% capture rate - COUNT THE ROWS
+2. Look for stock symbols (1-8 character codes like AAPL, MSFT, TSLA, IBM, VANGUARD, SPDW, VEA, VOE)
+3. Extract number of shares owned (whole numbers, decimals, even 0 shares)
+4. Extract current market price per share if shown
+5. Extract total market value (shares × price)
+6. Extract cost basis information if available, be sure to find the cost basis if it is specified:
+   - Total cost basis, purchase price, book value
+   - Average cost per share (multiply by shares for total)
+   - Original investment amount
+   - Cost or basis or total cost basis columns in tables or csv
+7. Include company name or description if available
+8. PRIORITY: Individual stock positions are MORE IMPORTANT than account totals
+9. Common locations for holdings:
    - Portfolio summary sections
    - Holdings tables/lists
    - Asset allocation breakdowns
    - Investment account summaries
    - Brokerage statements
    - Individual security positions
-8. Look for patterns like:
-   - "IBM 100 shares @ $150.00"
-   - "International Business Machines Corp. 100 $150.00 $15,000"
-   - Ticker symbols in tables with quantities and values
+10. Look for patterns like:
+    - "IBM 100 shares @ $150.00 (Cost: $125.00)"
+    - "International Business Machines Corp. 100 $150.00 $15,000 Cost: $12,500"
+    - Ticker symbols in tables with quantities, values, and cost basis
+11. DO NOT skip positions due to missing data - extract what's available, use 0.0 for missing
+12. HANDLE SPECIAL CASES:
+    - Descriptions with hyphens (e.g., "EX-US", "SHORT-TERM")
+    - Large numerical values (thousands or millions)
+    - Missing "ETF" or "FUND" suffixes in descriptions
+    - High share quantities (100+) and high dollar values ($5000+)
+13. FOR CSV FILES: COUNT DATA ROWS and ensure holdings array matches the count
 
 CRYPTOCURRENCY EXTRACTION RULES:
 1. Look for crypto symbols (3-5 characters like BTC, ETH, ADA) or full names (Bitcoin, Ethereum)
@@ -692,17 +722,26 @@ CRYPTOCURRENCY EXTRACTION RULES:
 EXTRACTION GUIDELINES:
 1. Extract ONLY data that is explicitly present in the document
 2. DO NOT INVENT, GUESS, or HALLUCINATE any information
-3. If no holdings/stocks are listed, return empty array: "holdings": []
-4. If no transactions exist, return empty array: "transactions": []
-5. If no crypto exists, return empty array: "crypto": []
-6. Use null for missing values, never make up data or partial words
-7. Direct Deposits are always "credit" type (money coming in)
-8. Card purchases, payments, withdrawals are always "debit" type (money going out)
-9. Set confidence_score: "High" if very clear, "Medium" if mostly clear, "Low" if unclear
-10. For stock holdings: ONLY extract if symbols and shares are clearly visible
-11. For crypto: ONLY extract if symbols/names and balances are clearly visible
-12. If price or value missing but shares/balance exist, set price/value to 0.0
-13. IMPORTANT: For investment statements, if you find individual stock holdings, do NOT also create an account entry for the total portfolio value
+3. COMPLETENESS PRIORITY: Extract ALL visible holdings, even with incomplete data
+4. MANDATORY: For CSV files, count data rows and extract the same number of holdings
+5. If no holdings/stocks are listed, return empty array: "holdings": []
+6. If no transactions exist, return empty array: "transactions": []
+7. If no crypto exists, return empty array: "crypto": []
+8. Use 0.0 for missing numeric values (price, value, cost_basis), never make up data
+9. Direct Deposits are always "credit" type (money coming in)
+10. Card purchases, payments, withdrawals are always "debit" type (money going out)
+11. Set confidence_score: "High" if very clear, "Medium" if mostly clear, "Low" if unclear
+12. For stock holdings: Extract if symbols are visible, even if other data is missing
+13. For crypto: Extract if symbols/names are visible, even if other data is missing
+14. If price, value, or cost_basis missing, set to 0.0 (will be updated later)
+15. IMPORTANT: For investment statements, if you find individual stock holdings, do NOT also create an account entry for the total portfolio value
+16. SCAN ENTIRE DOCUMENT: Check all pages, tables, sections for additional holdings
+17. SPECIAL HANDLING:
+    - Process ALL rows sequentially, do not skip any
+    - Handle symbols with special characters (hyphens, underscores)
+    - Process large numerical values correctly (thousands, millions)
+    - Include ALL entries regardless of description format variations
+18. QUALITY CHECK: Verify holdings count matches data rows before finalizing response
 
 INVESTMENT STATEMENT PRIORITY:
 - IF document has individual stock positions (ticker + shares): Extract as "holdings", skip total account value
@@ -786,18 +825,18 @@ func max(a, b int) int {
 func stripMarkdownCodeBlocks(content string) string {
 	// Remove leading and trailing whitespace
 	content = strings.TrimSpace(content)
-	
+
 	// Remove markdown code block markers
 	if strings.HasPrefix(content, "```json") {
 		content = strings.TrimPrefix(content, "```json")
 	} else if strings.HasPrefix(content, "```") {
 		content = strings.TrimPrefix(content, "```")
 	}
-	
+
 	if strings.HasSuffix(content, "```") {
 		content = strings.TrimSuffix(content, "```")
 	}
-	
+
 	// Remove any remaining leading/trailing whitespace
 	return strings.TrimSpace(content)
 }
@@ -805,20 +844,26 @@ func stripMarkdownCodeBlocks(content string) string {
 // validateAndTransformFinancialData validates and transforms extracted financial data
 func (dp *DocumentProcessor) validateAndTransformFinancialData(data *FinancialDocumentData) error {
 	log.Printf("Validating and transforming financial data for %s from %s", data.DocumentType, data.Institution)
-	
+
 	// Validate and transform accounts
 	validAccounts := make([]ExtractedAccount, 0)
 	for i := range data.Accounts {
 		account := &data.Accounts[i]
-		
+
 		// Normalize account type
 		account.AccountType = dp.normalizeAccountType(account.AccountType)
-		
+
 		// Ensure currency is set
 		if account.Currency == "" {
 			account.Currency = "USD"
 		}
-		
+
+		// Skip crypto exchange accounts - crypto data should only go to crypto_holdings table
+		if account.AccountType == "crypto_exchange" {
+			log.Printf("Skipping crypto exchange account '%s' - crypto data will be handled separately", account.Name)
+			continue
+		}
+
 		// For investment statements with holdings, skip importing total account values as cash
 		if data.DocumentType == "investment_statement" && len(data.Holdings) > 0 {
 			// Check if this looks like a total portfolio value rather than actual cash
@@ -828,46 +873,46 @@ func (dp *DocumentProcessor) validateAndTransformFinancialData(data *FinancialDo
 				for _, holding := range data.Holdings {
 					totalHoldingsValue += holding.Value
 				}
-				
+
 				// If account balance is close to total holdings value, skip it (it's likely the portfolio total)
 				tolerance := 0.05 // 5% tolerance
-				if totalHoldingsValue > 0 && 
-				   account.Balance >= totalHoldingsValue*(1-tolerance) && 
-				   account.Balance <= totalHoldingsValue*(1+tolerance) {
-					log.Printf("Skipping account balance %f for %s - appears to be portfolio total (holdings total: %f)", 
+				if totalHoldingsValue > 0 &&
+					account.Balance >= totalHoldingsValue*(1-tolerance) &&
+					account.Balance <= totalHoldingsValue*(1+tolerance) {
+					log.Printf("Skipping account balance %f for %s - appears to be portfolio total (holdings total: %f)",
 						account.Balance, account.Name, totalHoldingsValue)
 					continue
 				}
-				
+
 				// Also skip if the account name suggests it's a total value
 				accountNameLower := strings.ToLower(account.Name)
-				if strings.Contains(accountNameLower, "total") || 
-				   strings.Contains(accountNameLower, "portfolio") ||
-				   strings.Contains(accountNameLower, "market value") {
+				if strings.Contains(accountNameLower, "total") ||
+					strings.Contains(accountNameLower, "portfolio") ||
+					strings.Contains(accountNameLower, "market value") {
 					log.Printf("Skipping account '%s' - name suggests portfolio total, not cash balance", account.Name)
 					continue
 				}
 			}
 		}
-		
+
 		validAccounts = append(validAccounts, *account)
 	}
 	data.Accounts = validAccounts
-	
+
 	// Validate and transform transactions
 	for i := range data.Transactions {
 		transaction := &data.Transactions[i]
-		
+
 		// Convert date format
 		if normalizedDate, err := dp.normalizeDateFormat(transaction.Date); err == nil {
 			transaction.Date = normalizedDate
 		} else {
 			log.Printf("Warning: Invalid date format '%s', keeping original: %v", transaction.Date, err)
 		}
-		
+
 		// Normalize category
 		transaction.Category = dp.normalizeCategory(transaction.Category)
-		
+
 		// Fix amount and type consistency
 		if transaction.Amount < 0 {
 			// Convert negative amounts to positive and ensure correct type
@@ -875,48 +920,51 @@ func (dp *DocumentProcessor) validateAndTransformFinancialData(data *FinancialDo
 			transaction.Type = "debit"
 			log.Printf("Fixed negative amount: %f -> %f with type 'debit'", -transaction.Amount, transaction.Amount)
 		}
-		
+
 		// Ensure type is set correctly based on transaction description
 		if transaction.Type == "" {
 			// Default to debit for most transactions unless clearly income
 			transaction.Type = "debit"
 		}
-		
+
 		// Fix obvious type mismatches based on description
 		description := strings.ToLower(transaction.Description)
-		if strings.Contains(description, "direct deposit") || 
-		   strings.Contains(description, "interest paid") ||
-		   strings.Contains(description, "deposit") ||
-		   strings.Contains(description, "credit") {
+		if strings.Contains(description, "direct deposit") ||
+			strings.Contains(description, "interest paid") ||
+			strings.Contains(description, "deposit") ||
+			strings.Contains(description, "credit") {
 			transaction.Type = "credit"
 		}
 	}
-	
-	// Validate and filter holdings
+
+	// Validate and filter holdings - be more lenient to capture all stocks
 	validHoldings := make([]ExtractedHolding, 0)
 	for _, holding := range data.Holdings {
-		// Filter out invalid holdings but be more lenient
-		if holding.Shares <= 0 {
-			log.Printf("Filtering out holding with invalid shares: %s (shares: %f) - must have positive shares", 
-				holding.Symbol, holding.Shares)
-			continue
-		}
-		
+		log.Printf("Processing holding: %s - %f shares @ %f (value: %f, cost_basis: %f)",
+			holding.Symbol, holding.Shares, holding.Price, holding.Value, holding.CostBasis)
+
 		// Filter out obviously made-up symbols
 		symbol := strings.ToUpper(strings.TrimSpace(holding.Symbol))
-		if symbol == "" || symbol == "SYMBOL" || symbol == "STOCK" || symbol == "TICKER" || 
-		   symbol == "XXX" || symbol == "EXAMPLE" {
+		if symbol == "" || symbol == "SYMBOL" || symbol == "STOCK" || symbol == "TICKER" ||
+			symbol == "XXX" || symbol == "EXAMPLE" {
 			log.Printf("Filtering out placeholder holding symbol: %s", holding.Symbol)
 			continue
 		}
-		
-		// Validate symbol format (1-5 characters, alphanumeric)
-		if len(symbol) < 1 || len(symbol) > 5 {
-			log.Printf("Filtering out invalid symbol length: %s (length: %d)", symbol, len(symbol))
+
+		// Relaxed symbol validation (1-8 characters for international funds/ETFs)
+		if len(symbol) < 1 || len(symbol) > 8 {
+			log.Printf("Filtering out invalid symbol length: %s (length: %d) - must be 1-8 characters", symbol, len(symbol))
 			continue
 		}
-		
-		// Allow holdings with 0 price/value if shares exist (will be updated later with real prices)
+
+		// Allow holdings with 0 or negative shares (could be valid for pending transactions or short positions)
+		// Just log for debugging but don't filter out
+		if holding.Shares <= 0 {
+			log.Printf("Warning: holding %s has non-positive shares: %f (keeping for manual review)",
+				symbol, holding.Shares)
+		}
+
+		// Clean up negative values
 		if holding.Price < 0 {
 			log.Printf("Setting negative price to 0 for %s", symbol)
 			holding.Price = 0
@@ -925,44 +973,54 @@ func (dp *DocumentProcessor) validateAndTransformFinancialData(data *FinancialDo
 			log.Printf("Setting negative value to 0 for %s", symbol)
 			holding.Value = 0
 		}
-		
-		// If value is missing but we have shares and price, calculate it
+		if holding.CostBasis < 0 {
+			log.Printf("Setting negative cost basis to 0 for %s", symbol)
+			holding.CostBasis = 0
+		}
+
+		// Calculate missing values when possible
 		if holding.Value == 0 && holding.Shares > 0 && holding.Price > 0 {
 			holding.Value = holding.Shares * holding.Price
 			log.Printf("Calculated value for %s: %f shares * %f price = %f", symbol, holding.Shares, holding.Price, holding.Value)
 		}
-		
+
+		// Log cost basis information for debugging
+		if holding.CostBasis > 0 {
+			log.Printf("Cost basis found for %s: %f", symbol, holding.CostBasis)
+		}
+
 		// Ensure symbol is uppercase
 		holding.Symbol = symbol
 		validHoldings = append(validHoldings, holding)
-		log.Printf("Valid holding: %s - %f shares @ %f = %f", symbol, holding.Shares, holding.Price, holding.Value)
+		log.Printf("Valid holding: %s - %f shares @ %f = %f (cost_basis: %f)",
+			symbol, holding.Shares, holding.Price, holding.Value, holding.CostBasis)
 	}
 	data.Holdings = validHoldings
-	
+
 	// Validate and filter crypto holdings
 	validCrypto := make([]ExtractedCrypto, 0)
 	for _, crypto := range data.Crypto {
 		// Filter out invalid crypto but be more lenient
 		if crypto.Balance <= 0 {
-			log.Printf("Filtering out crypto with invalid balance: %s (balance: %f) - must have positive balance", 
+			log.Printf("Filtering out crypto with invalid balance: %s (balance: %f) - must have positive balance",
 				crypto.Symbol, crypto.Balance)
 			continue
 		}
-		
+
 		// Filter out obviously made-up symbols
 		symbol := strings.ToUpper(strings.TrimSpace(crypto.Symbol))
-		if symbol == "" || symbol == "SYMBOL" || symbol == "CRYPTO" || symbol == "TOKEN" || 
-		   symbol == "XXX" || symbol == "EXAMPLE" || symbol == "COIN" {
+		if symbol == "" || symbol == "SYMBOL" || symbol == "CRYPTO" || symbol == "TOKEN" ||
+			symbol == "XXX" || symbol == "EXAMPLE" || symbol == "COIN" {
 			log.Printf("Filtering out placeholder crypto symbol: %s", crypto.Symbol)
 			continue
 		}
-		
+
 		// Validate symbol format (1-10 characters for crypto, can be longer than stocks)
 		if len(symbol) < 1 || len(symbol) > 10 {
 			log.Printf("Filtering out invalid crypto symbol length: %s (length: %d)", symbol, len(symbol))
 			continue
 		}
-		
+
 		// Allow crypto with 0 price/value if balance exists (will be updated later with real prices)
 		if crypto.Price < 0 {
 			log.Printf("Setting negative price to 0 for %s", symbol)
@@ -972,25 +1030,25 @@ func (dp *DocumentProcessor) validateAndTransformFinancialData(data *FinancialDo
 			log.Printf("Setting negative value to 0 for %s", symbol)
 			crypto.Value = 0
 		}
-		
+
 		// If value is missing but we have balance and price, calculate it
 		if crypto.Value == 0 && crypto.Balance > 0 && crypto.Price > 0 {
 			crypto.Value = crypto.Balance * crypto.Price
 			log.Printf("Calculated value for %s: %f balance * %f price = %f", symbol, crypto.Balance, crypto.Price, crypto.Value)
 		}
-		
+
 		// Normalize wallet type
 		if crypto.WalletType != "" {
 			crypto.WalletType = strings.ToLower(strings.TrimSpace(crypto.WalletType))
 		}
-		
+
 		// Ensure symbol is uppercase
 		crypto.Symbol = symbol
 		validCrypto = append(validCrypto, crypto)
 		log.Printf("Valid crypto: %s - %f balance @ %f = %f (%s)", symbol, crypto.Balance, crypto.Price, crypto.Value, crypto.WalletType)
 	}
 	data.Crypto = validCrypto
-	
+
 	// Validate metadata
 	if data.Metadata["statement_date"] != nil {
 		if dateStr, ok := data.Metadata["statement_date"].(string); ok {
@@ -999,64 +1057,138 @@ func (dp *DocumentProcessor) validateAndTransformFinancialData(data *FinancialDo
 			}
 		}
 	}
-	
+
 	// Ensure confidence score is set
 	if data.Metadata["confidence_score"] == nil {
 		data.Metadata["confidence_score"] = "Medium"
 	}
-	
-	log.Printf("Data validation completed. Accounts: %d, Transactions: %d, Holdings: %d, Crypto: %d", 
+
+	log.Printf("Data validation completed. Accounts: %d, Transactions: %d, Holdings: %d, Crypto: %d",
 		len(data.Accounts), len(data.Transactions), len(data.Holdings), len(data.Crypto))
-	
+
 	return nil
+}
+
+// validateCSVExtraction validates that CSV extraction captured all expected rows
+func (dp *DocumentProcessor) validateCSVExtraction(csvContent string, extractedData FinancialDocumentData, filename string) {
+	// Count non-header rows in CSV
+	lines := strings.Split(strings.TrimSpace(csvContent), "\n")
+	dataRows := 0
+
+	// Skip header row and count data rows
+	for i, line := range lines {
+		if i == 0 {
+			continue // Skip header
+		}
+		if strings.TrimSpace(line) != "" {
+			dataRows++
+		}
+	}
+
+	extractedHoldings := len(extractedData.Holdings)
+	log.Printf("CSV Validation - File: %s, Data rows: %d, Extracted holdings: %d",
+		filename, dataRows, extractedHoldings)
+
+	if extractedHoldings < dataRows {
+		log.Printf("WARNING: Missing holdings detected! Expected %d but extracted %d", dataRows, extractedHoldings)
+		log.Printf("Missing %d holdings from CSV", dataRows-extractedHoldings)
+
+		// Log which symbols were extracted for debugging
+		extractedSymbols := make([]string, 0, extractedHoldings)
+		for _, holding := range extractedData.Holdings {
+			extractedSymbols = append(extractedSymbols, holding.Symbol)
+		}
+		log.Printf("Extracted symbols: %v", extractedSymbols)
+
+		// Try to identify missing symbols from CSV
+		dp.identifyMissingSymbols(csvContent, extractedSymbols)
+	} else if extractedHoldings == dataRows {
+		log.Printf("SUCCESS: All %d holdings extracted from CSV", dataRows)
+	} else {
+		log.Printf("WARNING: Extracted more holdings (%d) than CSV rows (%d)", extractedHoldings, dataRows)
+	}
+}
+
+// identifyMissingSymbols attempts to identify which symbols were not extracted
+func (dp *DocumentProcessor) identifyMissingSymbols(csvContent string, extractedSymbols []string) {
+	lines := strings.Split(strings.TrimSpace(csvContent), "\n")
+	extractedMap := make(map[string]bool)
+	for _, symbol := range extractedSymbols {
+		extractedMap[strings.ToUpper(symbol)] = true
+	}
+
+	log.Printf("Analyzing CSV for missing symbols...")
+	for i, line := range lines {
+		if i == 0 {
+			continue // Skip header
+		}
+
+		fields := strings.Split(line, ",")
+		if len(fields) >= 4 { // Assuming symbol is in column 4 (index 3)
+			symbol := strings.TrimSpace(fields[3])
+			symbol = strings.ToUpper(symbol)
+
+			if !extractedMap[symbol] && symbol != "" {
+				log.Printf("MISSING SYMBOL: %s (from CSV row %d)", symbol, i+1)
+			}
+		}
+	}
 }
 
 // normalizeAccountType maps account types to valid values
 func (dp *DocumentProcessor) normalizeAccountType(accountType string) string {
 	accountType = strings.ToLower(strings.TrimSpace(accountType))
-	
+
 	// Define mapping for common variations
 	typeMap := map[string]string{
-		"checking":           "checking",
-		"savings":            "savings",
-		"investment":         "taxable_brokerage", // Map generic investment to taxable_brokerage
-		"credit":             "credit",
-		"401k":               "401k",
-		"ira":                "ira",
-		"taxable_brokerage":  "taxable_brokerage",
-		"brokerage":          "taxable_brokerage",
-		"brokerage_account":  "taxable_brokerage",
-		"individual":         "taxable_brokerage", // Individual brokerage account
-		"joint":              "taxable_brokerage", // Joint brokerage account
-		"margin":             "taxable_brokerage", // Margin account
-		"cash_account":       "taxable_brokerage", // Cash brokerage account
-		"trading":            "taxable_brokerage", // Trading account
-		"condox":             "savings", // Map unknown type to savings
-		"condo":              "savings",
-		"escrow":             "savings",
-		"money_market":       "savings",
-		"cd":                 "savings",
-		"certificate":        "savings",
-		"401(k)":             "401k",
-		"403(b)":             "401k",
-		"roth_ira":           "ira",
-		"traditional_ira":    "ira",
-		"sep_ira":            "ira",
+		"checking":          "checking",
+		"savings":           "savings",
+		"investment":        "taxable_brokerage", // Map generic investment to taxable_brokerage
+		"credit":            "credit",
+		"401k":              "401k",
+		"ira":               "ira",
+		"taxable_brokerage": "taxable_brokerage",
+		"brokerage":         "taxable_brokerage",
+		"brokerage_account": "taxable_brokerage",
+		"individual":        "taxable_brokerage", // Individual brokerage account
+		"joint":             "taxable_brokerage", // Joint brokerage account
+		"margin":            "taxable_brokerage", // Margin account
+		"cash_account":      "taxable_brokerage", // Cash brokerage account
+		"trading":           "taxable_brokerage", // Trading account
+		"condox":            "savings",           // Map unknown type to savings
+		"condo":             "savings",
+		"escrow":            "savings",
+		"money_market":      "savings",
+		"cd":                "savings",
+		"certificate":       "savings",
+		"401(k)":            "401k",
+		"403(b)":            "401k",
+		"roth_ira":          "ira",
+		"traditional_ira":   "ira",
+		"sep_ira":           "ira",
+		"crypto_exchange":   "crypto_exchange",
+		"cryptocurrency":    "crypto_exchange",
+		"crypto":            "crypto_exchange",
+		"bitcoin":           "crypto_exchange",
+		"coinbase":          "crypto_exchange",
+		"binance":           "crypto_exchange",
+		"kraken":            "crypto_exchange",
+		"gemini":            "crypto_exchange",
 	}
-	
+
 	if mapped, exists := typeMap[accountType]; exists {
 		return mapped
 	}
-	
+
 	// Check for partial matches for investment-related terms
-	if strings.Contains(accountType, "brokerage") || 
-	   strings.Contains(accountType, "investment") ||
-	   strings.Contains(accountType, "trading") ||
-	   strings.Contains(accountType, "securities") {
+	if strings.Contains(accountType, "brokerage") ||
+		strings.Contains(accountType, "investment") ||
+		strings.Contains(accountType, "trading") ||
+		strings.Contains(accountType, "securities") {
 		log.Printf("Account type '%s' contains investment-related terms, mapping to 'taxable_brokerage'", accountType)
 		return "taxable_brokerage"
 	}
-	
+
 	log.Printf("Unknown account type '%s', mapping to 'savings'", accountType)
 	return "savings"
 }
@@ -1064,7 +1196,7 @@ func (dp *DocumentProcessor) normalizeAccountType(accountType string) string {
 // normalizeCategory maps transaction categories to valid values
 func (dp *DocumentProcessor) normalizeCategory(category string) string {
 	category = strings.ToLower(strings.TrimSpace(category))
-	
+
 	// Define mapping for common variations
 	categoryMap := map[string]string{
 		"food":       "food",
@@ -1085,11 +1217,11 @@ func (dp *DocumentProcessor) normalizeCategory(category string) string {
 		"fuel":       "gas",
 		"gasoline":   "gas",
 	}
-	
+
 	if mapped, exists := categoryMap[category]; exists {
 		return mapped
 	}
-	
+
 	log.Printf("Unknown category '%s', mapping to 'other'", category)
 	return "other"
 }
@@ -1097,7 +1229,7 @@ func (dp *DocumentProcessor) normalizeCategory(category string) string {
 // normalizeDateFormat converts various date formats to YYYY-MM-DD
 func (dp *DocumentProcessor) normalizeDateFormat(dateStr string) (string, error) {
 	dateStr = strings.TrimSpace(dateStr)
-	
+
 	// Try different date formats
 	formats := []string{
 		"01/02/2006", // MM/DD/YYYY
@@ -1108,13 +1240,13 @@ func (dp *DocumentProcessor) normalizeDateFormat(dateStr string) (string, error)
 		"01-02-2006", // MM-DD-YYYY
 		"2006/01/02", // YYYY/MM/DD
 	}
-	
+
 	for _, format := range formats {
 		if parsedTime, err := time.Parse(format, dateStr); err == nil {
 			return parsedTime.Format("2006-01-02"), nil
 		}
 	}
-	
+
 	// If we can't parse the date, try to extract year and set reasonable defaults
 	yearRegex := regexp.MustCompile(`(\d{4})`)
 	if matches := yearRegex.FindStringSubmatch(dateStr); len(matches) > 1 {
@@ -1126,7 +1258,7 @@ func (dp *DocumentProcessor) normalizeDateFormat(dateStr string) (string, error)
 		}
 		return fmt.Sprintf("%s-01-01", year), nil
 	}
-	
+
 	return "", fmt.Errorf("unable to parse date: %s", dateStr)
 }
 
@@ -1134,14 +1266,14 @@ func (dp *DocumentProcessor) normalizeDateFormat(dateStr string) (string, error)
 func (dp *DocumentProcessor) repairJSONResponse(jsonStr string) string {
 	// Remove any trailing whitespace
 	jsonStr = strings.TrimSpace(jsonStr)
-	
+
 	// Only apply minimal fixes for common issues
 	// Fix trailing commas before closing brackets/braces
 	jsonStr = regexp.MustCompile(`,\s*([}\]])`).ReplaceAllString(jsonStr, "$1")
-	
+
 	// Fix missing commas between objects in arrays (be more conservative)
 	// Only fix if it's clearly missing a comma between objects
 	jsonStr = regexp.MustCompile(`}\s*\n\s*{\s*"`).ReplaceAllString(jsonStr, "},\n    {\"")
-	
+
 	return jsonStr
 }

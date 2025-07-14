@@ -7,8 +7,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"strings"
 	"time"
+)
+
+// LLMProvider represents different LLM providers
+type LLMProvider string
+
+const (
+	ProviderOpenAI    LLMProvider = "openai"
+	ProviderOllama    LLMProvider = "ollama"
+	ProviderOpenRouter LLMProvider = "openrouter"
+	ProviderUnknown   LLMProvider = "unknown"
 )
 
 // LLMService handles communication with OpenAI-compatible LLM APIs
@@ -18,6 +30,7 @@ type LLMService struct {
 	model      string
 	client     *http.Client
 	maxRetries int
+	provider   LLMProvider
 }
 
 // LLMConfig holds configuration for the LLM service
@@ -28,6 +41,7 @@ type LLMConfig struct {
 	MaxRetries         int
 	Timeout            time.Duration
 	InsecureSkipVerify bool // Skip SSL certificate verification
+	Provider           string // Optional provider override
 }
 
 // ChatMessage represents a message in the chat conversation
@@ -86,6 +100,38 @@ type VisionRequest struct {
 	MaxTokens   int             `json:"max_tokens,omitempty"`
 }
 
+// detectProvider determines the LLM provider based on configuration
+func detectProvider(config LLMConfig) LLMProvider {
+	// Check explicit provider override first
+	if config.Provider != "" {
+		switch strings.ToLower(config.Provider) {
+		case "ollama":
+			return ProviderOllama
+		case "openai":
+			return ProviderOpenAI
+		case "openrouter":
+			return ProviderOpenRouter
+		default:
+			log.Printf("Unknown provider override '%s', falling back to URL detection", config.Provider)
+		}
+	}
+
+	// Auto-detect based on base URL
+	baseURL := strings.ToLower(config.BaseURL)
+	if strings.Contains(baseURL, ":11434") {
+		return ProviderOllama
+	}
+	if strings.Contains(baseURL, "openrouter.ai") {
+		return ProviderOpenRouter
+	}
+	if strings.Contains(baseURL, "api.openai.com") {
+		return ProviderOpenAI
+	}
+
+	// Default to OpenAI for unknown URLs
+	return ProviderOpenAI
+}
+
 // NewLLMService creates a new LLM service instance
 func NewLLMService(config LLMConfig) *LLMService {
 	if config.BaseURL == "" {
@@ -98,7 +144,26 @@ func NewLLMService(config LLMConfig) *LLMService {
 		config.MaxRetries = 3
 	}
 	if config.Timeout == 0 {
-		config.Timeout = 60 * time.Second
+		config.Timeout = 5 * 60 * time.Second // 5 minutes
+	}
+
+	// Detect provider
+	provider := detectProvider(config)
+
+	// Adjust configuration for Ollama if detected
+	if provider == ProviderOllama {
+		// Ollama requires an API key but ignores it - use dummy value if not provided
+		if config.APIKey == "" {
+			config.APIKey = "ollama"
+		}
+		// Use default Ollama model if OpenAI model is specified
+		if config.Model == "gpt-4o" || config.Model == "gpt-3.5-turbo" {
+			config.Model = "llama3.2"
+		}
+		// For vision models, default to llava if available
+		if config.Model == "gpt-4o-vision" || config.Model == "gpt-4-vision-preview" {
+			config.Model = "llava"
+		}
 	}
 
 	// Create HTTP client with custom transport
@@ -108,20 +173,29 @@ func NewLLMService(config LLMConfig) *LLMService {
 		},
 	}
 
-	return &LLMService{
+	service := &LLMService{
 		apiKey:     config.APIKey,
 		baseURL:    config.BaseURL,
 		model:      config.Model,
 		maxRetries: config.MaxRetries,
+		provider:   provider,
 		client: &http.Client{
 			Timeout:   config.Timeout,
 			Transport: transport,
 		},
 	}
+
+	// Log detected provider
+	log.Printf("LLM Service initialized - Provider: %s, Base URL: %s, Model: %s", 
+		provider, config.BaseURL, config.Model)
+
+	return service
 }
 
 // ChatCompletion sends a chat completion request to the LLM API
 func (s *LLMService) ChatCompletion(ctx context.Context, messages []ChatMessage, options ...func(*ChatRequest)) (*ChatResponse, error) {
+	log.Printf("LLM Chat Completion request - Provider: %s, Model: %s", s.provider, s.model)
+	
 	request := &ChatRequest{
 		Model:    s.model,
 		Messages: messages,
@@ -138,9 +212,11 @@ func (s *LLMService) ChatCompletion(ctx context.Context, messages []ChatMessage,
 	for i := 0; i < s.maxRetries; i++ {
 		response, err = s.sendChatRequest(ctx, request)
 		if err == nil {
+			log.Printf("LLM Chat Completion successful - Provider: %s, Attempt: %d", s.provider, i+1)
 			break
 		}
 
+		log.Printf("LLM Chat Completion failed - Provider: %s, Attempt: %d, Error: %v", s.provider, i+1, err)
 		if i < s.maxRetries-1 {
 			time.Sleep(time.Duration(i+1) * time.Second)
 		}
@@ -151,6 +227,8 @@ func (s *LLMService) ChatCompletion(ctx context.Context, messages []ChatMessage,
 
 // VisionCompletion sends a vision completion request with image content
 func (s *LLMService) VisionCompletion(ctx context.Context, messages []VisionMessage, options ...func(*VisionRequest)) (*ChatResponse, error) {
+	log.Printf("LLM Vision Completion request - Provider: %s, Model: %s", s.provider, s.model)
+	
 	request := &VisionRequest{
 		Model:    s.model,
 		Messages: messages,
@@ -167,9 +245,11 @@ func (s *LLMService) VisionCompletion(ctx context.Context, messages []VisionMess
 	for i := 0; i < s.maxRetries; i++ {
 		response, err = s.sendVisionRequest(ctx, request)
 		if err == nil {
+			log.Printf("LLM Vision Completion successful - Provider: %s, Attempt: %d", s.provider, i+1)
 			break
 		}
 
+		log.Printf("LLM Vision Completion failed - Provider: %s, Attempt: %d, Error: %v", s.provider, i+1, err)
 		if i < s.maxRetries-1 {
 			time.Sleep(time.Duration(i+1) * time.Second)
 		}
