@@ -7,10 +7,10 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"networth-dashboard/internal/config"
 	"strings"
 	"sync"
 	"time"
-	"networth-dashboard/internal/config"
 )
 
 // PriceProvider interface allows easy swapping of price data sources
@@ -141,7 +141,7 @@ type AlphaVantageResponse struct {
 
 // AlphaVantageIntradayResponse represents the response from Alpha Vantage TIME_SERIES_INTRADAY API
 type AlphaVantageIntradayResponse struct {
-	MetaData map[string]string `json:"Meta Data"`
+	MetaData   map[string]string `json:"Meta Data"`
 	TimeSeries map[string]struct {
 		Open   string `json:"1. open"`
 		High   string `json:"2. high"`
@@ -164,23 +164,23 @@ type TwelveDataResponse struct {
 
 // TwelveDataQuoteResponse represents the response from Twelve Data quote endpoint
 type TwelveDataQuoteResponse struct {
-	Symbol           string `json:"symbol"`
-	Name             string `json:"name"`
-	Exchange         string `json:"exchange"`
-	Currency         string `json:"currency"`
-	Datetime         string `json:"datetime"`
-	Timestamp        int64  `json:"timestamp"`
-	Open             string `json:"open"`
-	High             string `json:"high"`
-	Low              string `json:"low"`
-	Close            string `json:"close"`
-	Volume           string `json:"volume"`
-	PreviousClose    string `json:"previous_close"`
-	Change           string `json:"change"`
-	PercentChange    string `json:"percent_change"`
-	AverageVolume    string `json:"average_volume,omitempty"`
-	IsMarketOpen     bool   `json:"is_market_open"`
-	FiftyTwoWeek     *struct {
+	Symbol        string `json:"symbol"`
+	Name          string `json:"name"`
+	Exchange      string `json:"exchange"`
+	Currency      string `json:"currency"`
+	Datetime      string `json:"datetime"`
+	Timestamp     int64  `json:"timestamp"`
+	Open          string `json:"open"`
+	High          string `json:"high"`
+	Low           string `json:"low"`
+	Close         string `json:"close"`
+	Volume        string `json:"volume"`
+	PreviousClose string `json:"previous_close"`
+	Change        string `json:"change"`
+	PercentChange string `json:"percent_change"`
+	AverageVolume string `json:"average_volume,omitempty"`
+	IsMarketOpen  bool   `json:"is_market_open"`
+	FiftyTwoWeek  *struct {
 		Low  string `json:"low"`
 		High string `json:"high"`
 	} `json:"fifty_two_week,omitempty"`
@@ -194,7 +194,7 @@ type TwelveDataPriceProvider struct {
 	marketService *MarketHoursService
 	config        *config.ApiConfig
 	baseURL       string
-	mu            sync.Mutex // Protects against concurrent price updates for the same symbol
+	mu            sync.Mutex      // Protects against concurrent price updates for the same symbol
 	updateMap     map[string]bool // Tracks which symbols are currently being updated
 }
 
@@ -206,7 +206,7 @@ type AlphaVantagePriceProvider struct {
 	marketService *MarketHoursService
 	config        *config.ApiConfig
 	baseURL       string
-	mu            sync.Mutex // Protects against concurrent price updates for the same symbol
+	mu            sync.Mutex      // Protects against concurrent price updates for the same symbol
 	updateMap     map[string]bool // Tracks which symbols are currently being updated
 }
 
@@ -278,14 +278,14 @@ func (av *AlphaVantagePriceProvider) GetCurrentPriceWithForce(symbol string, for
 	// Check cached price first
 	cachedPrice, lastUpdate, err := av.getCachedPrice(symbol)
 	var hasCache = err == nil
-	
+
 	fmt.Printf("DEBUG: Cache check for %s - hasCache: %t, cachedPrice: %.2f, lastUpdate: %v, error: %v\n", symbol, hasCache, cachedPrice, lastUpdate, err)
-	
+
 	if hasCache && !forceRefresh {
 		// Use market-aware caching logic for regular refresh (not force)
 		shouldRefresh := av.marketService.ShouldRefreshPrices(lastUpdate, av.config.CacheRefreshInterval)
 		fmt.Printf("DEBUG: Cache decision for %s - shouldRefresh: %t, cacheAge: %v\n", symbol, shouldRefresh, time.Since(lastUpdate))
-		
+
 		if !shouldRefresh {
 			fmt.Printf("DEBUG: Using cached price %.2f for %s (last updated: %v)\n", cachedPrice, symbol, lastUpdate)
 			return cachedPrice, nil
@@ -375,7 +375,7 @@ func (av *AlphaVantagePriceProvider) GetCurrentPriceWithForce(symbol string, for
 
 	responseStr := string(body)
 	fmt.Printf("INFO: Alpha Vantage response received for %s (length: %d bytes)\n", symbol, len(body))
-	
+
 	// Check for common Alpha Vantage error responses
 	if strings.Contains(responseStr, "Invalid API call") {
 		fmt.Printf("ERROR: Alpha Vantage API call invalid for %s - check symbol or API key\n", symbol)
@@ -393,7 +393,7 @@ func (av *AlphaVantagePriceProvider) GetCurrentPriceWithForce(symbol string, for
 		fmt.Printf("ERROR: Alpha Vantage returned error message for %s: %s\n", symbol, responseStr)
 		return 0, fmt.Errorf("Alpha Vantage error for %s: %s", symbol, responseStr)
 	}
-	
+
 	// Log response for debugging (truncated for readability)
 	if len(responseStr) > 500 {
 		fmt.Printf("DEBUG: Alpha Vantage response for %s: %s...(truncated)\n", symbol, responseStr[:500])
@@ -415,38 +415,38 @@ func (av *AlphaVantagePriceProvider) GetCurrentPriceWithForce(symbol string, for
 	// Debug log the parsed response structure
 	fmt.Printf("INFO: Alpha Vantage parsed response for %s - Symbol: %s, Price: %s, Trading Day: %s\n",
 		symbol, response.GlobalQuote.Symbol, response.GlobalQuote.Price, response.GlobalQuote.LatestTradingDay)
-	
+
 	// Check if the data is stale
 	tradingDay := response.GlobalQuote.LatestTradingDay
 	if tradingDay != "" {
 		if tradingDate, err := time.Parse("2006-01-02", tradingDay); err == nil {
 			daysSince := int(time.Since(tradingDate).Hours() / 24)
 			fmt.Printf("INFO: Alpha Vantage data for %s is %d days old (trading day: %s)\n", symbol, daysSince, tradingDay)
-			
+
 			// Check if data is too stale during market hours
 			isMarketOpen := av.marketService.IsMarketOpen()
 			maxStaleDays := 3
 			if isMarketOpen {
 				maxStaleDays = 1 // More strict during market hours
 			}
-			
+
 			if daysSince > maxStaleDays {
 				fmt.Printf("ERROR: Alpha Vantage data for %s is too stale (%d days old, max allowed: %d)\n", symbol, daysSince, maxStaleDays)
 				fmt.Printf("INFO: This is likely due to Alpha Vantage free tier limitations (end-of-day data only)\n")
 				fmt.Printf("INFO: Alpha Vantage free tier provides last trading day close (trading day: %s)\n", tradingDay)
-				
+
 				// If we have cached price and API data is too stale, prefer cache if it's newer
 				if hasCache && time.Since(lastUpdate) < time.Duration(daysSince)*24*time.Hour {
 					fmt.Printf("INFO: Using cached price %.2f for %s because it's fresher than Alpha Vantage data\n", cachedPrice, symbol)
 					return cachedPrice, nil
 				}
-				
+
 				// For free tier, we accept the stale data but warn the user
 				fmt.Printf("WARNING: Proceeding with stale Alpha Vantage data due to free tier limitations\n")
 			}
 		}
 	}
-	
+
 	// Validate the response has the expected structure
 	if response.GlobalQuote.Symbol == "" && response.GlobalQuote.Price == "" {
 		fmt.Printf("ERROR: Alpha Vantage response for %s appears to be empty or malformed\n", symbol)
@@ -497,7 +497,7 @@ func (av *AlphaVantagePriceProvider) getCurrentPriceFromIntraday(symbol string) 
 	// Use 1min interval for most current data
 	url := fmt.Sprintf("%s?function=TIME_SERIES_INTRADAY&symbol=%s&interval=1min&apikey=%s", av.baseURL, symbol, av.apiKey)
 	fmt.Printf("DEBUG: Making TIME_SERIES_INTRADAY API call for %s\n", symbol)
-	
+
 	resp, err := av.client.Get(url)
 	if err != nil {
 		return 0, fmt.Errorf("intraday API request failed: %w", err)
@@ -514,7 +514,7 @@ func (av *AlphaVantagePriceProvider) getCurrentPriceFromIntraday(symbol string) 
 	}
 
 	responseStr := string(body)
-	
+
 	// Check for common Alpha Vantage error responses
 	if strings.Contains(responseStr, "Invalid API call") {
 		return 0, fmt.Errorf("invalid intraday API call for symbol %s", symbol)
@@ -539,7 +539,7 @@ func (av *AlphaVantagePriceProvider) getCurrentPriceFromIntraday(symbol string) 
 	// Get the most recent timestamp
 	var latestTime time.Time
 	var latestPrice float64
-	
+
 	for timestamp, data := range response.TimeSeries {
 		if parsedTime, err := time.Parse("2006-01-02 15:04:05", timestamp); err == nil {
 			if parsedTime.After(latestTime) {
@@ -561,7 +561,7 @@ func (av *AlphaVantagePriceProvider) getCurrentPriceFromIntraday(symbol string) 
 	age := time.Since(latestTime)
 	if age > 4*time.Hour {
 		fmt.Printf("WARNING: Intraday data for %s is %.1f hours old (timestamp: %s)\n", symbol, age.Hours(), latestTime.Format("2006-01-02 15:04:05"))
-		
+
 		// If data is more than 24 hours old, it's likely Alpha Vantage free tier limitation
 		if age > 24*time.Hour {
 			fmt.Printf("ERROR: Alpha Vantage free tier limitation - data for %s is %.1f hours old. Consider upgrading to premium for real-time data.\n", symbol, age.Hours())
@@ -611,7 +611,7 @@ func (av *AlphaVantagePriceProvider) getCachedPrice(symbol string) (float64, tim
 	`
 
 	fmt.Printf("DEBUG: Checking cache for %s in stock_prices table\n", symbol)
-	
+
 	// First, let's check what's actually in the stock_prices table
 	countQuery := `SELECT COUNT(*) FROM stock_prices WHERE symbol = $1`
 	var count int
@@ -621,7 +621,7 @@ func (av *AlphaVantagePriceProvider) getCachedPrice(symbol string) (float64, tim
 	} else {
 		fmt.Printf("SQL DEBUG: Found %d rows for symbol %s in stock_prices table\n", count, symbol)
 	}
-	
+
 	// Also check total count in table
 	totalCountQuery := `SELECT COUNT(*) FROM stock_prices`
 	var totalCount int
@@ -631,11 +631,11 @@ func (av *AlphaVantagePriceProvider) getCachedPrice(symbol string) (float64, tim
 	} else {
 		fmt.Printf("SQL DEBUG: Total rows in stock_prices table: %d\n", totalCount)
 	}
-	
+
 	var price float64
 	var timestamp time.Time
 	err := av.db.QueryRow(query, symbol).Scan(&price, &timestamp)
-	
+
 	if err == sql.ErrNoRows {
 		fmt.Printf("DEBUG: No cached price found for %s in stock_prices table (confirmed by SQL query)\n", symbol)
 		return 0, time.Time{}, fmt.Errorf("no cached price found")
@@ -646,7 +646,7 @@ func (av *AlphaVantagePriceProvider) getCachedPrice(symbol string) (float64, tim
 	}
 
 	fmt.Printf("DEBUG: Found cached price for %s: %.2f (timestamp: %v)\n", symbol, price, timestamp)
-	
+
 	// Also log if price exists in stock_holdings for debugging cache sources
 	var stockHoldingPrice sql.NullFloat64
 	stockHoldingQuery := `SELECT current_price FROM stock_holdings WHERE symbol = $1 LIMIT 1`
@@ -654,7 +654,7 @@ func (av *AlphaVantagePriceProvider) getCachedPrice(symbol string) (float64, tim
 	if stockErr == nil && stockHoldingPrice.Valid {
 		fmt.Printf("DEBUG: Also found price %.2f for %s in stock_holdings.current_price\n", stockHoldingPrice.Float64, symbol)
 	}
-	
+
 	return price, timestamp, nil
 }
 
@@ -704,7 +704,7 @@ func (av *AlphaVantagePriceProvider) canMakeAPICall() bool {
 	// Check daily limit
 	today := time.Now().Format("2006-01-02")
 	dailyCount := av.getAPICallCount(today)
-	
+
 	if dailyCount >= av.config.AlphaVantageDailyLimit {
 		return false
 	}
@@ -712,7 +712,7 @@ func (av *AlphaVantagePriceProvider) canMakeAPICall() bool {
 	// Check rate limit (calls per minute)
 	lastMinute := time.Now().Add(-1 * time.Minute)
 	recentCount := av.getAPICallCountSince(lastMinute)
-	
+
 	return recentCount < av.config.AlphaVantageRateLimit
 }
 
@@ -723,7 +723,7 @@ func (av *AlphaVantagePriceProvider) canMakeForceRefreshAPICall() bool {
 	today := time.Now().Format("2006-01-02")
 	dailyCount := av.getAPICallCount(today)
 	forceRefreshDailyLimit := int(float64(av.config.AlphaVantageDailyLimit) * 1.5)
-	
+
 	if dailyCount >= forceRefreshDailyLimit {
 		fmt.Printf("DEBUG: Force refresh daily limit exceeded: %d >= %d\n", dailyCount, forceRefreshDailyLimit)
 		return false
@@ -733,7 +733,7 @@ func (av *AlphaVantagePriceProvider) canMakeForceRefreshAPICall() bool {
 	lastMinute := time.Now().Add(-1 * time.Minute)
 	recentCount := av.getAPICallCountSince(lastMinute)
 	forceRefreshRateLimit := av.config.AlphaVantageRateLimit * 2
-	
+
 	canMake := recentCount < forceRefreshRateLimit
 	fmt.Printf("DEBUG: Force refresh rate check: %d < %d = %t\n", recentCount, forceRefreshRateLimit, canMake)
 	return canMake
@@ -823,14 +823,14 @@ func (td *TwelveDataPriceProvider) GetCurrentPriceWithForce(symbol string, force
 	// Check cached price first
 	cachedPrice, lastUpdate, err := td.getCachedPrice(symbol)
 	var hasCache = err == nil
-	
+
 	fmt.Printf("DEBUG: Cache check for %s - hasCache: %t, cachedPrice: %.2f, lastUpdate: %v, error: %v\n", symbol, hasCache, cachedPrice, lastUpdate, err)
-	
+
 	if hasCache && !forceRefresh {
 		// Use market-aware caching logic for regular refresh (not force)
 		shouldRefresh := td.marketService.ShouldRefreshPrices(lastUpdate, td.config.CacheRefreshInterval)
 		fmt.Printf("DEBUG: Cache decision for %s - shouldRefresh: %t, cacheAge: %v\n", symbol, shouldRefresh, time.Since(lastUpdate))
-		
+
 		if !shouldRefresh {
 			fmt.Printf("DEBUG: Using cached price %.2f for %s (last updated: %v)\n", cachedPrice, symbol, lastUpdate)
 			return cachedPrice, nil
@@ -891,7 +891,7 @@ func (td *TwelveDataPriceProvider) GetCurrentPriceWithForce(symbol string, force
 
 	responseStr := string(body)
 	fmt.Printf("INFO: Twelve Data response received for %s (length: %d bytes)\n", symbol, len(body))
-	
+
 	// Check for common Twelve Data error responses
 	if strings.Contains(responseStr, "Invalid API call") || strings.Contains(responseStr, "\"code\":400") {
 		fmt.Printf("ERROR: Twelve Data API call invalid for %s - check symbol or API key\n", symbol)
@@ -909,7 +909,7 @@ func (td *TwelveDataPriceProvider) GetCurrentPriceWithForce(symbol string, force
 		fmt.Printf("ERROR: Twelve Data returned error for %s: %s\n", symbol, responseStr)
 		return 0, fmt.Errorf("Twelve Data error for %s: %s", symbol, responseStr)
 	}
-	
+
 	// Log response for debugging (truncated for readability)
 	if len(responseStr) > 500 {
 		fmt.Printf("DEBUG: Twelve Data response for %s: %s...(truncated)\n", symbol, responseStr[:500])
@@ -931,7 +931,7 @@ func (td *TwelveDataPriceProvider) GetCurrentPriceWithForce(symbol string, force
 	// Debug log the parsed response structure
 	fmt.Printf("INFO: Twelve Data parsed response for %s - Symbol: %s, Close: %s, Datetime: %s\n",
 		symbol, response.Symbol, response.Close, response.Datetime)
-	
+
 	// Check data freshness
 	if response.Datetime != "" {
 		if parsedTime, err := time.Parse("2006-01-02 15:04:05", response.Datetime); err == nil {
@@ -939,7 +939,7 @@ func (td *TwelveDataPriceProvider) GetCurrentPriceWithForce(symbol string, force
 			fmt.Printf("INFO: Twelve Data price for %s is %.1f minutes old (datetime: %s)\n", symbol, age.Minutes(), response.Datetime)
 		}
 	}
-	
+
 	// Validate the response has the expected structure
 	if response.Symbol == "" && response.Close == "" {
 		fmt.Printf("ERROR: Twelve Data response for %s appears to be empty or malformed\n", symbol)
@@ -1022,7 +1022,7 @@ func (td *TwelveDataPriceProvider) getCachedPrice(symbol string) (float64, time.
 	`
 
 	fmt.Printf("DEBUG: Checking cache for %s in stock_prices table\n", symbol)
-	
+
 	// First, let's check what's actually in the stock_prices table
 	countQuery := `SELECT COUNT(*) FROM stock_prices WHERE symbol = $1`
 	var count int
@@ -1032,7 +1032,7 @@ func (td *TwelveDataPriceProvider) getCachedPrice(symbol string) (float64, time.
 	} else {
 		fmt.Printf("SQL DEBUG: Found %d rows for symbol %s in stock_prices table\n", count, symbol)
 	}
-	
+
 	// Also check total count in table
 	totalCountQuery := `SELECT COUNT(*) FROM stock_prices`
 	var totalCount int
@@ -1042,11 +1042,11 @@ func (td *TwelveDataPriceProvider) getCachedPrice(symbol string) (float64, time.
 	} else {
 		fmt.Printf("SQL DEBUG: Total rows in stock_prices table: %d\n", totalCount)
 	}
-	
+
 	var price float64
 	var timestamp time.Time
 	err := td.db.QueryRow(query, symbol).Scan(&price, &timestamp)
-	
+
 	if err == sql.ErrNoRows {
 		fmt.Printf("DEBUG: No cached price found for %s in stock_prices table (confirmed by SQL query)\n", symbol)
 		return 0, time.Time{}, fmt.Errorf("no cached price found")
@@ -1057,7 +1057,7 @@ func (td *TwelveDataPriceProvider) getCachedPrice(symbol string) (float64, time.
 	}
 
 	fmt.Printf("DEBUG: Found cached price for %s: %.2f (timestamp: %v)\n", symbol, price, timestamp)
-	
+
 	// Also log if price exists in stock_holdings for debugging cache sources
 	var stockHoldingPrice sql.NullFloat64
 	stockHoldingQuery := `SELECT current_price FROM stock_holdings WHERE symbol = $1 LIMIT 1`
@@ -1065,7 +1065,7 @@ func (td *TwelveDataPriceProvider) getCachedPrice(symbol string) (float64, time.
 	if stockErr == nil && stockHoldingPrice.Valid {
 		fmt.Printf("DEBUG: Also found price %.2f for %s in stock_holdings.current_price\n", stockHoldingPrice.Float64, symbol)
 	}
-	
+
 	return price, timestamp, nil
 }
 
@@ -1115,7 +1115,7 @@ func (td *TwelveDataPriceProvider) canMakeAPICall() bool {
 	// Check daily limit (configurable, default 800 calls/day for free tier)
 	today := time.Now().Format("2006-01-02")
 	dailyCount := td.getAPICallCount(today)
-	
+
 	if dailyCount >= td.config.TwelveDataDailyLimit {
 		fmt.Printf("DEBUG: Twelve Data daily limit exceeded: %d >= %d\n", dailyCount, td.config.TwelveDataDailyLimit)
 		return false
@@ -1124,7 +1124,7 @@ func (td *TwelveDataPriceProvider) canMakeAPICall() bool {
 	// Check rate limit (configurable, default 8 calls per minute for free tier)
 	lastMinute := time.Now().Add(-1 * time.Minute)
 	recentCount := td.getAPICallCountSince(lastMinute)
-	
+
 	canMake := recentCount < td.config.TwelveDataRateLimit
 	fmt.Printf("DEBUG: Twelve Data rate check: %d < %d = %t\n", recentCount, td.config.TwelveDataRateLimit, canMake)
 	return canMake
@@ -1188,7 +1188,7 @@ func NewPriceServiceWithProviders(db *sql.DB, marketService *MarketHoursService,
 	if cfg.PrimaryPriceProvider == "twelvedata" && cfg.TwelveDataAPIKey != "" {
 		fmt.Printf("INFO: Initializing Twelve Data as primary provider (API key: %d chars)\n", len(cfg.TwelveDataAPIKey))
 		twelveDataProvider := NewTwelveDataPriceProvider(cfg.TwelveDataAPIKey, db, marketService, cfg)
-		
+
 		// Return Twelve Data provider without immediate testing
 		// Let it fail gracefully during actual price requests if needed
 		fmt.Printf("INFO: Twelve Data provider initialized successfully\n")
@@ -1196,19 +1196,19 @@ func NewPriceServiceWithProviders(db *sql.DB, marketService *MarketHoursService,
 			provider: twelveDataProvider,
 		}
 	}
-	
+
 	// Try fallback provider (Alpha Vantage)
 	if cfg.FallbackPriceProvider == "alphavantage" && cfg.AlphaVantageAPIKey != "" {
 		fmt.Printf("INFO: Initializing Alpha Vantage as fallback provider (API key: %d chars)\n", len(cfg.AlphaVantageAPIKey))
 		alphaVantageProvider := NewAlphaVantagePriceProvider(cfg.AlphaVantageAPIKey, db, marketService, cfg)
-		
+
 		// Return Alpha Vantage provider without immediate testing
 		fmt.Printf("INFO: Alpha Vantage provider initialized successfully\n")
 		return &PriceService{
 			provider: alphaVantageProvider,
 		}
 	}
-	
+
 	// If both providers failed or no API keys available, use mock
 	fmt.Printf("WARNING: No working price providers available - using Mock Price Provider\n")
 	fmt.Printf("WARNING: Stock prices will be simulated, not real market data\n")
@@ -1224,10 +1224,10 @@ func NewPriceServiceWithAlphaVantage(apiKey string, db *sql.DB, marketService *M
 		fmt.Printf("WARNING: Set ALPHA_VANTAGE_API_KEY environment variable to use real prices\n")
 		return NewPriceService()
 	}
-	
+
 	fmt.Printf("INFO: Initializing Alpha Vantage price provider with API key (length: %d)\n", len(apiKey))
 	alphaVantageProvider := NewAlphaVantagePriceProvider(apiKey, db, marketService, cfg)
-	
+
 	// Test the provider immediately to verify it's working
 	fmt.Printf("INFO: Testing Alpha Vantage connection...\n")
 	testPrice, err := alphaVantageProvider.GetCurrentPrice("AAPL")
@@ -1237,7 +1237,7 @@ func NewPriceServiceWithAlphaVantage(apiKey string, db *sql.DB, marketService *M
 		return NewPriceService()
 	}
 	fmt.Printf("INFO: Alpha Vantage provider test successful - AAPL price: $%.2f\n", testPrice)
-	
+
 	return &PriceService{
 		provider: alphaVantageProvider,
 	}
@@ -1284,17 +1284,17 @@ func (ps *PriceService) GetProviderName() string {
 
 // PriceUpdateResult represents the result of a price update operation
 type PriceUpdateResult struct {
-	Symbol        string    `json:"symbol"`
-	OldPrice      float64   `json:"old_price"`
-	NewPrice      float64   `json:"new_price"`
-	Updated       bool      `json:"updated"`
-	Error         string    `json:"error,omitempty"`
-	ErrorType     string    `json:"error_type,omitempty"` // "rate_limited", "api_error", "invalid_symbol", "cache_error"
-	Timestamp     time.Time `json:"timestamp"`
-	Source        string    `json:"source"`        // "api", "cache"
-	PriceChange   float64   `json:"price_change"`  // Absolute change
-	PriceChangePct float64  `json:"price_change_pct"` // Percentage change
-	CacheAge      string    `json:"cache_age,omitempty"` // How old the previous cached price was
+	Symbol         string    `json:"symbol"`
+	OldPrice       float64   `json:"old_price"`
+	NewPrice       float64   `json:"new_price"`
+	Updated        bool      `json:"updated"`
+	Error          string    `json:"error,omitempty"`
+	ErrorType      string    `json:"error_type,omitempty"` // "rate_limited", "api_error", "invalid_symbol", "cache_error"
+	Timestamp      time.Time `json:"timestamp"`
+	Source         string    `json:"source"`              // "api", "cache"
+	PriceChange    float64   `json:"price_change"`        // Absolute change
+	PriceChangePct float64   `json:"price_change_pct"`    // Percentage change
+	CacheAge       string    `json:"cache_age,omitempty"` // How old the previous cached price was
 }
 
 // PriceRefreshSummary summarizes a bulk price refresh operation

@@ -1,5 +1,5 @@
 # Build stage
-FROM docker.io/golang:1.23-alpine AS builder
+FROM docker.io/golang:1.24-alpine AS builder
 
 # Install git and ca-certificates
 RUN apk add --no-cache git ca-certificates
@@ -40,8 +40,11 @@ COPY --from=builder /app/main .
 # Copy generated Swagger documentation
 COPY --from=builder /app/docs ./docs
 
+# Create upload directory for LLM document processing
+RUN mkdir -p uploads
+
 # Change ownership and make executable
-RUN chown -R appuser:appuser main docs && chmod +x main
+RUN chown -R appuser:appuser main docs uploads && chmod +x main
 
 # Switch to non-root user
 USER appuser

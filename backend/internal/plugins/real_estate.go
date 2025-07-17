@@ -56,19 +56,9 @@ func (p *RealEstatePlugin) GetDescription() string {
 
 // Initialize initializes the plugin with configuration
 func (p *RealEstatePlugin) Initialize(config PluginConfig) error {
-	// Get or create the plugin account
-	accountID, err := GetOrCreatePluginAccount(
-		p.db,
-		"Real Estate Portfolio",
-		"real_estate",
-		"Manual Entry",
-		"manual",
-	)
-	if err != nil {
-		return fmt.Errorf("failed to initialize Real Estate account: %w", err)
-	}
-
-	p.accountID = accountID
+	// No account initialization needed in new architecture
+	// Institution information is stored directly in asset tables
+	p.accountID = 1 // Use dummy ID for compatibility
 	return nil
 }
 
@@ -97,7 +87,7 @@ func (p *RealEstatePlugin) IsHealthy() PluginHealth {
 func (p *RealEstatePlugin) GetAccounts() ([]Account, error) {
 	return []Account{
 		{
-			ID:          fmt.Sprintf("%d", p.accountID),
+			ID:          "real_estate",
 			Name:        "Real Estate Portfolio",
 			Type:        "real_estate",
 			Institution: "Manual Entry",
@@ -124,7 +114,7 @@ func (p *RealEstatePlugin) GetBalances() ([]Balance, error) {
 
 	return []Balance{
 		{
-			AccountID:  fmt.Sprintf("%d", p.accountID),
+			AccountID:  "real_estate",
 			Amount:     totalValue,
 			Currency:   "USD",
 			AsOfDate:   time.Now(),
@@ -547,7 +537,7 @@ func (p *RealEstatePlugin) ProcessManualEntry(data map[string]interface{}) error
 
 	_, err = p.db.Exec(query,
 		uniqueAccountID, propertyType, propertyName, streetAddress, city, state, zipCode,
-		purchasePrice, currentValue, outstandingMortgage, equity, purchaseDate, 
+		purchasePrice, currentValue, outstandingMortgage, equity, purchaseDate,
 		propertySizeSqft, lotSizeAcres, rentalIncomeMonthly, propertyTaxAnnual, notes,
 	)
 
@@ -645,7 +635,7 @@ func (p *RealEstatePlugin) UpdateManualEntry(id int, data map[string]interface{}
 
 	result, err := p.db.Exec(query,
 		propertyType, propertyName, streetAddress, city, state, zipCode,
-		purchasePrice, currentValue, outstandingMortgage, equity, purchaseDate, 
+		purchasePrice, currentValue, outstandingMortgage, equity, purchaseDate,
 		propertySizeSqft, lotSizeAcres, rentalIncomeMonthly, propertyTaxAnnual, notes,
 		time.Now(), id,
 	)
@@ -723,7 +713,7 @@ func (p *RealEstatePlugin) validateNumberField(data map[string]interface{}, fiel
 			data[field] = nil
 			return 0, nil
 		}
-		
+
 		var err error
 		num, err = strconv.ParseFloat(v, 64)
 		if err != nil {

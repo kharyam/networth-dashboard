@@ -58,19 +58,9 @@ func (p *StockHoldingPlugin) GetDescription() string {
 
 // Initialize initializes the plugin with configuration
 func (p *StockHoldingPlugin) Initialize(config PluginConfig) error {
-	// Get or create the plugin account
-	accountID, err := GetOrCreatePluginAccount(
-		p.db,
-		"Stock Holdings",
-		"investment",
-		"Manual Entry",
-		"manual",
-	)
-	if err != nil {
-		return fmt.Errorf("failed to initialize stock holdings account: %w", err)
-	}
-
-	p.accountID = accountID
+	// No account initialization needed in new architecture
+	// Institution information is stored directly in asset tables
+	p.accountID = 1 // Use dummy ID for compatibility
 	return nil
 }
 
@@ -99,7 +89,7 @@ func (p *StockHoldingPlugin) IsHealthy() PluginHealth {
 func (p *StockHoldingPlugin) GetAccounts() ([]Account, error) {
 	return []Account{
 		{
-			ID:          fmt.Sprintf("%d", p.accountID),
+			ID:          "stock_holdings",
 			Name:        "Stock Holdings",
 			Type:        "investment",
 			Institution: "Manual Entry",
@@ -115,18 +105,17 @@ func (p *StockHoldingPlugin) GetBalances() ([]Balance, error) {
 	query := `
 		SELECT COALESCE(SUM(shares_owned * current_price), 0) as total_value
 		FROM stock_holdings 
-		WHERE account_id = $1
 	`
 
 	var totalValue float64
-	err := p.db.QueryRow(query, p.accountID).Scan(&totalValue)
+	err := p.db.QueryRow(query).Scan(&totalValue)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate balance: %w", err)
 	}
 
 	return []Balance{
 		{
-			AccountID:  fmt.Sprintf("%d", p.accountID),
+			AccountID:  "stock_holdings",
 			Amount:     totalValue,
 			Currency:   "USD",
 			AsOfDate:   time.Now(),
@@ -295,7 +284,7 @@ func (p *StockHoldingPlugin) ValidateManualEntry(data map[string]interface{}) Va
 	if sharesData, exists := data["shares_owned"]; exists && sharesData != nil {
 		var shares float64
 		var err error
-		
+
 		switch v := sharesData.(type) {
 		case string:
 			if v == "" {
@@ -360,7 +349,7 @@ func (p *StockHoldingPlugin) ValidateManualEntry(data map[string]interface{}) Va
 		} else {
 			var costBasis float64
 			var err error
-			
+
 			switch v := costBasisData.(type) {
 			case string:
 				if v != "" {
@@ -380,7 +369,7 @@ func (p *StockHoldingPlugin) ValidateManualEntry(data map[string]interface{}) Va
 			default:
 				err = fmt.Errorf("unsupported type: %T", v)
 			}
-			
+
 			if err != nil {
 				result.Valid = false
 				result.Errors = append(result.Errors, ValidationError{
@@ -399,7 +388,7 @@ func (p *StockHoldingPlugin) ValidateManualEntry(data map[string]interface{}) Va
 				data["cost_basis"] = costBasis
 			}
 		}
-		skipCostBasis:
+	skipCostBasis:
 	}
 
 	// Validate estimated_quarterly_dividend if provided
@@ -410,7 +399,7 @@ func (p *StockHoldingPlugin) ValidateManualEntry(data map[string]interface{}) Va
 		} else {
 			var dividend float64
 			var err error
-			
+
 			switch v := dividendData.(type) {
 			case string:
 				if v != "" {
@@ -430,7 +419,7 @@ func (p *StockHoldingPlugin) ValidateManualEntry(data map[string]interface{}) Va
 			default:
 				err = fmt.Errorf("unsupported type: %T", v)
 			}
-			
+
 			if err != nil {
 				result.Valid = false
 				result.Errors = append(result.Errors, ValidationError{
@@ -449,7 +438,7 @@ func (p *StockHoldingPlugin) ValidateManualEntry(data map[string]interface{}) Va
 				data["estimated_quarterly_dividend"] = dividend
 			}
 		}
-		skipDividend:
+	skipDividend:
 	}
 
 	// Validate optional is_vested_equity
@@ -531,34 +520,20 @@ func (p *StockHoldingPlugin) ProcessManualEntry(data map[string]interface{}) err
 		currentPrice = 0
 	}
 
-	// Create unique account for this stock holding
-	uniqueIdentifier := fmt.Sprintf("%s at %s", symbol, institutionName)
-	uniqueAccountID, err := GetOrCreateUniquePluginAccount(
-		p.db,
-		"Stock Holdings",
-		uniqueIdentifier,
-		"stock",
-		institutionName,
-		"manual",
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create unique account for stock holding: %w", err)
-	}
-
 	// Extract vested equity flag from validated data
 	isVestedEquity := data["is_vested_equity"].(bool)
 
 	// Insert stock holding
 	query := `
 		INSERT INTO stock_holdings (
-			account_id, symbol, company_name, shares_owned, cost_basis, 
+			symbol, company_name, shares_owned, cost_basis, 
 			current_price, institution_name, data_source, estimated_quarterly_dividend,
 			purchase_date, drip_enabled, last_manual_update, is_vested_equity
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 
 	_, execErr := p.db.Exec(query,
-		uniqueAccountID, symbol, companyName, shares, costBasis,
+		symbol, companyName, shares, costBasis,
 		currentPrice, institutionName, "stock_holding", estimatedQuarterlyDividend,
 		purchaseDate, dripEnabled, time.Now(), isVestedEquity,
 	)

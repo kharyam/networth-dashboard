@@ -165,7 +165,7 @@ func (m *Manager) ValidateManualEntry(pluginName string, data map[string]interfa
 // GetAllAccounts aggregates accounts from all active plugins
 func (m *Manager) GetAllAccounts() ([]Account, error) {
 	var allAccounts []Account
-	
+
 	activePlugins := m.registry.GetActivePlugins()
 	for _, plugin := range activePlugins {
 		accounts, err := plugin.GetAccounts()
@@ -183,7 +183,7 @@ func (m *Manager) GetAllAccounts() ([]Account, error) {
 // GetAllBalances aggregates balances from all active plugins
 func (m *Manager) GetAllBalances() ([]Balance, error) {
 	var allBalances []Balance
-	
+
 	activePlugins := m.registry.GetActivePlugins()
 	for _, plugin := range activePlugins {
 		balances, err := plugin.GetBalances()
@@ -201,7 +201,7 @@ func (m *Manager) GetAllBalances() ([]Balance, error) {
 // GetAllTransactions aggregates transactions from all active plugins
 func (m *Manager) GetAllTransactions(dateRange DateRange) ([]Transaction, error) {
 	var allTransactions []Transaction
-	
+
 	activePlugins := m.registry.GetActivePlugins()
 	for _, plugin := range activePlugins {
 		transactions, err := plugin.GetTransactions(dateRange)
@@ -229,7 +229,7 @@ func (m *Manager) GetPluginHealth() map[string]PluginHealth {
 // GetManualEntrySchemas returns schemas for all manual entry plugins
 func (m *Manager) GetManualEntrySchemas() map[string]ManualEntrySchema {
 	schemas := make(map[string]ManualEntrySchema)
-	
+
 	manualPlugins := m.registry.GetManualEntryPlugins()
 	for _, plugin := range manualPlugins {
 		schemas[plugin.GetName()] = plugin.GetManualEntrySchema()

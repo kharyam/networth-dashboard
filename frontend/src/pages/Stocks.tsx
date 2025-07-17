@@ -37,9 +37,32 @@ function Stocks() {
         stocksApi.getAll(),
         stocksApi.getConsolidated(),
         equityApi.getAll(),
-        // Fetch brokerage accounts from cash holdings API
+        // Fetch brokerage accounts from cash holdings API, excluding crypto exchanges
         cashHoldingsApi.getAll()
-          .then(data => data.filter((account: any) => account.account_type === 'brokerage'))
+          .then(data => data.filter((account: any) => {
+            // Only include accounts with brokerage or taxable_brokerage type
+            if (account.account_type !== 'brokerage' && account.account_type !== 'taxable_brokerage') return false
+            
+            // Exclude crypto_exchange type accounts (shouldn't exist but safety check)
+            if (account.account_type === 'crypto_exchange') return false
+            
+            // Filter out known crypto exchanges and platforms by name
+            const cryptoExchanges = [
+              'coinbase', 'binance', 'kraken', 'gemini', 'bitfinex', 'bitstamp',
+              'crypto.com', 'ftx', 'kucoin', 'huobi', 'okx', 'bybit',
+              'uphold', 'blockfi', 'celsius', 'nexo', 'voyager', 'robinhood crypto'
+            ]
+            
+            const institutionName = account.institution_name?.toLowerCase() || ''
+            const accountName = account.account_name?.toLowerCase() || ''
+            
+            // Check if this is a crypto exchange by name
+            const isCryptoExchange = cryptoExchanges.some(exchange => 
+              institutionName.includes(exchange) || accountName.includes(exchange)
+            )
+            
+            return !isCryptoExchange
+          }))
       ])
       
       setStockHoldings(stocks)

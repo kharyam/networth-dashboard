@@ -17,7 +17,8 @@ import {
   Coins,
   Package,
   Code,
-  Tag
+  Tag,
+  FileText
 } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
 
@@ -37,6 +38,7 @@ const navigation = [
   { name: 'Asset Categories', href: '/asset-categories', icon: Tag },
   { name: 'Manual Entries', href: '/manual-entries', icon: Edit3 },
   { name: 'Credentials', href: '/credentials', icon: Key },
+  { name: 'Document Processing', href: '/document-processing', icon: FileText },
   { name: 'API', href: '/api', icon: Code },
   { name: 'Settings', href: '/settings', icon: Settings },
 ]

@@ -272,39 +272,39 @@ func (h *CredentialHandler) GetSupportedServices(c *gin.Context) {
 	services := []map[string]interface{}{
 		{
 			"service_type":    string(credentials.ServiceTypePlaid),
-			"name":           "Plaid",
+			"name":            "Plaid",
 			"credential_type": string(credentials.CredentialTypeAPIKey),
-			"description":    "Bank account aggregation service",
+			"description":     "Bank account aggregation service",
 		},
 		{
 			"service_type":    string(credentials.ServiceTypeAllyInvest),
-			"name":           "Ally Invest",
+			"name":            "Ally Invest",
 			"credential_type": string(credentials.CredentialTypeOAuth),
-			"description":    "Investment account access",
+			"description":     "Investment account access",
 		},
 		{
 			"service_type":    string(credentials.ServiceTypeKraken),
-			"name":           "Kraken",
+			"name":            "Kraken",
 			"credential_type": string(credentials.CredentialTypeAPIKey),
-			"description":    "Cryptocurrency exchange",
+			"description":     "Cryptocurrency exchange",
 		},
 		{
 			"service_type":    string(credentials.ServiceTypeFidelity),
-			"name":           "Fidelity",
+			"name":            "Fidelity",
 			"credential_type": string(credentials.CredentialTypeOAuth),
-			"description":    "Investment and retirement accounts",
+			"description":     "Investment and retirement accounts",
 		},
 		{
 			"service_type":    string(credentials.ServiceTypeMorganStanley),
-			"name":           "Morgan Stanley",
+			"name":            "Morgan Stanley",
 			"credential_type": string(credentials.CredentialTypeOAuth),
-			"description":    "Wealth management platform",
+			"description":     "Wealth management platform",
 		},
 		{
 			"service_type":    string(credentials.ServiceTypeMarketData),
-			"name":           "Market Data API",
+			"name":            "Market Data API",
 			"credential_type": string(credentials.CredentialTypeAPIKey),
-			"description":    "Stock price and market data",
+			"description":     "Stock price and market data",
 		},
 	}
 

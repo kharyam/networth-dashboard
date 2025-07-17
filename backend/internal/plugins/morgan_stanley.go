@@ -58,19 +58,9 @@ func (p *MorganStanleyPlugin) GetDescription() string {
 
 // Initialize initializes the plugin with configuration
 func (p *MorganStanleyPlugin) Initialize(config PluginConfig) error {
-	// Get or create the plugin account
-	accountID, err := GetOrCreatePluginAccount(
-		p.db,
-		"Morgan Stanley Equity Compensation",
-		"equity",
-		"Morgan Stanley",
-		"manual",
-	)
-	if err != nil {
-		return fmt.Errorf("failed to initialize Morgan Stanley account: %w", err)
-	}
-
-	p.accountID = accountID
+	// No account initialization needed in new architecture
+	// Institution information is stored directly in asset tables
+	p.accountID = 1 // Use dummy ID for compatibility
 	return nil
 }
 
@@ -99,7 +89,7 @@ func (p *MorganStanleyPlugin) IsHealthy() PluginHealth {
 func (p *MorganStanleyPlugin) GetAccounts() ([]Account, error) {
 	return []Account{
 		{
-			ID:          fmt.Sprintf("%d", p.accountID),
+			ID:          "morgan_stanley",
 			Name:        "Morgan Stanley Equity Compensation",
 			Type:        "equity",
 			Institution: "Morgan Stanley",
@@ -126,7 +116,7 @@ func (p *MorganStanleyPlugin) GetBalances() ([]Balance, error) {
 
 	return []Balance{
 		{
-			AccountID:  fmt.Sprintf("%d", p.accountID),
+			AccountID:  "morgan_stanley",
 			Amount:     vestedValue,
 			Currency:   "USD",
 			AsOfDate:   time.Now(),

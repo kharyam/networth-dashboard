@@ -20,6 +20,7 @@ spec:
       initContainers:
         - name: wait-for-postgres
           image: busybox
+          imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
             - -c
@@ -116,5 +117,28 @@ spec:
                 secretKeyRef:
                   name: {{ include "networth-dashboard.fullname" . }}-secrets
                   key: attomDataApiKey
+            - name: LLM_ENABLED
+              value: "{{ .Values.backend.config.llmEnabled }}"
+            - name: LLM_BASE_URL
+              value: "{{ .Values.backend.config.llmBaseUrl }}"
+            - name: LLM_MODEL
+              value: "{{ .Values.backend.config.llmModel }}"
+            - name: LLM_PROVIDER
+              value: "{{ .Values.backend.config.llmProvider }}"
+            - name: LLM_UPLOAD_DIR
+              value: "{{ .Values.backend.config.llmUploadDir }}"
+            - name: LLM_INSECURE_SKIP_VERIFY
+              value: "{{ .Values.backend.config.llmInsecureSkipVerify }}"
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "networth-dashboard.fullname" . }}-secrets
+                  key: llmApiKey
+          volumeMounts:
+            - name: upload-storage
+              mountPath: {{ .Values.backend.config.llmUploadDir }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
+      volumes:
+        - name: upload-storage
+          emptyDir: {}

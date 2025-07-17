@@ -7,14 +7,14 @@ import (
 
 // Store handles database operations for credentials
 type Store struct {
-	db               *sql.DB
+	db                *sql.DB
 	encryptionService *EncryptionService
 }
 
 // NewStore creates a new credential store
 func NewStore(db *sql.DB, encryptionService *EncryptionService) *Store {
 	return &Store{
-		db:               db,
+		db:                db,
 		encryptionService: encryptionService,
 	}
 }
@@ -25,51 +25,51 @@ func (s *Store) Store(serviceType ServiceType, credType CredentialType, name str
 	if err := data.Validate(); err != nil {
 		return nil, err
 	}
-	
+
 	// Convert to JSON
 	jsonData, err := ToJSON(data)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Encrypt the data
 	encryptedData, err := s.encryptionService.Encrypt(jsonData)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Check if credential already exists
 	existing, _ := s.GetByService(serviceType)
 	if existing != nil {
 		return nil, ErrCredentialExists
 	}
-	
+
 	// Insert into database
 	query := `
 		INSERT INTO credentials (service_type, credential_type, name, encrypted_data, is_active, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, created_at, updated_at
 	`
-	
+
 	now := time.Now()
 	var id int
 	var createdAt, updatedAt time.Time
-	
+
 	err = s.db.QueryRow(query, serviceType, credType, name, encryptedData, true, now, now).
 		Scan(&id, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &Credential{
-		ID:           id,
-		ServiceType:  serviceType,
-		CredType:     credType,
-		Name:         name,
+		ID:            id,
+		ServiceType:   serviceType,
+		CredType:      credType,
+		Name:          name,
 		EncryptedData: encryptedData,
-		IsActive:     true,
-		CreatedAt:    createdAt,
-		UpdatedAt:    updatedAt,
+		IsActive:      true,
+		CreatedAt:     createdAt,
+		UpdatedAt:     updatedAt,
 	}, nil
 }
 
@@ -80,10 +80,10 @@ func (s *Store) GetByService(serviceType ServiceType) (*Credential, error) {
 		FROM credentials 
 		WHERE service_type = $1 AND is_active = true
 	`
-	
+
 	var cred Credential
 	var lastUsed sql.NullTime
-	
+
 	err := s.db.QueryRow(query, serviceType).Scan(
 		&cred.ID,
 		&cred.ServiceType,
@@ -95,18 +95,18 @@ func (s *Store) GetByService(serviceType ServiceType) (*Credential, error) {
 		&cred.UpdatedAt,
 		&lastUsed,
 	)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, ErrCredentialNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if lastUsed.Valid {
 		cred.LastUsed = &lastUsed.Time
 	}
-	
+
 	return &cred, nil
 }
 
@@ -116,22 +116,22 @@ func (s *Store) GetDecryptedData(serviceType ServiceType) (CredentialData, error
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Decrypt the data
 	decryptedBytes, err := s.encryptionService.Decrypt(cred.EncryptedData)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Convert to appropriate credential type
 	data, err := FromJSON(cred.CredType, decryptedBytes)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Update last used timestamp
 	s.updateLastUsed(cred.ID)
-	
+
 	return data, nil
 }
 
@@ -141,41 +141,41 @@ func (s *Store) Update(serviceType ServiceType, data CredentialData) (*Credentia
 	if err := data.Validate(); err != nil {
 		return nil, err
 	}
-	
+
 	// Get existing credential
 	existing, err := s.GetByService(serviceType)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Convert to JSON
 	jsonData, err := ToJSON(data)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Encrypt the data
 	encryptedData, err := s.encryptionService.Encrypt(jsonData)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Update in database
 	query := `
 		UPDATE credentials 
 		SET encrypted_data = $1, updated_at = $2
 		WHERE id = $3
 	`
-	
+
 	now := time.Now()
 	_, err = s.db.Exec(query, encryptedData, now, existing.ID)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	existing.EncryptedData = encryptedData
 	existing.UpdatedAt = now
-	
+
 	return existing, nil
 }
 
@@ -194,19 +194,19 @@ func (s *Store) List() ([]*Credential, error) {
 		WHERE is_active = true
 		ORDER BY service_type
 	`
-	
+
 	rows, err := s.db.Query(query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var credentials []*Credential
-	
+
 	for rows.Next() {
 		var cred Credential
 		var lastUsed sql.NullTime
-		
+
 		err := rows.Scan(
 			&cred.ID,
 			&cred.ServiceType,
@@ -220,14 +220,14 @@ func (s *Store) List() ([]*Credential, error) {
 		if err != nil {
 			return nil, err
 		}
-		
+
 		if lastUsed.Valid {
 			cred.LastUsed = &lastUsed.Time
 		}
-		
+
 		credentials = append(credentials, &cred)
 	}
-	
+
 	return credentials, rows.Err()
 }
 
