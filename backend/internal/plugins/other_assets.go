@@ -57,19 +57,9 @@ func (p *OtherAssetsPlugin) GetDescription() string {
 
 // Initialize initializes the plugin with configuration
 func (p *OtherAssetsPlugin) Initialize(config PluginConfig) error {
-	// Get or create the plugin account
-	accountID, err := GetOrCreatePluginAccount(
-		p.db,
-		"Other Assets Portfolio",
-		"other_assets",
-		"Manual Entry",
-		"manual",
-	)
-	if err != nil {
-		return fmt.Errorf("failed to initialize Other Assets account: %w", err)
-	}
-
-	p.accountID = accountID
+	// No account initialization needed in new architecture
+	// Institution information is stored directly in asset tables
+	p.accountID = 1 // Use dummy ID for compatibility
 	return nil
 }
 
@@ -98,7 +88,7 @@ func (p *OtherAssetsPlugin) IsHealthy() PluginHealth {
 func (p *OtherAssetsPlugin) GetAccounts() ([]Account, error) {
 	return []Account{
 		{
-			ID:          fmt.Sprintf("%d", p.accountID),
+			ID:          "other_assets",
 			Name:        "Other Assets Portfolio",
 			Type:        "other_assets",
 			Institution: "Manual Entry",
@@ -125,7 +115,7 @@ func (p *OtherAssetsPlugin) GetBalances() ([]Balance, error) {
 
 	return []Balance{
 		{
-			AccountID:  fmt.Sprintf("%d", p.accountID),
+			AccountID:  "other_assets",
 			Amount:     totalEquity,
 			Currency:   "USD",
 			AsOfDate:   time.Now(),

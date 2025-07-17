@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -289,6 +290,19 @@ func (s *LLMService) sendChatRequest(ctx context.Context, request *ChatRequest) 
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	// Filter thinking tags from response content
+	if len(response.Choices) > 0 {
+		originalContent := response.Choices[0].Message.Content
+		filteredContent := filterThinkingTags(originalContent)
+		
+		if len(filteredContent) != len(originalContent) {
+			log.Printf("Filtered thinking tags from Chat LLM response: %d -> %d chars", 
+				len(originalContent), len(filteredContent))
+		}
+		
+		response.Choices[0].Message.Content = filteredContent
+	}
+
 	return &response, nil
 }
 
@@ -323,6 +337,19 @@ func (s *LLMService) sendVisionRequest(ctx context.Context, request *VisionReque
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	// Filter thinking tags from response content
+	if len(response.Choices) > 0 {
+		originalContent := response.Choices[0].Message.Content
+		filteredContent := filterThinkingTags(originalContent)
+		
+		if len(filteredContent) != len(originalContent) {
+			log.Printf("Filtered thinking tags from Vision LLM response: %d -> %d chars", 
+				len(originalContent), len(filteredContent))
+		}
+		
+		response.Choices[0].Message.Content = filteredContent
+	}
+
 	return &response, nil
 }
 
@@ -352,4 +379,49 @@ func WithVisionMaxTokens(maxTokens int) func(*VisionRequest) {
 	return func(r *VisionRequest) {
 		r.MaxTokens = maxTokens
 	}
+}
+
+// filterThinkingTags removes <thinking> tags and their content from LLM responses
+func filterThinkingTags(content string) string {
+	// Regular expression to match <thinking>...</thinking> blocks (including multiline)
+	thinkingRegex := regexp.MustCompile(`(?s)<thinking>.*?</thinking>`)
+	
+	// Remove all thinking tag blocks
+	content = thinkingRegex.ReplaceAllString(content, "")
+	
+	// Also handle self-closing thinking tags or malformed tags
+	selfClosingRegex := regexp.MustCompile(`(?s)<thinking[^>]*/>`)
+	content = selfClosingRegex.ReplaceAllString(content, "")
+	
+	// Handle cases where thinking tags might be on separate lines
+	openTagRegex := regexp.MustCompile(`(?m)^\s*<thinking>\s*$`)
+	closeTagRegex := regexp.MustCompile(`(?m)^\s*</thinking>\s*$`)
+	
+	// If we find isolated opening/closing tags, remove the entire section
+	lines := strings.Split(content, "\n")
+	var filteredLines []string
+	insideThinking := false
+	
+	for _, line := range lines {
+		if openTagRegex.MatchString(line) {
+			insideThinking = true
+			continue
+		}
+		
+		if closeTagRegex.MatchString(line) {
+			insideThinking = false
+			continue
+		}
+		
+		if !insideThinking {
+			filteredLines = append(filteredLines, line)
+		}
+	}
+	
+	content = strings.Join(filteredLines, "\n")
+	
+	// Clean up any extra whitespace that may have been left behind
+	content = regexp.MustCompile(`\n\s*\n\s*\n`).ReplaceAllString(content, "\n\n")
+	
+	return strings.TrimSpace(content)
 }

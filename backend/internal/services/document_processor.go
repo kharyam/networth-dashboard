@@ -233,8 +233,16 @@ func (dp *DocumentProcessor) processPDFDocument(ctx context.Context, job *Docume
 
 	responseContent := response.Choices[0].Message.Content
 
-	// Log the full response for debugging
-	log.Printf("Full LLM response for PDF processing: %s", responseContent)
+	// Log the full response for debugging (truncated if too long)
+	logContent := responseContent
+	if len(logContent) > 1000 {
+		logContent = logContent[:1000] + "... (truncated)"
+	}
+	log.Printf("Full LLM response for PDF processing: %s", logContent)
+
+	// Strip thinking tags first (removes verbose reasoning from thinking models)
+	responseContent = stripThinkingTags(responseContent)
+	log.Printf("Response after thinking tag removal (length: %d chars)", len(responseContent))
 
 	// Strip markdown code blocks if present
 	cleanedResponse := stripMarkdownCodeBlocks(responseContent)
@@ -322,8 +330,16 @@ func (dp *DocumentProcessor) processCSVDocument(ctx context.Context, job *Docume
 
 	responseContent := response.Choices[0].Message.Content
 
-	// Log the full response for debugging
-	log.Printf("Full LLM response for CSV processing: %s", responseContent)
+	// Log the full response for debugging (truncated if too long)
+	logContent := responseContent
+	if len(logContent) > 1000 {
+		logContent = logContent[:1000] + "... (truncated)"
+	}
+	log.Printf("Full LLM response for CSV processing: %s", logContent)
+
+	// Strip thinking tags first (removes verbose reasoning from thinking models)
+	responseContent = stripThinkingTags(responseContent)
+	log.Printf("Response after thinking tag removal (length: %d chars)", len(responseContent))
 
 	// Strip markdown code blocks if present
 	cleanedResponse := stripMarkdownCodeBlocks(responseContent)
@@ -417,8 +433,16 @@ func (dp *DocumentProcessor) processImageDocument(ctx context.Context, job *Docu
 
 	responseContent := response.Choices[0].Message.Content
 
-	// Log the full response for debugging
-	log.Printf("Full LLM response for image processing: %s", responseContent)
+	// Log the full response for debugging (truncated if too long)
+	logContent := responseContent
+	if len(logContent) > 1000 {
+		logContent = logContent[:1000] + "... (truncated)"
+	}
+	log.Printf("Full LLM response for image processing: %s", logContent)
+
+	// Strip thinking tags first (removes verbose reasoning from thinking models)
+	responseContent = stripThinkingTags(responseContent)
+	log.Printf("Response after thinking tag removal (length: %d chars)", len(responseContent))
 
 	// Strip markdown code blocks if present
 	cleanedResponse := stripMarkdownCodeBlocks(responseContent)
@@ -632,7 +656,7 @@ func (dp *DocumentProcessor) getFinancialDocumentPrompt() string {
 }
 
 CRITICAL FORMATTING REQUIREMENTS:
-1. RESPONSE MUST BE VALID JSON ONLY - no markdown code blocks, no extra text, no text meant for humans, no explanations
+1. RESPONSE MUST BE VALID JSON ONLY - no markdown code blocks, no extra text, no text meant for humans, no explanations, NO <thinking> tags or reasoning
 2. Dates MUST be in YYYY-MM-DD format (e.g., "2024-06-15", not "06/15/2024")
 3. Account types MUST be exactly one of: checking, savings, investment, credit, 401k, ira, taxable_brokerage
 4. Transaction categories MUST be exactly one of: food, gas, shopping, transfer, dividend, other
@@ -640,7 +664,8 @@ CRITICAL FORMATTING REQUIREMENTS:
 6. Currency should always be "USD" unless clearly stated otherwise
 7. Transaction types: "debit" for money going out, "credit" for money coming in
 8. Do not add any fields that were not explicitly mentioned in the provided examples
-9. Do not explain anything, only generate the JSON without additional formatting.
+9. Do not explain anything, only generate the JSON without additional formatting
+10. NEVER include <thinking>, reasoning, or explanatory text - respond with JSON only
 
 AMOUNT AND TYPE RULES:
 - NEVER use negative amounts (always positive numbers)
@@ -751,13 +776,14 @@ INVESTMENT STATEMENT PRIORITY:
 CRITICAL: EXTRACT REAL DATA FROM DOCUMENT - DO NOT USE EXAMPLES LIKE "AAPL" OR "BTC"
 
 CRITICAL JSON FORMATTING:
-- Return ONLY valid JSON - no markdown, no code blocks, no extra text
+- Return ONLY valid JSON - no markdown, no code blocks, no extra text, NO <thinking> tags
 - Ensure ALL strings are properly quoted with double quotes
 - Do not include trailing commas before closing brackets ], }
 - Verify all brackets and braces are properly matched
 - Each JSON property must have a colon after the key: "key": "value"
 - End with a complete, valid JSON object
-- Test that your JSON is valid before returning it`
+- Test that your JSON is valid before returning it
+- ABSOLUTELY NO reasoning, explanations, or <thinking> content - JSON response only`
 }
 
 // extractTextFromPDF extracts all text content from a PDF file
@@ -819,6 +845,51 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// stripThinkingTags removes <thinking> tags and their content from LLM responses
+func stripThinkingTags(content string) string {
+	// Regular expression to match <thinking>...</thinking> blocks (including multiline)
+	thinkingRegex := regexp.MustCompile(`(?s)<thinking>.*?</thinking>`)
+	
+	// Remove all thinking tag blocks
+	content = thinkingRegex.ReplaceAllString(content, "")
+	
+	// Also handle self-closing thinking tags or malformed tags
+	selfClosingRegex := regexp.MustCompile(`(?s)<thinking[^>]*/>`)
+	content = selfClosingRegex.ReplaceAllString(content, "")
+	
+	// Handle cases where thinking tags might be on separate lines
+	openTagRegex := regexp.MustCompile(`(?m)^\s*<thinking>\s*$`)
+	closeTagRegex := regexp.MustCompile(`(?m)^\s*</thinking>\s*$`)
+	
+	// If we find isolated opening/closing tags, remove the entire section
+	lines := strings.Split(content, "\n")
+	var filteredLines []string
+	insideThinking := false
+	
+	for _, line := range lines {
+		if openTagRegex.MatchString(line) {
+			insideThinking = true
+			continue
+		}
+		
+		if closeTagRegex.MatchString(line) {
+			insideThinking = false
+			continue
+		}
+		
+		if !insideThinking {
+			filteredLines = append(filteredLines, line)
+		}
+	}
+	
+	content = strings.Join(filteredLines, "\n")
+	
+	// Clean up any extra whitespace that may have been left behind
+	content = regexp.MustCompile(`\n\s*\n\s*\n`).ReplaceAllString(content, "\n\n")
+	
+	return strings.TrimSpace(content)
 }
 
 // stripMarkdownCodeBlocks removes markdown code block formatting from LLM responses

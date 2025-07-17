@@ -56,19 +56,9 @@ func (p *CryptoHoldingsPlugin) GetDescription() string {
 
 // Initialize initializes the plugin with configuration
 func (p *CryptoHoldingsPlugin) Initialize(config PluginConfig) error {
-	// Get or create the plugin account
-	accountID, err := GetOrCreatePluginAccount(
-		p.db,
-		"Crypto Holdings Portfolio",
-		"crypto_holdings",
-		"Manual Entry",
-		"manual",
-	)
-	if err != nil {
-		return fmt.Errorf("failed to initialize Crypto Holdings account: %w", err)
-	}
-
-	p.accountID = accountID
+	// No account initialization needed in new architecture
+	// Institution information is stored directly in asset tables
+	p.accountID = 1 // Use dummy ID for compatibility
 	return nil
 }
 
@@ -97,7 +87,7 @@ func (p *CryptoHoldingsPlugin) IsHealthy() PluginHealth {
 func (p *CryptoHoldingsPlugin) GetAccounts() ([]Account, error) {
 	return []Account{
 		{
-			ID:          fmt.Sprintf("%d", p.accountID),
+			ID:          "crypto_holdings",
 			Name:        "Crypto Holdings Portfolio",
 			Type:        "crypto_holdings",
 			Institution: "Manual Entry",
@@ -146,7 +136,7 @@ func (p *CryptoHoldingsPlugin) GetBalances() ([]Balance, error) {
 		}
 
 		balance := Balance{
-			AccountID:  fmt.Sprintf("%d", p.accountID),
+			AccountID:  "crypto_holdings",
 			Amount:     amount,
 			Currency:   "USD",
 			AsOfDate:   updatedAt,

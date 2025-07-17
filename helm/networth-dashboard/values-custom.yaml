@@ -27,7 +27,7 @@ backend:
     #llmBaseUrl: "https://openrouter.ai/api/v1"
     #llmModel: "deepseek/deepseek-chat:free"
     llmBaseUrl: "http://192.168.30.54:11434/v1"
-    llmModel: "qwen3:32b"
+    llmModel: "Granite3.2-Vision"
     llmUploadDir: "/app/uploads"
     llmInsecureSkipVerify: "true"
 

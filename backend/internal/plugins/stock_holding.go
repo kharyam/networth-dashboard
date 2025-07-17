@@ -58,19 +58,9 @@ func (p *StockHoldingPlugin) GetDescription() string {
 
 // Initialize initializes the plugin with configuration
 func (p *StockHoldingPlugin) Initialize(config PluginConfig) error {
-	// Get or create the plugin account
-	accountID, err := GetOrCreatePluginAccount(
-		p.db,
-		"Stock Holdings",
-		"investment",
-		"Manual Entry",
-		"manual",
-	)
-	if err != nil {
-		return fmt.Errorf("failed to initialize stock holdings account: %w", err)
-	}
-
-	p.accountID = accountID
+	// No account initialization needed in new architecture
+	// Institution information is stored directly in asset tables
+	p.accountID = 1 // Use dummy ID for compatibility
 	return nil
 }
 
@@ -99,7 +89,7 @@ func (p *StockHoldingPlugin) IsHealthy() PluginHealth {
 func (p *StockHoldingPlugin) GetAccounts() ([]Account, error) {
 	return []Account{
 		{
-			ID:          fmt.Sprintf("%d", p.accountID),
+			ID:          "stock_holdings",
 			Name:        "Stock Holdings",
 			Type:        "investment",
 			Institution: "Manual Entry",
@@ -125,7 +115,7 @@ func (p *StockHoldingPlugin) GetBalances() ([]Balance, error) {
 
 	return []Balance{
 		{
-			AccountID:  fmt.Sprintf("%d", p.accountID),
+			AccountID:  "stock_holdings",
 			Amount:     totalValue,
 			Currency:   "USD",
 			AsOfDate:   time.Now(),
