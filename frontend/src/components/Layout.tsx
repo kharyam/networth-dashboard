@@ -18,7 +18,8 @@ import {
   Package,
   Code,
   Tag,
-  FileText
+  FileText,
+  BarChart3
 } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
 
@@ -37,6 +38,7 @@ const navigation = [
   { name: 'Other Assets', href: '/other-assets', icon: Package },
   { name: 'Asset Categories', href: '/asset-categories', icon: Tag },
   { name: 'Manual Entries', href: '/manual-entries', icon: Edit3 },
+  { name: 'What-If Scenarios', href: '/scenarios', icon: BarChart3 },
   { name: 'Credentials', href: '/credentials', icon: Key },
   { name: 'Document Processing', href: '/document-processing', icon: FileText },
   { name: 'API', href: '/api', icon: Code },

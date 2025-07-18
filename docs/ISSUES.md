@@ -1,32 +1,28 @@
 # Next Up
 
+When I start with assets of 
+Stocks 0
+Crypto $258,521
+Real Estate $818,133
+Cash $32,557
+Other 0
+The first line of the scenario is completely wrong for the starting calculation 
+Year	Net Worth (USD)	Net Worth (BTC)	BTC Price	Stocks	Crypto	Real Estate	Cash	Other
+Current	$1,108,942	₿9.2166	$120,320	$0	$683,597	$409,067	$16,278	$0
+house and cash are half the actual values, starting crypto way higher than actual starting value
+
+The pages navigation on the left hand side is getting pretty long.  Is there a way to organize these more logically and maybe nest / group them? The summary cards on the top of the page should also navigate to the corresponding page when they are clicked by the user.
+
+I want a tab that allows me to perfrom what-if scenarios for future net worth.  I should be able to specify a time range, expected returns on each asset class (provide suggested values based on current information on performance (e.g., apr on cash accounts), expected growth of bitcoin and other crypto holdings per year, etc.  As a result, show the price of the portfolio in us dollars (with details on each asset class) and also the option to show the portfolio value in terms of bitcoin, for the expected price of bitcoin at the time the what-if scenario ends. Also provide the abilitiy to export pdf or html reports of the forecast (all html artifacts / graphics / css / in a zip file).  Let me know any other features you could add that would be valuable.  The goal is not only to estimate how the portfolio will grow, but to show how moving assets into bitcoin could potentially affect the overall worth in the future.  When creating the future project, the user should be able to specify what percentage to move to bitcoin before running the project scenario.  Also suggest any other features that could be valuable.  Optionally, there should be the ability to save each scenario with a name, and apply it to the current net worth of the user after they'v updated the values in their portfolio. 
+
+
 IN PROGRESS I have an ambitious plan to update this application. I would like the application to have the ability to integrate with an llm via an open api compatible endpoint.  Possibly create a chat interface in the application, geared towards this application, for interaction with the user.  The main feature I want, is the ability for the application to analyze an arbitrary statement (text,pdf,csv,etc.) from a financial institution and use the existing api (or database directly, prefereably API) to update all relevant financial information in the dashboard.  If the statement is from a bank, update all matching bank accounts or creat them if they don't exist with information from the statement.  For a brokerage account, do the same, adding each holding as an entry for the institution. Possibly look up what the current dividend is for the holding and add that as well, since we are tracking it.  I imagine to do this, a fairly sophisticated prompt has to be given to the LLM through the endpoint to let it know exactly how to transform arbitrary statements so that they can be added to the dashboard via the existing API.  The code will then need to get the standardized output from the llm (which it will match a format given to it from its prompt) and make all appropriate calls to update the dashboard.  For matching entries from the statement, it should update existing information, otherwise create new entries. Create a plan for this, let me know the feasibility of doing it, and what technologies would be used to integrate the llm input/output with the functionality of the dashboard, such as API integration.
 
+Check all the code for usages of account_id that should be removed and fix them. Check for any code that is deprecated and update appropriately.
 
-  Key Benefits Achieved
-
-  1. Single Source of Truth: All cash holdings (manual + imported) now live in the cash_holdings table
-  2. Immediate UI Access: Imported accounts are immediately visible and editable in existing Cash Holdings page
-  3. Full Feature Support: Imported data gets all existing features (interest rates, CRUD operations, etc.)
-  4. Consistent Data Model: No parallel systems to maintain
-  5. Complete Asset Coverage: Handles cash, stocks, and crypto imports using existing infrastructure
-
-  How It Works Now
-
-  1. Document Upload & Processing: Users upload financial documents as before
-  2. AI Extraction: LLM extracts accounts, stocks, and crypto holdings
-  3. Import to Existing Tables:
-    - Cash accounts → cash_holdings table with data_source = 'document_import'
-    - Stock holdings → stock_holdings table with data_source = 'document_import'
-    - Crypto holdings → crypto_holdings table with data_source = 'document_import'
-  4. Immediate Availability: All imported data appears in existing management UIs
-  5. Full Editability: Users can modify imported data using existing CRUD interfaces
-
-  The system now provides a unified approach where imported financial data seamlessly integrates with manually entered data, giving
-  users a single, consistent interface for managing all their financial information regardless of how it was added to the system.
+Investigate updating the code so that it can detect if the ai connection is using ollama, and if so, create a wrapper layer to support ollama without needing to update any other code (compatibility layer between openai api and ollama api).  Log which endpoint type was detected and being used.
 
 
-Get an error when editing crypto on crpyto holdings page
 
 DONE Need a way of specifying a brokerage account, right now its under cash holdings
 

@@ -60,6 +60,11 @@ func (db *DB) runMigrations() error {
 		createCryptoHoldingsTableWithoutAccountRef,
 		createCryptoPricesTable,
 		createDocumentProcessingJobsTable,
+		// Scenario tables for what-if analysis
+		createScenariosTable,
+		createScenarioParametersTable,
+		createCryptoScenarioParametersTable,
+		createScenarioResultsTable,
 		updateEquityGrantsTable,
 		updateRealEstateAddressFields,
 		updateStockHoldingsInstitution,

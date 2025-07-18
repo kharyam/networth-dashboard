@@ -431,31 +431,17 @@ func (p *MorganStanleyPlugin) ProcessManualEntry(data map[string]interface{}) er
 		currentPrice = 0
 	}
 
-	// Create unique account for this grant
-	uniqueIdentifier := fmt.Sprintf("%s %s", symbol, grantType)
-	uniqueAccountID, accountErr := GetOrCreateUniquePluginAccount(
-		p.db,
-		"Morgan Stanley",
-		uniqueIdentifier,
-		"equity",
-		"Morgan Stanley",
-		"manual",
-	)
-	if accountErr != nil {
-		return fmt.Errorf("failed to create unique account for equity grant: %w", accountErr)
-	}
-
-	// Insert equity grant with current price
+	// Insert equity grant with current price (no account_id needed in new architecture)
 	query := `
 		INSERT INTO equity_grants (
-			account_id, grant_type, company_symbol, total_shares, vested_shares, 
+			grant_type, company_symbol, total_shares, vested_shares, 
 			unvested_shares, strike_price, current_price, grant_date, vest_start_date
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
 
 	unvestedShares := totalShares - vestedShares
 	_, execErr := p.db.Exec(query,
-		uniqueAccountID, grantType, symbol, totalShares, vestedShares,
+		grantType, symbol, totalShares, vestedShares,
 		unvestedShares, strikePrice, currentPrice, grantDate, vestStartDate,
 	)
 

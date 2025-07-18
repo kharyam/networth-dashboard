@@ -102,12 +102,11 @@ func (p *RealEstatePlugin) GetBalances() ([]Balance, error) {
 	// Calculate total property value
 	query := `
 		SELECT COALESCE(SUM(current_value), 0) as total_value
-		FROM real_estate_properties 
-		WHERE account_id = $1
+		FROM real_estate_properties
 	`
 
 	var totalValue float64
-	err := p.db.QueryRow(query, p.accountID).Scan(&totalValue)
+	err := p.db.QueryRow(query).Scan(&totalValue)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate real estate value: %w", err)
 	}
@@ -513,30 +512,17 @@ func (p *RealEstatePlugin) ProcessManualEntry(data map[string]interface{}) error
 		zipCode = zc.(string)
 	}
 
-	// Create unique account for this property
-	uniqueAccountID, err := GetOrCreateUniquePluginAccount(
-		p.db,
-		"Real Estate",
-		propertyName,
-		"real_estate",
-		"Manual Entry",
-		"manual",
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create unique account for property: %w", err)
-	}
-
-	// Insert real estate property
+	// Insert real estate property (no account_id needed in new architecture)
 	query := `
 		INSERT INTO real_estate_properties (
-			account_id, property_type, property_name, street_address, city, state, zip_code,
+			property_type, property_name, street_address, city, state, zip_code,
 			purchase_price, current_value, outstanding_mortgage, equity, purchase_date, 
 			property_size_sqft, lot_size_acres, rental_income_monthly, property_tax_annual, notes
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`
 
-	_, err = p.db.Exec(query,
-		uniqueAccountID, propertyType, propertyName, streetAddress, city, state, zipCode,
+	_, err := p.db.Exec(query,
+		propertyType, propertyName, streetAddress, city, state, zipCode,
 		purchasePrice, currentValue, outstandingMortgage, equity, purchaseDate,
 		propertySizeSqft, lotSizeAcres, rentalIncomeMonthly, propertyTaxAnnual, notes,
 	)

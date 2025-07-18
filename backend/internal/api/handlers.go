@@ -1,8 +1,10 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -5214,4 +5216,1077 @@ func (s *Server) getDocumentHealth(c *gin.Context) {
 		"llm_model":           s.config.API.LLMModel,
 		"llm_base_url":        s.config.API.LLMBaseURL,
 	})
+}
+
+// Scenario handlers for what-if analysis
+
+// @Summary Get all scenarios
+// @Description Retrieve all saved what-if scenarios
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Success 200 {array} object "List of scenarios"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /scenarios [get]
+func (s *Server) getScenarios(c *gin.Context) {
+	scenarios, err := s.scenarioService.GetScenarios()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve scenarios",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, scenarios)
+}
+
+// @Summary Get default scenario parameters
+// @Description Get suggested default parameters for asset classes
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Default parameters for asset classes"
+// @Router /scenarios/default-parameters [get]
+func (s *Server) getDefaultScenarioParameters(c *gin.Context) {
+	defaults := s.scenarioService.GetDefaultParameters()
+	
+	// Get available crypto symbols for individual parameter configuration
+	cryptoSymbols, err := s.scenarioService.GetAvailableCryptoSymbols()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get available crypto symbols",
+		})
+		return
+	}
+	
+	response := gin.H{
+		"default_parameters": defaults,
+		"available_crypto_symbols": cryptoSymbols,
+	}
+	
+	c.JSON(http.StatusOK, response)
+}
+
+// @Summary Create a new scenario
+// @Description Create a new what-if scenario with parameters
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Param request body object true "Scenario configuration"
+// @Success 201 {object} object "Created scenario"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /scenarios [post]
+func (s *Server) createScenario(c *gin.Context) {
+	var scenario services.Scenario
+	if err := c.ShouldBindJSON(&scenario); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request data",
+		})
+		return
+	}
+
+	// Validate required fields
+	if scenario.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Scenario name is required",
+		})
+		return
+	}
+
+	if scenario.TimeHorizonYears <= 0 || scenario.TimeHorizonYears > 30 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Time horizon must be between 1 and 30 years",
+		})
+		return
+	}
+
+	if len(scenario.Parameters) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "At least one asset class parameter is required",
+		})
+		return
+	}
+
+	err := s.scenarioService.CreateScenario(&scenario)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to create scenario",
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, scenario)
+}
+
+// @Summary Get a specific scenario
+// @Description Retrieve a scenario by ID with its parameters
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Param id path int true "Scenario ID"
+// @Success 200 {object} object "Scenario details"
+// @Failure 404 {object} map[string]interface{} "Scenario not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /scenarios/{id} [get]
+func (s *Server) getScenario(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid scenario ID",
+		})
+		return
+	}
+
+	scenario, err := s.scenarioService.GetScenario(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Scenario not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, scenario)
+}
+
+// @Summary Update a scenario
+// @Description Update an existing scenario configuration
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Param id path int true "Scenario ID"
+// @Param request body object true "Updated scenario configuration"
+// @Success 200 {object} object "Updated scenario"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Scenario not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /scenarios/{id} [put]
+func (s *Server) updateScenario(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid scenario ID",
+		})
+		return
+	}
+
+	var scenario services.Scenario
+	if err := c.ShouldBindJSON(&scenario); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request data",
+		})
+		return
+	}
+
+	scenario.ID = id
+
+	err = s.scenarioService.UpdateScenario(&scenario)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update scenario",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, scenario)
+}
+
+// @Summary Delete a scenario
+// @Description Delete a scenario and all its data
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Param id path int true "Scenario ID"
+// @Success 200 {object} map[string]interface{} "Scenario deleted successfully"
+// @Failure 404 {object} map[string]interface{} "Scenario not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /scenarios/{id} [delete]
+func (s *Server) deleteScenario(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid scenario ID",
+		})
+		return
+	}
+
+	err = s.scenarioService.DeleteScenario(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to delete scenario",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Scenario deleted successfully",
+	})
+}
+
+// @Summary Calculate scenario projections
+// @Description Calculate what-if projections for a scenario
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Param id path int true "Scenario ID"
+// @Success 200 {array} object "Projection results"
+// @Failure 404 {object} map[string]interface{} "Scenario not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /scenarios/{id}/calculate [post]
+func (s *Server) calculateScenario(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid scenario ID",
+		})
+		return
+	}
+
+	results, err := s.scenarioService.CalculateScenario(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to calculate scenario",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, results)
+}
+
+// @Summary Get scenario results
+// @Description Get stored projection results for a scenario
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Param id path int true "Scenario ID"
+// @Success 200 {array} object "Projection results"
+// @Failure 404 {object} map[string]interface{} "Scenario not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /scenarios/{id}/results [get]
+func (s *Server) getScenarioResults(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid scenario ID",
+		})
+		return
+	}
+
+	results, err := s.scenarioService.GetScenarioResults(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve scenario results",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, results)
+}
+
+// @Summary Export scenario
+// @Description Export scenario data and projections
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Param id path int true "Scenario ID"
+// @Param format query string false "Export format (json, csv, pdf, html)" default(json)
+// @Success 200 {object} map[string]interface{} "Export data"
+// @Failure 404 {object} map[string]interface{} "Scenario not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /scenarios/{id}/export [get]
+func (s *Server) exportScenario(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid scenario ID",
+		})
+		return
+	}
+
+	format := c.DefaultQuery("format", "json")
+	
+	// Get scenario with results
+	scenario, err := s.scenarioService.GetScenario(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Scenario not found",
+		})
+		return
+	}
+
+	results, err := s.scenarioService.GetScenarioResults(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve scenario results",
+		})
+		return
+	}
+
+	// Get current portfolio for context
+	portfolio, err := s.scenarioService.GetCurrentPortfolio()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve current portfolio",
+		})
+		return
+	}
+
+	// Prepare export data
+	exportData := gin.H{
+		"scenario":           scenario,
+		"results":           results,
+		"current_portfolio": portfolio,
+		"exported_at":       time.Now().Format(time.RFC3339),
+		"format":            format,
+	}
+
+	switch format {
+	case "json":
+		c.JSON(http.StatusOK, exportData)
+	case "csv":
+		// Generate CSV data
+		csvData, err := s.generateCSVExport(exportData)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to generate CSV export",
+			})
+			return
+		}
+		
+		// Set CSV headers
+		c.Header("Content-Type", "text/csv")
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=scenario_%s_%s.csv", 
+			scenario.Name, time.Now().Format("2006-01-02")))
+		c.String(http.StatusOK, csvData)
+	case "pdf":
+		// TODO: Implement PDF export
+		c.JSON(http.StatusNotImplemented, gin.H{
+			"error": "PDF export not yet implemented",
+		})
+	case "html":
+		// Generate HTML report
+		htmlData, err := s.generateHTMLExport(exportData)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to generate HTML export",
+			})
+			return
+		}
+		
+		// Set HTML headers
+		c.Header("Content-Type", "text/html")
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=scenario_%s_%s.html", 
+			scenario.Name, time.Now().Format("2006-01-02")))
+		c.String(http.StatusOK, htmlData)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Unsupported export format",
+		})
+	}
+}
+
+// @Summary Compare multiple scenarios
+// @Description Compare projection results from multiple scenarios
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Param request body object true "Scenario IDs to compare"
+// @Success 200 {object} map[string]interface{} "Comparison results"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /scenarios/compare [post]
+func (s *Server) compareScenarios(c *gin.Context) {
+	var request struct {
+		ScenarioIds []int `json:"scenario_ids"`
+	}
+	
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request data",
+		})
+		return
+	}
+	
+	if len(request.ScenarioIds) < 2 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "At least 2 scenarios are required for comparison",
+		})
+		return
+	}
+	
+	// Get scenarios and their results
+	comparison := make(map[string]interface{})
+	scenarioData := make([]map[string]interface{}, 0)
+	
+	for _, id := range request.ScenarioIds {
+		scenario, err := s.scenarioService.GetScenario(id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": fmt.Sprintf("Scenario %d not found", id),
+			})
+			return
+		}
+		
+		results, err := s.scenarioService.GetScenarioResults(id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to get results for scenario %d", id),
+			})
+			return
+		}
+		
+		scenarioData = append(scenarioData, map[string]interface{}{
+			"scenario": scenario,
+			"results":  results,
+		})
+	}
+	
+	comparison["scenarios"] = scenarioData
+	comparison["compared_at"] = time.Now().Format(time.RFC3339)
+	
+	c.JSON(http.StatusOK, comparison)
+}
+
+// generateCSVExport creates a CSV export of scenario data
+func (s *Server) generateCSVExport(exportData gin.H) (string, error) {
+	scenario := exportData["scenario"].(*services.Scenario)
+	results := exportData["results"].([]services.ScenarioResult)
+	portfolio := exportData["current_portfolio"].(*services.CurrentPortfolio)
+	
+	var buffer bytes.Buffer
+	
+	// Add scenario metadata as comments
+	buffer.WriteString(fmt.Sprintf("# Scenario: %s\n", scenario.Name))
+	buffer.WriteString(fmt.Sprintf("# Description: %s\n", scenario.Description))
+	buffer.WriteString(fmt.Sprintf("# Time Horizon: %d years\n", scenario.TimeHorizonYears))
+	buffer.WriteString(fmt.Sprintf("# Bitcoin Allocation: %.1f%%\n", scenario.BitcoinAllocationPercentage))
+	buffer.WriteString(fmt.Sprintf("# Rebalancing: %s\n", scenario.RebalancingFrequency))
+	buffer.WriteString(fmt.Sprintf("# Exported: %s\n", exportData["exported_at"]))
+	buffer.WriteString("\n")
+	
+	// Add current portfolio summary
+	buffer.WriteString("# Current Portfolio Summary:\n")
+	buffer.WriteString(fmt.Sprintf("# Total Value: $%.2f\n", portfolio.TotalValue))
+	buffer.WriteString(fmt.Sprintf("# Stocks: $%.2f\n", portfolio.StockValue))
+	buffer.WriteString(fmt.Sprintf("# Crypto: $%.2f\n", portfolio.CryptoValue))
+	buffer.WriteString(fmt.Sprintf("# Real Estate: $%.2f\n", portfolio.RealEstateValue))
+	buffer.WriteString(fmt.Sprintf("# Cash: $%.2f\n", portfolio.CashValue))
+	buffer.WriteString(fmt.Sprintf("# Other Assets: $%.2f\n", portfolio.OtherAssetsValue))
+	buffer.WriteString("\n")
+	
+	// Create CSV writer
+	csvWriter := csv.NewWriter(&buffer)
+	
+	// Write CSV headers
+	headers := []string{
+		"Year",
+		"Net Worth USD",
+		"Net Worth BTC", 
+		"BTC Price",
+		"Stock Value",
+		"Crypto Value",
+		"Real Estate Value",
+		"Cash Value",
+		"Other Assets Value",
+	}
+	if err := csvWriter.Write(headers); err != nil {
+		return "", fmt.Errorf("error writing CSV headers: %w", err)
+	}
+	
+	// Write data rows
+	for _, result := range results {
+		yearStr := "Current"
+		if result.ProjectionYear > 0 {
+			yearStr = fmt.Sprintf("Year %d", result.ProjectionYear)
+		}
+		
+		record := []string{
+			yearStr,
+			fmt.Sprintf("%.2f", result.TotalNetWorth),
+			fmt.Sprintf("%.6f", result.NetWorthInBTC),
+			fmt.Sprintf("%.2f", result.ProjectedBitcoinPrice),
+			fmt.Sprintf("%.2f", result.StockValue),
+			fmt.Sprintf("%.2f", result.CryptoValue),
+			fmt.Sprintf("%.2f", result.RealEstateValue),
+			fmt.Sprintf("%.2f", result.CashValue),
+			fmt.Sprintf("%.2f", result.OtherAssetsValue),
+		}
+		
+		if err := csvWriter.Write(record); err != nil {
+			return "", fmt.Errorf("error writing CSV record: %w", err)
+		}
+	}
+	
+	// Flush the writer
+	csvWriter.Flush()
+	if err := csvWriter.Error(); err != nil {
+		return "", fmt.Errorf("error flushing CSV writer: %w", err)
+	}
+	
+	return buffer.String(), nil
+}
+
+// generateHTMLExport creates an HTML report with embedded charts
+func (s *Server) generateHTMLExport(exportData gin.H) (string, error) {
+	scenario := exportData["scenario"].(*services.Scenario)
+	results := exportData["results"].([]services.ScenarioResult)
+	portfolio := exportData["current_portfolio"].(*services.CurrentPortfolio)
+	
+	// Generate chart data for JavaScript
+	chartData := "["
+	for i, result := range results {
+		if i > 0 {
+			chartData += ","
+		}
+		
+		yearStr := fmt.Sprintf("%d", result.ProjectionYear)
+		yearLabel := "Current"
+		if result.ProjectionYear > 0 {
+			yearLabel = fmt.Sprintf("Year %d", result.ProjectionYear)
+		}
+		
+		chartData += fmt.Sprintf(`{
+			"year": %s,
+			"yearLabel": "%s",
+			"total_net_worth": %.2f,
+			"stock_value": %.2f,
+			"crypto_value": %.2f,
+			"real_estate_value": %.2f,
+			"cash_value": %.2f,
+			"other_assets_value": %.2f,
+			"bitcoin_price": %.2f
+		}`, yearStr, 
+		yearLabel,
+		result.TotalNetWorth,
+		result.StockValue,
+		result.CryptoValue,
+		result.RealEstateValue,
+		result.CashValue,
+		result.OtherAssetsValue,
+		result.ProjectedBitcoinPrice)
+	}
+	chartData += "]"
+	
+	// Pre-calculate all values to avoid complex sprintf arguments
+	scenarioName := scenario.Name
+	generatedDate := time.Now().Format("January 2, 2006")
+	description := scenario.Description
+	if description == "" {
+		description = "No description provided"
+	}
+	timeHorizon := scenario.TimeHorizonYears
+	bitcoinAllocation := scenario.BitcoinAllocationPercentage
+	rebalancing := scenario.RebalancingFrequency
+	currentPortfolioValue := portfolio.TotalValue
+	
+	// Calculate final values
+	var finalNetWorth float64
+	var growthMultiple float64
+	var totalGrowth float64
+	
+	if len(results) > 0 {
+		finalNetWorth = results[len(results)-1].TotalNetWorth
+		if currentPortfolioValue > 0 {
+			growthMultiple = finalNetWorth / currentPortfolioValue
+		} else {
+			growthMultiple = 1.0
+		}
+		totalGrowth = finalNetWorth - currentPortfolioValue
+	} else {
+		finalNetWorth = currentPortfolioValue
+		growthMultiple = 1.0
+		totalGrowth = 0
+	}
+	
+	// Generate table rows
+	tableRows := ""
+	for _, result := range results {
+		yearStr := "Current"
+		if result.ProjectionYear > 0 {
+			yearStr = fmt.Sprintf("Year %d", result.ProjectionYear)
+		}
+		
+		// Format numbers with smart abbreviations
+		formatCurrency := func(amount float64) string {
+			if amount >= 1e9 {
+				return fmt.Sprintf("$%.1fB", amount/1e9)
+			} else if amount >= 1e6 {
+				return fmt.Sprintf("$%.1fM", amount/1e6)
+			} else if amount >= 1e3 {
+				return fmt.Sprintf("$%.0fK", amount/1e3)
+			}
+			return fmt.Sprintf("$%.0f", amount)
+		}
+		
+		tableRows += fmt.Sprintf(`
+                        <tr>
+                            <td>%s</td>
+                            <td>%s</td>
+                            <td>%s</td>
+                            <td>%s</td>
+                            <td>%s</td>
+                            <td>%s</td>
+                            <td>%s</td>
+                            <td>%s</td>
+                        </tr>`,
+			yearStr,
+			formatCurrency(result.TotalNetWorth),
+			formatCurrency(result.ProjectedBitcoinPrice),
+			formatCurrency(result.StockValue),
+			formatCurrency(result.CryptoValue),
+			formatCurrency(result.RealEstateValue),
+			formatCurrency(result.CashValue),
+			formatCurrency(result.OtherAssetsValue))
+	}
+
+	// Full template
+	htmlTemplate := `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>%s - Scenario Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f9fafb;
+            color: #111827;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2rem;
+            font-weight: 700;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 30px;
+        }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .summary-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        .summary-card h3 {
+            margin: 0 0 10px 0;
+            color: #64748b;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .summary-card .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1e293b;
+        }
+        .chart-container {
+            margin: 30px 0;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            position: relative;
+        }
+        .chart-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #1e293b;
+        }
+        .chart-wrapper {
+            position: relative;
+            height: 400px;
+            width: 100%%;
+        }
+        .chart-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%% !important;
+            height: 100%% !important;
+        }
+        .data-table {
+            margin-top: 30px;
+            overflow-x: auto;
+        }
+        .data-table table {
+            width: 100%%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+        .data-table th,
+        .data-table td {
+            padding: 12px;
+            text-align: right;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .data-table th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #374151;
+        }
+        .data-table th:first-child,
+        .data-table td:first-child {
+            text-align: left;
+        }
+        .scenario-details {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        .scenario-details h3 {
+            margin: 0 0 15px 0;
+            color: #1e293b;
+        }
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+        }
+        .detail-label {
+            color: #64748b;
+            font-weight: 500;
+        }
+        .detail-value {
+            color: #1e293b;
+            font-weight: 600;
+        }
+        @media print {
+            body { background: white; }
+            .container { box-shadow: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>%s</h1>
+            <p>Net Worth Projection Report</p>
+            <p>Generated on %s</p>
+        </div>
+        
+        <div class="content">
+            <!-- Scenario Details -->
+            <div class="scenario-details">
+                <h3>Scenario Configuration</h3>
+                <div class="detail-grid">
+                    <div class="detail-item">
+                        <span class="detail-label">Description:</span>
+                        <span class="detail-value">%s</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Time Horizon:</span>
+                        <span class="detail-value">%v years</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Bitcoin Allocation:</span>
+                        <span class="detail-value">%v%%</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Rebalancing:</span>
+                        <span class="detail-value">%s</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <h3>Current Portfolio Value</h3>
+                    <div class="value">$%.0f</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Final Net Worth</h3>
+                    <div class="value">$%.0f</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Growth Multiple</h3>
+                    <div class="value">%.1fx</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Total Growth</h3>
+                    <div class="value">$%.0f</div>
+                </div>
+            </div>
+
+            <!-- Wealth Growth Chart -->
+            <div class="chart-container">
+                <h3 class="chart-title">Wealth Growth Over Time</h3>
+                <div class="chart-wrapper">
+                    <canvas id="wealthChart" class="chart-canvas"></canvas>
+                </div>
+            </div>
+
+            <!-- Asset Allocation Chart -->
+            <div class="chart-container">
+                <h3 class="chart-title">Asset Allocation Evolution</h3>
+                <div class="chart-wrapper">
+                    <canvas id="allocationChart" class="chart-canvas"></canvas>
+                </div>
+            </div>
+
+            <!-- Bitcoin Price Chart -->
+            <div class="chart-container">
+                <h3 class="chart-title">Bitcoin Price Projection</h3>
+                <div class="chart-wrapper">
+                    <canvas id="bitcoinChart" class="chart-canvas"></canvas>
+                </div>
+            </div>
+
+            <!-- Data Table -->
+            <div class="data-table">
+                <h3 class="chart-title">Detailed Projections</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Year</th>
+                            <th>Net Worth (USD)</th>
+                            <th>Bitcoin Price</th>
+                            <th>Stocks</th>
+                            <th>Crypto</th>
+                            <th>Real Estate</th>
+                            <th>Cash</th>
+                            <th>Other Assets</th>
+                        </tr>
+                    </thead>
+                    <tbody>%s</tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const data = %s;
+        
+        // Wealth Growth Chart
+        const wealthCtx = document.getElementById('wealthChart').getContext('2d');
+        new Chart(wealthCtx, {
+            type: 'line',
+            data: {
+                labels: data.map(d => d.yearLabel),
+                datasets: [{
+                    label: 'Net Worth',
+                    data: data.map(d => d.total_net_worth),
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                resizeDelay: 0,
+                devicePixelRatio: 1,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$$' + value.toLocaleString();
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return 'Net Worth: $$' + context.parsed.y.toLocaleString();
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Asset Allocation Chart
+        const allocationCtx = document.getElementById('allocationChart').getContext('2d');
+        new Chart(allocationCtx, {
+            type: 'line',
+            data: {
+                labels: data.map(d => d.yearLabel),
+                datasets: [
+                    {
+                        label: 'Stocks',
+                        data: data.map(d => d.stock_value),
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.3)',
+                        stack: 'Stack 0'
+                    },
+                    {
+                        label: 'Crypto',
+                        data: data.map(d => d.crypto_value),
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245, 158, 11, 0.3)',
+                        stack: 'Stack 0'
+                    },
+                    {
+                        label: 'Real Estate',
+                        data: data.map(d => d.real_estate_value),
+                        borderColor: '#8b5cf6',
+                        backgroundColor: 'rgba(139, 92, 246, 0.3)',
+                        stack: 'Stack 0'
+                    },
+                    {
+                        label: 'Cash',
+                        data: data.map(d => d.cash_value),
+                        borderColor: '#06b6d4',
+                        backgroundColor: 'rgba(6, 182, 212, 0.3)',
+                        stack: 'Stack 0'
+                    },
+                    {
+                        label: 'Other Assets',
+                        data: data.map(d => d.other_assets_value),
+                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.3)',
+                        stack: 'Stack 0'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                resizeDelay: 0,
+                devicePixelRatio: 1,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                scales: {
+                    x: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Year'
+                        }
+                    },
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        ticks: {
+                            callback: function(value) {
+                                return '$$' + value.toLocaleString();
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': $$' + context.parsed.y.toLocaleString();
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Bitcoin Price Chart
+        const bitcoinCtx = document.getElementById('bitcoinChart').getContext('2d');
+        new Chart(bitcoinCtx, {
+            type: 'line',
+            data: {
+                labels: data.map(d => d.yearLabel),
+                datasets: [{
+                    label: 'Bitcoin Price',
+                    data: data.map(d => d.bitcoin_price),
+                    borderColor: '#f59e0b',
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                resizeDelay: 0,
+                devicePixelRatio: 1,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$$' + value.toLocaleString();
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return 'Bitcoin Price: $$' + context.parsed.y.toLocaleString();
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Prevent infinite chart resizing by debouncing resize events
+        let resizeTimeout;
+        window.addEventListener('resize', function() {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(function() {
+                Chart.instances.forEach(function(chart) {
+                    chart.resize();
+                });
+            }, 300);
+        });
+    </script>
+</body>
+</html>`
+	
+	return fmt.Sprintf(htmlTemplate,
+		scenarioName,           // 1. title (line 5849)
+		scenarioName,           // 2. h1 text (line 5998)
+		generatedDate,          // 3. generated date (line 6000)
+		description,            // 4. description (line 6010)
+		timeHorizon,            // 5. time horizon years (line 6014)
+		bitcoinAllocation,      // 6. bitcoin allocation percentage (line 6018)
+		rebalancing,            // 7. rebalancing frequency (line 6022)
+		currentPortfolioValue,  // 8. current portfolio value (line 6031)
+		finalNetWorth,          // 9. final net worth (line 6035)
+		growthMultiple,         // 10. growth multiple (line 6039)
+		totalGrowth,            // 11. total growth (line 6043)
+		tableRows,              // 12. table rows (line 6087)
+		chartData), nil         // 13. chart data (line 6094)
 }

@@ -103,12 +103,11 @@ func (p *OtherAssetsPlugin) GetBalances() ([]Balance, error) {
 	// Calculate total other assets value
 	query := `
 		SELECT COALESCE(SUM(current_value - COALESCE(amount_owed, 0)), 0) as total_equity
-		FROM miscellaneous_assets 
-		WHERE account_id = $1
+		FROM miscellaneous_assets
 	`
 
 	var totalEquity float64
-	err := p.db.QueryRow(query, p.accountID).Scan(&totalEquity)
+	err := p.db.QueryRow(query).Scan(&totalEquity)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate other assets value: %w", err)
 	}
@@ -610,32 +609,18 @@ func (p *OtherAssetsPlugin) ProcessManualEntry(data map[string]interface{}) erro
 		}
 	}
 
-	// Create unique account for this asset
-	uniqueIdentifier := fmt.Sprintf("%s_%d", strings.ReplaceAll(assetName, " ", "_"), time.Now().Unix())
-	uniqueAccountID, err := GetOrCreateUniquePluginAccount(
-		p.db,
-		"Other Assets",
-		uniqueIdentifier,
-		"other_assets",
-		"Manual Entry",
-		"manual",
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create unique account for other asset: %w", err)
-	}
-
-	// Insert other asset
+	// Insert other asset (no account_id needed in new architecture)
 	query := `
 		INSERT INTO miscellaneous_assets (
-			account_id, asset_category_id, asset_name, current_value, 
+			asset_category_id, asset_name, current_value, 
 			purchase_price, amount_owed, purchase_date, description, 
 			custom_fields, valuation_method, created_at, last_updated
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
 	now := time.Now()
-	_, err = p.db.Exec(query,
-		uniqueAccountID, int(categoryID), assetName, currentValue,
+	_, err := p.db.Exec(query,
+		int(categoryID), assetName, currentValue,
 		purchasePrice, amountOwed, purchaseDate, description,
 		customFieldsJSON, "manual", now, now,
 	)

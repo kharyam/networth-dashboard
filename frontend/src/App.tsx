@@ -17,6 +17,7 @@ const AssetCategories = lazy(() => import('@/pages/AssetCategories'))
 const ManualEntries = lazy(() => import('@/pages/ManualEntries'))
 const Credentials = lazy(() => import('@/pages/Credentials'))
 const DocumentProcessing = lazy(() => import('@/pages/DocumentProcessing'))
+const Scenarios = lazy(() => import('@/pages/Scenarios'))
 const API = lazy(() => import('@/pages/API'))
 const Settings = lazy(() => import('@/pages/Settings'))
 
@@ -46,6 +47,7 @@ function App() {
               <Route path="/manual-entries" element={<ManualEntries />} />
               <Route path="/credentials" element={<Credentials />} />
               <Route path="/document-processing" element={<DocumentProcessing />} />
+              <Route path="/scenarios" element={<Scenarios />} />
               <Route path="/api" element={<API />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>

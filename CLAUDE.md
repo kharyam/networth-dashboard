@@ -3,6 +3,9 @@ A comprehensive real-time net worth dashboard that aggregates financial data fro
 
 ## Development Guidelines
 
+## Terminal Tools
+- use podman and podman-compose, not docker
+
 ## Task Behaviors
 When updating or creating code, Claude should always:
 - Include comments for non-trivial logic.

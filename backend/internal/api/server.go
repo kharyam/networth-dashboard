@@ -31,6 +31,7 @@ type Server struct {
 	propertyValuationService *services.PropertyValuationService
 	llmService               *services.LLMService
 	documentProcessor        *services.DocumentProcessor
+	scenarioService          *services.ScenarioService
 	httpServer               *http.Server
 }
 
@@ -78,6 +79,9 @@ func NewServer(cfg *config.Config, db *sql.DB, pluginManager *plugins.Manager) *
 		log.Printf("INFO: LLM service initialized with model: %s (SSL verify: %v)", cfg.API.LLMModel, !cfg.API.LLMInsecureSkipVerify)
 	}
 
+	// Initialize scenario service
+	scenarioService := services.NewScenarioService(db, cryptoService)
+
 	server := &Server{
 		config:                   cfg,
 		db:                       db,
@@ -89,6 +93,7 @@ func NewServer(cfg *config.Config, db *sql.DB, pluginManager *plugins.Manager) *
 		propertyValuationService: propertyValuationService,
 		llmService:               llmService,
 		documentProcessor:        documentProcessor,
+		scenarioService:          scenarioService,
 	}
 
 	server.setupRouter()
@@ -224,6 +229,18 @@ func (s *Server) setupRouter() {
 			api.POST("/documents/:id/approve", s.approveDocument)
 			api.DELETE("/documents/:id", s.deleteDocument)
 		}
+
+		// Scenario endpoints for what-if analysis
+		api.GET("/scenarios", s.getScenarios)
+		api.GET("/scenarios/default-parameters", s.getDefaultScenarioParameters)
+		api.POST("/scenarios", s.createScenario)
+		api.GET("/scenarios/:id", s.getScenario)
+		api.PUT("/scenarios/:id", s.updateScenario)
+		api.DELETE("/scenarios/:id", s.deleteScenario)
+		api.POST("/scenarios/:id/calculate", s.calculateScenario)
+		api.GET("/scenarios/:id/results", s.getScenarioResults)
+		api.GET("/scenarios/:id/export", s.exportScenario)
+		api.POST("/scenarios/compare", s.compareScenarios)
 
 		// OpenAPI spec download
 		// @Summary Download OpenAPI specification

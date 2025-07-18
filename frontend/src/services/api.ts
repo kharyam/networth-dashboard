@@ -368,4 +368,33 @@ export const propertyValuationApi = {
     })),
 }
 
+// Scenarios API
+export const scenariosApi = {
+  getAll: (): Promise<any[]> =>
+    api.get('/scenarios').then(res => res.data || []),
+  
+  getById: (id: number): Promise<any> =>
+    api.get(`/scenarios/${id}`).then(res => res.data),
+  
+  create: (scenario: any): Promise<any> =>
+    api.post('/scenarios', scenario).then(res => res.data),
+  
+  update: (id: number, scenario: any): Promise<any> =>
+    api.put(`/scenarios/${id}`, scenario).then(res => res.data),
+  
+  delete: (id: number): Promise<void> =>
+    api.delete(`/scenarios/${id}`).then(() => undefined),
+  
+  calculate: (id: number): Promise<any> =>
+    api.post(`/scenarios/${id}/calculate`).then(res => res.data),
+  
+  exportResults: (id: number, format: 'json' | 'csv' | 'html' | 'pdf' | 'zip'): Promise<any> =>
+    api.get(`/scenarios/${id}/export?format=${format}`, {
+      responseType: format === 'json' ? 'json' : 'blob'
+    }).then(res => res.data),
+  
+  getDefaultParameters: (): Promise<any> =>
+    api.get('/scenarios/default-parameters').then(res => res.data),
+}
+
 export default api

@@ -499,7 +499,7 @@ const (
 		            LIMIT 1
 		        ) ab ON true
 		        WHERE a.data_source_type = 'document_import'
-		        ON CONFLICT (institution_name, account_name) DO NOTHING;
+		        ON CONFLICT (account_id, institution_name, account_name) DO NOTHING;
 		        
 		        -- Drop old tables after migration
 		        DROP TABLE IF EXISTS account_balances CASCADE;
@@ -637,6 +637,78 @@ const (
 
 
 	// Seed data for default asset categories
+	// Scenario tables for what-if analysis
+	createScenariosTable = `
+		CREATE TABLE IF NOT EXISTS scenarios (
+			id SERIAL PRIMARY KEY,
+			name VARCHAR(200) NOT NULL,
+			description TEXT,
+			time_horizon_years INTEGER NOT NULL,
+			rebalancing_frequency VARCHAR(20) DEFAULT 'annual',
+			bitcoin_allocation_percentage DECIMAL(5,2) DEFAULT 0,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(name)
+		);
+		
+		CREATE INDEX IF NOT EXISTS idx_scenarios_name ON scenarios(name);
+		CREATE INDEX IF NOT EXISTS idx_scenarios_created ON scenarios(created_at);
+	`
+
+	createScenarioParametersTable = `
+		CREATE TABLE IF NOT EXISTS scenario_parameters (
+			id SERIAL PRIMARY KEY,
+			scenario_id INTEGER REFERENCES scenarios(id) ON DELETE CASCADE,
+			asset_class VARCHAR(50) NOT NULL,
+			expected_annual_return DECIMAL(5,2) NOT NULL,
+			annual_volatility DECIMAL(5,2) DEFAULT 0,
+			custom_parameters JSONB,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(scenario_id, asset_class)
+		);
+		
+		CREATE INDEX IF NOT EXISTS idx_scenario_parameters_scenario ON scenario_parameters(scenario_id);
+		CREATE INDEX IF NOT EXISTS idx_scenario_parameters_asset_class ON scenario_parameters(asset_class);
+	`
+
+	createCryptoScenarioParametersTable = `
+		CREATE TABLE IF NOT EXISTS crypto_scenario_parameters (
+			id SERIAL PRIMARY KEY,
+			scenario_id INTEGER REFERENCES scenarios(id) ON DELETE CASCADE,
+			crypto_symbol VARCHAR(20) NOT NULL,
+			expected_annual_return DECIMAL(5,2) NOT NULL,
+			annual_volatility DECIMAL(5,2) DEFAULT 0,
+			custom_parameters JSONB,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(scenario_id, crypto_symbol)
+		);
+		
+		CREATE INDEX IF NOT EXISTS idx_crypto_scenario_parameters_scenario ON crypto_scenario_parameters(scenario_id);
+		CREATE INDEX IF NOT EXISTS idx_crypto_scenario_parameters_symbol ON crypto_scenario_parameters(crypto_symbol);
+	`
+
+	createScenarioResultsTable = `
+		CREATE TABLE IF NOT EXISTS scenario_results (
+			id SERIAL PRIMARY KEY,
+			scenario_id INTEGER REFERENCES scenarios(id) ON DELETE CASCADE,
+			projection_year INTEGER NOT NULL,
+			total_net_worth DECIMAL(20,2) NOT NULL,
+			net_worth_in_btc DECIMAL(15,8),
+			projected_bitcoin_price DECIMAL(15,2),
+			stock_value DECIMAL(20,2),
+			crypto_value DECIMAL(20,2),
+			real_estate_value DECIMAL(20,2),
+			cash_value DECIMAL(20,2),
+			other_assets_value DECIMAL(20,2),
+			asset_allocation JSONB,
+			calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(scenario_id, projection_year)
+		);
+		
+		CREATE INDEX IF NOT EXISTS idx_scenario_results_scenario ON scenario_results(scenario_id);
+		CREATE INDEX IF NOT EXISTS idx_scenario_results_year ON scenario_results(projection_year);
+	`
+
 	seedAssetCategories = `
 		INSERT INTO asset_categories (name, description, icon, color, custom_schema, sort_order) VALUES
 		('Vehicles', 'Cars, motorcycles, boats, and other vehicles', 'car', '#3B82F6', 
